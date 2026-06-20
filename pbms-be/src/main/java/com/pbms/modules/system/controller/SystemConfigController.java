@@ -1,0 +1,59 @@
+package com.pbms.modules.system.controller;
+
+import com.pbms.common.dto.ApiResponse;
+import com.pbms.modules.system.entity.SystemConfig;
+import com.pbms.modules.system.service.SystemConfigService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/v1/system/configs")
+@PreAuthorize("hasRole('SUPER_ADMIN')")
+public class SystemConfigController {
+
+    private final SystemConfigService service;
+
+    public SystemConfigController(SystemConfigService service) {
+        this.service = service;
+    }
+
+    @GetMapping
+    public ResponseEntity<ApiResponse<List<SystemConfig>>> getAllConfigs() {
+        return ResponseEntity.ok(ApiResponse.success(service.getAllConfigs(), "Configs fetched successfully"));
+    }
+
+    @GetMapping("/{key}")
+    public ResponseEntity<ApiResponse<SystemConfig>> getConfigByKey(@PathVariable String key) {
+        return ResponseEntity.ok(ApiResponse.success(service.getConfigByKey(key), "Config fetched successfully"));
+    }
+
+    @PostMapping
+    public ResponseEntity<ApiResponse<SystemConfig>> createConfig(@RequestBody SystemConfig config) {
+        return ResponseEntity.ok(ApiResponse.success(service.createConfig(config), "Config created successfully"));
+    }
+
+    @PutMapping("/{id}")
+    public ResponseEntity<ApiResponse<SystemConfig>> updateConfig(@PathVariable Long id, @RequestBody SystemConfig configDetails) {
+        return ResponseEntity.ok(ApiResponse.success(service.updateConfig(id, configDetails), "Config updated successfully"));
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<ApiResponse<Void>> deleteConfig(@PathVariable Long id) {
+        service.deleteConfig(id);
+        return ResponseEntity.ok(ApiResponse.success(null, "Config deleted successfully"));
+    }
+
+    @PostMapping("/test-email")
+    public ResponseEntity<ApiResponse<String>> testEmail(@RequestBody java.util.Map<String, String> payload) {
+        String email = payload.get("email");
+        String password = payload.get("password");
+        if (email == null || password == null) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Email and password are required"));
+        }
+        service.testSmtpConnection(email, password);
+        return ResponseEntity.ok(ApiResponse.success("Connection successful", "SMTP credentials are valid"));
+    }
+}
