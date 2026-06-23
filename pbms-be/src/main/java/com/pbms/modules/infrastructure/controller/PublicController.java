@@ -23,9 +23,22 @@ public class PublicController {
     private final ZoneService zoneService;
     private final BuildingProfileService buildingProfileService;
 
+    //Lấy tổng quan bãi xe
+    @GetMapping("/parking-lot/summary")
+    public ResponseEntity<ApiResponse<ParkingLotSummaryDTO>> getParkingLotSummary() {
+        return ResponseEntity.ok(ApiResponse.success(
+                publicParkingService.getSummary(),
+                "Fetched public parking lot summary successfully"
+        ));
+    }
+
+    //Lấy thông tin bãi xe
     @GetMapping("/building-profile")
     public ResponseEntity<ApiResponse<BuildingProfile>> getBuildingProfile() {
-        return ResponseEntity.ok(ApiResponse.success(buildingProfileService.getProfile(), "Lấy thông tin tòa nhà thành công"));
+        return ResponseEntity.ok(ApiResponse.success(
+                buildingProfileService.getProfile(),
+                "Fetched building profile successfully"
+        ));
     }
 
     //UC-403: Lấy số lượng chỗ đỗ còn trống theo từng loại xe (GREEN/RED)
