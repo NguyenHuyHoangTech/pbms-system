@@ -19,6 +19,27 @@ public interface ParkingSessionRepository extends JpaRepository<ParkingSession, 
     
     Optional<ParkingSession> findByRfidCard_CardCodeAndStatus(String cardCode, String status);
     Optional<ParkingSession> findByPlateAndStatus(String plate, String status);
+
+    //UC-406: Tìm phiên xe vãng lai theo biển số + RFID + trạng thái, không phân biệt hoa thường.
+    @EntityGraph(attributePaths = {
+            "vehicleType", "rfidCard", "slot", "slot.zone", "slot.zone.floor",
+            "reservation", "reservation.vehicle", "reservation.vehicle.user"
+    })
+    Optional<ParkingSession> findByPlateIgnoreCaseAndRfidCard_CardCodeAndStatusAndReservationIsNull(
+            String plate,
+            String cardCode,
+            String status
+    );
+
+    //UC-406: Lấy các phiên booking của user theo email và trạng thái, sắp xếp phiên mới nhất trước.
+    @EntityGraph(attributePaths = {
+            "vehicleType", "rfidCard", "slot", "slot.zone", "slot.zone.floor",
+            "reservation", "reservation.vehicle", "reservation.vehicle.user"
+    })
+    List<ParkingSession> findByReservation_Vehicle_User_EmailAndStatusOrderByTimeInDesc(
+            String email,
+            String status
+    );
     List<ParkingSession> findByStatus(String status);
     List<ParkingSession> findByPlateOrderByTimeInDesc(String plate);
     List<ParkingSession> findByGateInIdAndTimeOutBetween(Long gateId, LocalDateTime start, LocalDateTime end);
