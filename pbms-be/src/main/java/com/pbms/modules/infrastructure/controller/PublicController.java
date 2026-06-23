@@ -28,6 +28,7 @@ public class PublicController {
         return ResponseEntity.ok(ApiResponse.success(buildingProfileService.getProfile(), "Lấy thông tin tòa nhà thành công"));
     }
 
+    //UC-403: Lấy số lượng chỗ đỗ còn trống theo từng loại xe (GREEN/RED)
     @GetMapping("/parking-status")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getParkingStatus() {
         // Calculate total available slots by vehicle category
@@ -55,5 +56,11 @@ public class PublicController {
         statusList.add(ebikeMap);
 
         return ResponseEntity.ok(ApiResponse.success(statusList, "Lấy trạng thái bãi xe thành công"));
+    public ResponseEntity<ApiResponse<List<VehicleAvailabilityDTO>>> getParkingStatus() {
+        return ResponseEntity.ok(ApiResponse.success(
+                publicParkingService.getAvailability(),
+                "Fetched live parking availability successfully"
+        ));
+    }
     }
 }

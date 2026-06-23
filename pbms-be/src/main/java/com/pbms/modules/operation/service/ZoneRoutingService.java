@@ -6,6 +6,7 @@ import com.pbms.modules.infrastructure.repository.RoutingRuleRepository;
 import com.pbms.modules.infrastructure.repository.SlotRepository;
 import com.pbms.modules.infrastructure.repository.ZoneRepository;
 import com.pbms.modules.operation.domain.VehicleType;
+import com.pbms.modules.operation.domain.ReservationStatus;
 import com.pbms.modules.operation.repository.ReservationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +23,9 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+/*
+Tính tỷ lệ lấp đầy của từng khu vực và đề xuất Zone phù hợp
+ */
 public class ZoneRoutingService {
 
     private final ZoneRepository zoneRepository;
@@ -43,7 +47,10 @@ public class ZoneRoutingService {
         if (effectiveCapacity <= 0) return BigDecimal.valueOf(100); // Fully disabled
 
         long occupiedSlots = slotRepository.countByZoneIdAndStatus(zoneId, "OCCUPIED");
-        long pendingReservations = reservationRepository.countByZoneIdAndStatus(zoneId, "PENDING");
+        long pendingReservations = reservationRepository.countBySlot_Zone_IdAndStatusIn(
+                zoneId,
+                java.util.Set.of(ReservationStatus.PAID)
+        );
 
         long effectiveLoad = occupiedSlots + pendingReservations;
 
