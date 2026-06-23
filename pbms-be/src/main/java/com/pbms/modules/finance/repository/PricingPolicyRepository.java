@@ -5,11 +5,13 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.util.List;
 
 @Repository
 public interface PricingPolicyRepository extends JpaRepository<PricingPolicy, Long> {
 
     Optional<PricingPolicy> findByVehicleTypeIdAndStatus(Long vehicleTypeId, String status);
+
     //UC-405: Truy vấn bảng giá đang hoạt động.
     List<PricingPolicy> findByStatusOrderByVehicleType_TypeNameAsc(String status);
 }

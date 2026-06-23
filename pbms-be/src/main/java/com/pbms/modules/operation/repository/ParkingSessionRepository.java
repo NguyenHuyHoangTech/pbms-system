@@ -2,6 +2,7 @@ package com.pbms.modules.operation.repository;
 
 import com.pbms.modules.operation.domain.ParkingSession;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;

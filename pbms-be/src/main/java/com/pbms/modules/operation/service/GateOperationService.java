@@ -45,6 +45,7 @@ public class GateOperationService {
     private final SlotRepository slotRepository;
     private final SimpMessagingTemplate messagingTemplate;
 
+    //UC-401: Xử lý xe vào bãi. Nếu xe có booking hợp lệ thì chuyển booking sang IN_PARKING và giữ đúng slot đã đặt.
     @Transactional
     public GateResponseDTO processCheckIn(CheckInRequestDTO request) {
         Gate gate = gateRepository.findById(request.getGateId())
@@ -71,42 +72,78 @@ public class GateOperationService {
                     .build();
         }
 
+        String normalizedPlate = normalizePlate(request.getPlateNumber());
+        if (sessionRepository.findByPlateAndStatus(normalizedPlate, "ACTIVE").isPresent()) {
+            throw new IllegalStateException("Vehicle already has an active parking session");
+        }
+
         VehicleType type = vehicleTypeRepository.findByTypeName(request.getVehicleType())
                 .orElseThrow(() -> new IllegalArgumentException("Invalid vehicle type"));
 
         // Check Blacklist
-        vehicleRepository.findByPlateNumber(request.getPlateNumber()).ifPresent(v -> {
+        vehicleRepository.findByPlateNumber(normalizedPlate).ifPresent(v -> {
             if (Boolean.TRUE.equals(v.getIsBlacklisted())) {
                 throw new IllegalStateException("Vehicle is blacklisted: " + v.getBlacklistReason());
             }
         });
 
+        LocalDateTime now = com.pbms.common.utils.TimeProvider.now();
+        Reservation matchedReservation = reservationRepository
+                .findForCheckIn(normalizedPlate, ReservationStatus.PAID)
+                .stream()
+                .filter(reservation -> !now.isBefore(reservation.getExpectedEntryTime())
+                        && !now.isAfter(reservation.getExpectedEntryTime()
+                                .plusMinutes(reservation.getExpectedDurationMinutes())))
+                .findFirst()
+                .orElse(null);
+
+        Slot reservedSlot = null;
+        if (matchedReservation != null) {
+            if (!matchedReservation.getVehicle().getVehicleType().getId().equals(type.getId())) {
+                throw new IllegalStateException("Vehicle type does not match the paid reservation");
+            }
+            reservedSlot = slotRepository.findByIdForUpdate(matchedReservation.getSlot().getId())
+                    .orElseThrow(() -> new IllegalStateException("Reserved slot not found"));
+            if ("DISABLED".equals(reservedSlot.getStatus())
+                    || "MAINTENANCE".equals(reservedSlot.getStatus())) {
+                throw new IllegalStateException("Reserved slot is unavailable");
+            }
+            if ("OCCUPIED".equals(reservedSlot.getStatus())
+                    && !normalizedPlate.equalsIgnoreCase(reservedSlot.getCurrentPlate())) {
+                throw new IllegalStateException("Reserved slot is physically occupied; staff relocation is required");
+            }
+        }
+
         // Create Session
         ParkingSession session = ParkingSession.builder()
                 .gateIn(gate)
-                .plate(request.getPlateNumber())
+                .plate(normalizedPlate)
                 .vehicleType(type)
                 .rfidCard(card)
-                .timeIn(com.pbms.common.utils.TimeProvider.now())
+                .reservation(matchedReservation)
+                .slot(reservedSlot)
+                .timeIn(now)
                 .picInFace(request.getImageBase64())
                 .status("ACTIVE")
                 .build();
 
         // Mark card as IN_USE
         card.setStatus("IN_USE");
-        card.setAssignedPlate(request.getPlateNumber());
+        card.setAssignedPlate(normalizedPlate);
         rfidCardRepository.save(card);
 
         session = sessionRepository.save(session);
         
         // Find suggested zone
-        Zone suggestedZone = null;
-        List<Reservation> reservations = reservationRepository.findByVehicle_PlateNumberAndStatus(request.getPlateNumber(), "PENDING");
-        if (!reservations.isEmpty()) {
-            Reservation res = reservations.get(0);
-            res.setStatus("ACTIVE");
-            reservationRepository.save(res);
-            suggestedZone = res.getZone();
+        Zone suggestedZone;
+        if (matchedReservation != null) {
+            matchedReservation.setStatus(ReservationStatus.IN_PARKING);
+            matchedReservation.setIsOverstaying(false);
+            reservationRepository.save(matchedReservation);
+            reservedSlot.setStatus("OCCUPIED");
+            reservedSlot.setCurrentPlate(normalizedPlate);
+            slotRepository.save(reservedSlot);
+            suggestedZone = reservedSlot.getZone();
         } else {
             suggestedZone = zoneRoutingService.suggestZone(type);
         }
@@ -123,6 +160,7 @@ public class GateOperationService {
         return response;
     }
 
+    //UC-401: Xử lý xe ra bãi. Nếu xe đi theo booking thì kết thúc booking và tính phí phát sinh nếu ra quá giờ.
     @Transactional
     public GateResponseDTO processCheckOut(CheckOutRequestDTO request) {
         Gate gate = gateRepository.findById(request.getGateId())
@@ -142,7 +180,8 @@ public class GateOperationService {
         ParkingSession session = sessionRepository.findByRfidCard_CardCodeAndStatus(request.getRfid(), "ACTIVE")
                 .orElseThrow(() -> new IllegalArgumentException("No active session found for this card"));
 
-        if (!session.getPlate().equals(request.getPlateNumber())) {
+        String normalizedPlate = normalizePlate(request.getPlateNumber());
+        if (!session.getPlate().equals(normalizedPlate)) {
             return GateResponseDTO.builder()
                     .sessionId(session.getId())
                     .plateNumber(request.getPlateNumber())
@@ -153,7 +192,7 @@ public class GateOperationService {
 
         session.setGateOut(gate);
         session.setTimeOut(com.pbms.common.utils.TimeProvider.now());
-        session.setPlateOut(request.getPlateNumber());
+        session.setPlateOut(normalizedPlate);
         session.setPicOutFace(request.getImageBase64());
 
         // Check Monthly Ticket
@@ -166,8 +205,22 @@ public class GateOperationService {
         }
 
         BigDecimal fee = BigDecimal.ZERO;
-        if (!isMonthlyCovered) {
-            fee = pricingCalculatorService.calculateTotalFee(session.getVehicleType().getId(), session.getTimeIn(), session.getTimeOut());
+        if (session.getReservation() != null) {
+            LocalDateTime reservedEnd = session.getReservation().getExpectedEntryTime()
+                    .plusMinutes(session.getReservation().getExpectedDurationMinutes());
+            if (session.getTimeOut().isAfter(reservedEnd)) {
+                fee = pricingCalculatorService.calculateTotalFee(
+                        session.getVehicleType().getId(),
+                        reservedEnd,
+                        session.getTimeOut()
+                );
+            }
+        } else if (!isMonthlyCovered) {
+            fee = pricingCalculatorService.calculateTotalFee(
+                    session.getVehicleType().getId(),
+                    session.getTimeIn(),
+                    session.getTimeOut()
+            );
         }
 
         session.setTotalFee(fee);
@@ -180,12 +233,18 @@ public class GateOperationService {
 
         sessionRepository.save(session);
 
-        // Complete Reservation if exists
-        List<Reservation> activeRes = reservationRepository.findByVehicle_PlateNumberAndStatus(request.getPlateNumber(), "ACTIVE");
-        if (!activeRes.isEmpty()) {
-            Reservation res = activeRes.get(0);
-            res.setStatus("COMPLETED");
-            reservationRepository.save(res);
+        if (session.getSlot() != null) {
+            Slot slot = session.getSlot();
+            slot.setStatus("AVAILABLE");
+            slot.setCurrentPlate(null);
+            slotRepository.save(slot);
+        }
+
+        if (session.getReservation() != null) {
+            Reservation reservation = session.getReservation();
+            reservation.setStatus(ReservationStatus.COMPLETED);
+            reservation.setIsOverstaying(false);
+            reservationRepository.save(reservation);
         }
 
         GateResponseDTO response = GateResponseDTO.builder()
@@ -197,5 +256,12 @@ public class GateOperationService {
                 .build();
 
         return response;
+    }
+
+    private String normalizePlate(String plate) {
+        if (plate == null || plate.isBlank()) {
+            throw new IllegalArgumentException("Plate number is required");
+        }
+        return plate.trim().toUpperCase().replace(" ", "");
     }
 }

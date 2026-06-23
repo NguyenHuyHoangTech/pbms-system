@@ -1,6 +1,32 @@
+package com.pbms.modules.infrastructure.service;
+
+import com.pbms.modules.finance.domain.PricingPolicy;
+import com.pbms.modules.finance.repository.PricingPolicyRepository;
 import com.pbms.modules.infrastructure.dto.ParkingLotSummaryDTO;
+import com.pbms.modules.infrastructure.dto.PublicPricingBlockDTO;
+import com.pbms.modules.infrastructure.dto.PublicPricingPolicyDTO;
+import com.pbms.modules.infrastructure.dto.PublicPricingShiftDTO;
+import com.pbms.modules.infrastructure.dto.VehicleAvailabilityDTO;
+import com.pbms.modules.infrastructure.repository.SlotRepository;
+import com.pbms.modules.infrastructure.repository.VehicleAvailabilityView;
 import com.pbms.modules.system.domain.BuildingProfile;
+import com.pbms.modules.system.service.BuildingProfileService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+
+@Service
+@RequiredArgsConstructor
+public class PublicParkingService {
+
+    private static final long LOW_AVAILABILITY_THRESHOLD = 5;
+
     private final BuildingProfileService buildingProfileService;
+    private final SlotRepository slotRepository;
+    private final PricingPolicyRepository pricingPolicyRepository;
+
     //Help UC-403: Lấy và tổng hợp thông tin bãi xe.
     @Transactional(readOnly = true)
     public ParkingLotSummaryDTO getSummary() {
@@ -26,6 +52,7 @@ import com.pbms.modules.system.domain.BuildingProfile;
         return slotRepository.summarizeAvailabilityByVehicleType().stream()
                 .map(this::toAvailabilityDTO)
                 .toList();
+    }
 
     //UC-405: Lấy danh sách bảng giá đang ở trạng thái ACTIVE.
     @Transactional(readOnly = true)
@@ -75,3 +102,4 @@ import com.pbms.modules.system.domain.BuildingProfile;
                         .toList())
                 .build();
     }
+}

@@ -61,12 +61,14 @@ public class IotHardwareController {
         this.zoneRepository = zoneRepository;
     }
 
+    //UC-401: Nhận trạng thái sensor để cập nhật tình trạng slot thực tế.
     @PostMapping("/sensors/update")
     public ResponseEntity<ApiResponse<String>> handleSensorUpdate(@RequestBody SensorEventDto request) {
         zoneMonitoringService.processSensorEvent(request.getSensorId(), request.getStatus());
         return ResponseEntity.ok(ApiResponse.success("Processed", "Sensor update processed successfully"));
     }
 
+    //UC-401: Tua thời gian hệ thống để test booking theo giờ.
     @PostMapping("/time/fast-forward")
     public ResponseEntity<ApiResponse<String>> fastForwardTime(@RequestBody Map<String, String> payload) {
         String targetTimeStr = payload.get("targetTime");
@@ -94,6 +96,7 @@ public class IotHardwareController {
         return ResponseEntity.ok(ApiResponse.success(response, "Check-out triggered"));
     }
 
+    //UC-401: Lấy dữ liệu hiện tại để FE/demo hiển thị trạng thái booking, slot, session.
     @GetMapping("/data-sync")
     public ResponseEntity<ApiResponse<Map<String, Object>>> syncData() {
         Map<String, Object> data = new HashMap<>();
@@ -141,7 +144,7 @@ public class IotHardwareController {
 
         // 4. Reservations (Mapped to avoid infinite recursion)
         data.put("reservations", reservationRepository.findAll().stream()
-                .filter(r -> "ACTIVE".equals(r.getStatus()) || "PENDING".equals(r.getStatus()))
+                .filter(r -> "PAID".equals(r.getStatus()) || "IN_PARKING".equals(r.getStatus()))
                 .map(r -> {
                     Map<String, Object> map = new HashMap<>();
                     map.put("id", r.getId());
@@ -154,11 +157,13 @@ public class IotHardwareController {
                         vMap.put("plateNumber", r.getVehicle().getPlateNumber());
                         map.put("vehicle", vMap);
                     }
-                    if (r.getZone() != null) {
+                    if (r.getSlot() != null && r.getSlot().getZone() != null) {
                         Map<String, Object> zMap = new HashMap<>();
-                        zMap.put("id", r.getZone().getId());
-                        zMap.put("zoneName", r.getZone().getZoneName());
+                        zMap.put("id", r.getSlot().getZone().getId());
+                        zMap.put("zoneName", r.getSlot().getZone().getZoneName());
                         map.put("zone", zMap);
+                        map.put("slotId", r.getSlot().getId());
+                        map.put("slotName", r.getSlot().getSlotName());
                     }
                     return map;
                 })

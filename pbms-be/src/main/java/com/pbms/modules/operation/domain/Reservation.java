@@ -22,9 +22,9 @@ public class Reservation extends BaseEntity {
     @JoinColumn(name = "vehicle_id")
     private Vehicle vehicle;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "zone_id")
-    private com.pbms.modules.infrastructure.domain.Zone zone;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "slot_id", nullable = false)
+    private Slot slot;
 
     @Column(name = "expected_entry_time", nullable = false)
     private LocalDateTime expectedEntryTime;
@@ -33,7 +33,7 @@ public class Reservation extends BaseEntity {
     private Integer expectedDurationMinutes;
 
     @Column(nullable = false, length = 50)
-    private String status; // PENDING, ACTIVE, COMPLETED, CANCELLED, NO_SHOW
+    private String status;
 
     @Column(name = "reservation_fee", nullable = false, precision = 18, scale = 2)
     private BigDecimal reservationFee;
@@ -46,10 +46,6 @@ public class Reservation extends BaseEntity {
 
     @Column(name = "refund_amount", precision = 18, scale = 2)
     private BigDecimal refundAmount;
-
-    @Builder.Default
-    @Column(name = "is_overstaying", nullable = false)
-    private Boolean isOverstaying = false;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "refunded_by")

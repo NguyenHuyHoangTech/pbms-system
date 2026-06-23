@@ -70,8 +70,6 @@ public class ReservationLifecycleService {
             reservationRepository.save(reservation);
             log.info("Reservation {} closed as no-show at {}", reservationId, TimeProvider.now());
         } else if (ReservationStatus.IN_PARKING.equals(reservation.getStatus())) {
-            reservation.setIsOverstaying(true);
-            reservationRepository.save(reservation);
             messagingTemplate.convertAndSend("/topic/reservations/alerts", (Object) Map.of(
                     "reservationId", reservationId,
                     "slotId", reservation.getSlot().getId(),

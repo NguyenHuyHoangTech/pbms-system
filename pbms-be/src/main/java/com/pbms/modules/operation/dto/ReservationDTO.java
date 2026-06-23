@@ -11,18 +11,25 @@ import java.time.LocalDateTime;
 @Builder
 public class ReservationDTO {
     private Long id;
+    private Long customerId;
     private String plateNumber;
     private String vehicleType;
+    private Long zoneId;
     private String zoneName;
+    private Long slotId;
     private String slotName;
     
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime expectedEntryTime;
     
     private Integer expectedDurationMinutes;
-    private String status; // PENDING, ACTIVE, COMPLETED, CANCELLED
+    private LocalDateTime expectedEndTime;
+    private String status;
     private BigDecimal reservationFee;
     private String qrCode;
+    private String refundStatus;
+    private BigDecimal refundAmount;
+    private Boolean overstaying;
     
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
