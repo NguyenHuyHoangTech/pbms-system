@@ -7,6 +7,8 @@ import com.pbms.modules.operation.service.ReservationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.List;
 
@@ -32,6 +34,14 @@ public class ReservationController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(500, "Lỗi hệ thống: " + e.getMessage()));
         }
+    public ResponseEntity<ApiResponse<ReservationDTO>> createReservation(
+            Authentication authentication,
+            @Valid @RequestBody CreateReservationRequest request
+    ) {
+        ReservationDTO created = reservationService.createReservation(authentication.getName(), request);
+        ApiResponse<ReservationDTO> response = ApiResponse.success(created, "Reservation created successfully");
+        response.setCode(HttpStatus.CREATED.value());
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @PostMapping("/preview")

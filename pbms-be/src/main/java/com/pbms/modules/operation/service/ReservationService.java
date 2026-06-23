@@ -106,10 +106,47 @@ public class ReservationService {
         reservation = reservationRepository.save(reservation);
 
         return mapToDTO(reservation);
+    //UC-407: Xử lý hủy, tính hoàn tiền
+    /*
+    Hoàn 100%: Hủy trước thời gian chuẩn bị slot.
+    Hoàn 50%: Hủy sát giờ nhưng chưa đến giờ booking.
+    Hoàn 0%: Hủy sau giờ booking.
+     */
+    @Transactional
+    public ReservationDTO cancelReservation(Long reservationId, String email, boolean elevatedAccess) {
+        Reservation reservation = reservationRepository.findByIdForUpdate(reservationId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        assertOwnership(reservation, email, elevatedAccess);
+        if (!ReservationStatus.PAID.equals(reservation.getStatus())) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Only a paid reservation can be cancelled");
+        }
+
+        LocalDateTime now = TimeProvider.now();
+        int prepMinutes = bookingPolicyService.getInt(BookingPolicyService.PREP_TIME_MINS);
+        BigDecimal refund;
+        if (now.isBefore(reservation.getExpectedEntryTime().minusMinutes(prepMinutes))) {
+            refund = reservation.getReservationFee();
+            reservation.setStatus(ReservationStatus.PENDING_FULL_REFUND);
+            reservation.setRefundStatus("PENDING_FULL_REFUND");
+        } else if (now.isBefore(reservation.getExpectedEntryTime())) {
+            refund = reservation.getReservationFee().divide(BigDecimal.valueOf(2));
+            reservation.setStatus(ReservationStatus.PENDING_HALF_REFUND);
+            reservation.setRefundStatus("PENDING_HALF_REFUND");
+        } else {
+            refund = BigDecimal.ZERO;
+            reservation.setStatus(ReservationStatus.CANCELLED_NO_REFUND);
+            reservation.setRefundStatus("NO_REFUND");
+        }
+        reservation.setRefundAmount(refund);
+        releaseReservedSlot(reservation.getSlot());
+        return mapToDTO(reservationRepository.save(reservation));
     }
 
     // Cronjob running every 1 minute to check for NO-SHOW reservations
     @Scheduled(fixedRate = 60000)
+    /*
+    UC-407: Đổi slot.
+     */
     @Transactional
     public void handleNoShowReservations() {
         List<Reservation> pendingReservations = reservationRepository.findByStatus("PENDING");
@@ -121,6 +158,30 @@ public class ReservationService {
                 log.info("Reservation {} marked as COMPLETED_UNUSED (No-show, expired at {})", res.getId(), expireTime);
                 res.setStatus("COMPLETED_UNUSED");
                 reservationRepository.save(res);
+    public ReservationDTO reassignSlot(Long reservationId, Long newSlotId) {
+        Reservation reservation = reservationRepository.findByIdForUpdate(reservationId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Reservation not found"));
+        if (!ReservationStatus.PAID.equals(reservation.getStatus())) {
+            throw new BusinessException(HttpStatus.CONFLICT, "Only a paid reservation can be reassigned");
+        }
+        if (reservation.getSlot().getId().equals(newSlotId)) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST, "New slot must be different");
+        }
+
+        Long oldSlotId = reservation.getSlot().getId();
+        Long firstLockId = Math.min(oldSlotId, newSlotId);
+        Long secondLockId = Math.max(oldSlotId, newSlotId);
+        Slot firstLocked = slotRepository.findByIdForUpdate(firstLockId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Slot not found"));
+        Slot secondLocked = slotRepository.findByIdForUpdate(secondLockId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Slot not found"));
+        Slot oldSlot = oldSlotId.equals(firstLockId) ? firstLocked : secondLocked;
+        Slot newSlot = newSlotId.equals(firstLockId) ? firstLocked : secondLocked;
+        if (!newSlot.getZone().getVehicleType().getId()
+                .equals(reservation.getVehicle().getVehicleType().getId())) {
+            throw new BusinessException(HttpStatus.BAD_REQUEST,
+                    "New slot does not support the reservation vehicle type");
+        }
             }
         }
     }

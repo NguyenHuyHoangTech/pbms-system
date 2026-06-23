@@ -42,6 +42,7 @@ public class SecurityConfig {
                 
                 // 4. STAFF POS & OPERATIONS
                 .requestMatchers("/api/v1/gates/**", "/api/v1/work-sessions/**", "/api/v1/payments/**").hasAnyRole("STAFF", "MANAGER", "ADMIN")
+                .requestMatchers("/api/v1/operation/reservations/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
                 .requestMatchers("/api/v1/operation/**").hasAnyRole("STAFF", "MANAGER", "ADMIN")
                 .requestMatchers("/api/v1/incidents/**").hasAnyRole("STAFF", "MANAGER", "ADMIN")
                 .requestMatchers("/api/v1/parking-sessions/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
