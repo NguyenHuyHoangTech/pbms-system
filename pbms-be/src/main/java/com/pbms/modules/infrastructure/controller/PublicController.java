@@ -2,6 +2,7 @@ package com.pbms.modules.infrastructure.controller;
 
 import com.pbms.common.dto.ApiResponse;
 import com.pbms.modules.infrastructure.service.ZoneService;
+import com.pbms.modules.infrastructure.dto.PublicPricingPolicyDTO;
 import com.pbms.modules.system.domain.BuildingProfile;
 import com.pbms.modules.system.service.BuildingProfileService;
 import lombok.RequiredArgsConstructor;
@@ -75,5 +76,13 @@ public class PublicController {
                 "Fetched live parking availability successfully"
         ));
     }
+
+    //UC-405: Xem bảng giá
+    @GetMapping("/pricing")
+    public ResponseEntity<ApiResponse<List<PublicPricingPolicyDTO>>> getPublicPricing() {
+        return ResponseEntity.ok(ApiResponse.success(
+                publicParkingService.getActivePricing(),
+                "Fetched active pricing successfully"
+        ));
     }
 }

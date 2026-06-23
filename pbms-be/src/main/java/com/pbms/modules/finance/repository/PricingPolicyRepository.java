@@ -8,5 +8,8 @@ import java.util.Optional;
 
 @Repository
 public interface PricingPolicyRepository extends JpaRepository<PricingPolicy, Long> {
+
     Optional<PricingPolicy> findByVehicleTypeIdAndStatus(Long vehicleTypeId, String status);
+    //UC-405: Truy vấn bảng giá đang hoạt động.
+    List<PricingPolicy> findByStatusOrderByVehicleType_TypeNameAsc(String status);
 }
