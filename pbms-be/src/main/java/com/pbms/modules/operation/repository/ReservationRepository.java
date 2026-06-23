@@ -20,4 +20,7 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
             "join fetch r.slot s join fetch s.zone z " +
             "where r.id = :id")
     Optional<Reservation> findByIdForUpdate(@Param("id") Long id);
+    //Lấy booking theo danh sách trạng thái.
+    @EntityGraph(attributePaths = {"vehicle", "vehicle.user", "vehicle.vehicleType", "slot", "slot.zone", "slot.zone.floor"})
+    List<Reservation> findByStatusIn(Collection<String> statuses);
 }

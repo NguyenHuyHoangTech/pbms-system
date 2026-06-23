@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -86,17 +87,51 @@ public class ReservationService {
         BigDecimal occupancy = zoneRoutingService.calculateZoneOccupancy(zone.getId());
         if (occupancy.compareTo(BigDecimal.valueOf(100)) >= 0) {
             throw new IllegalStateException("Khu vực này hiện đã được đặt kín chỗ.");
+    public ReservationDTO createReservation(String email, CreateReservationRequest request) {
+        LocalDateTime now = TimeProvider.now();
+        validateBookingWindow(request, now);
+
+        User customer = userRepository.findByEmail(email)
+                .orElseThrow(() -> new BusinessException(HttpStatus.UNAUTHORIZED, "Authenticated user not found"));
+        if (!"ACTIVE".equals(customer.getStatus())) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "Customer account is not active");
         }
 
-        // 4. Create Reservation
+        String normalizedPlate = normalizePlate(request.getPlateNumber());
+        VehicleType vehicleType = vehicleTypeRepository.findById(request.getVehicleTypeId())
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "Vehicle type not found"));
+        Vehicle vehicle = getOrCreateVehicle(customer, vehicleType, normalizedPlate);
+
+        LocalDateTime end = request.getExpectedEntryTime().plusMinutes(request.getExpectedDurationMinutes());
+        boolean vehicleHasOverlap = reservationRepository
+                .findByVehicle_PlateNumberAndStatusIn(normalizedPlate, ReservationStatus.SLOT_BLOCKING)
+                .stream()
+                .anyMatch(existing -> CustomerSlotService.overlaps(
+                        existing, request.getExpectedEntryTime(), end));
+        if (vehicleHasOverlap) {
+            throw new BusinessException(HttpStatus.CONFLICT,
+                    "This vehicle already has a reservation in the selected time range");
+        }
+
+        Slot slot = selectAndLockSlot(request, vehicleType, end);
+        BigDecimal fee = previewPrice(
+                request.getVehicleTypeId(),
+                request.getExpectedDurationMinutes(),
+                request.getExpectedEntryTime()
+        );
+
         Reservation reservation = Reservation.builder()
                 .vehicle(vehicle)
-                .zone(zone)
+                .slot(slot)
                 .expectedEntryTime(request.getExpectedEntryTime())
                 .expectedDurationMinutes(request.getExpectedDurationMinutes())
                 .status("PENDING") // PENDING means paid but hasn't entered
+                .status(ReservationStatus.PAID)
                 .reservationFee(fee)
                 .qrCode("QR-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase())
+                .qrCode("RSV-" + UUID.randomUUID().toString().substring(0, 12).toUpperCase())
+                .refundAmount(BigDecimal.ZERO)
+                .isOverstaying(false)
                 .build();
         
         if (reservation.getCreatedAt() == null) {
@@ -104,6 +139,10 @@ public class ReservationService {
         }
 
         reservation = reservationRepository.save(reservation);
+        Reservation saved = reservationRepository.save(reservation);
+        reservationScheduler.schedule(saved);
+        return mapToDTO(saved);
+    }
 
         return mapToDTO(reservation);
     //UC-407: Xử lý hủy, tính hoàn tiền

@@ -47,6 +47,10 @@ public class Reservation extends BaseEntity {
     @Column(name = "refund_amount", precision = 18, scale = 2)
     private BigDecimal refundAmount;
 
+    @Builder.Default
+    @Column(name = "is_overstaying", nullable = false)
+    private Boolean isOverstaying = false;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "refunded_by")
     private User refundedBy;
