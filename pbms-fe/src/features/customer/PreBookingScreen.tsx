@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Typography, Space, DatePicker, message, Spin, Radio, Input, Modal } from 'antd';
-import { CarOutlined, CreditCardOutlined, CalendarOutlined, QrcodeOutlined, CheckCircleOutlined, EnvironmentOutlined, NumberOutlined } from '@ant-design/icons';
+import { Card, Button, Typography, Space, DatePicker, message, Spin, Radio, Input, Modal, QRCode } from 'antd';
+import { CarOutlined, CreditCardOutlined, CalendarOutlined, CheckCircleOutlined, EnvironmentOutlined, NumberOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import axiosClient from '../../core/api/axiosClient';
 
 const { Title, Text } = Typography;
 
@@ -12,16 +14,8 @@ const VEHICLES = [
 ];
 
 const GATEWAYS = [
-  { id: 'VNPAY', name: 'VNPay', icon: 'https://vnpay.vn/s1/statics.vnpay.vn/2023/6/0oxhzjmxbksr1686814746087.png' },
+  { id: 'PAYPAL', name: 'PayPal Sandbox', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' },
   { id: 'PAYOS', name: 'PayOS', icon: 'https://payos.vn/wp-content/uploads/sites/13/2023/07/payos-logo.svg' }
-];
-
-// Mock Zones
-const MOCK_ZONES = [
-  { id: 1, name: 'Khu vực A (VIP)', available: 5, total: 20, type: 'CAR' },
-  { id: 2, name: 'Khu vực B (Tiêu chuẩn)', available: 12, total: 50, type: 'CAR' },
-  { id: 3, name: 'Khu vực Xe máy B1', available: 45, total: 100, type: 'MOTORBIKE' },
-  { id: 4, name: 'Khu vực C (Đã kín)', available: 0, total: 30, type: 'CAR' },
 ];
 
 export const PreBookingScreen = () => {
@@ -34,36 +28,98 @@ export const PreBookingScreen = () => {
   const [arrivalTime, setArrivalTime] = useState<dayjs.Dayjs>(dayjs());
   const [endTime, setEndTime] = useState<dayjs.Dayjs>(dayjs().add(2, 'hour'));
   
-  const [selectedGateway, setSelectedGateway] = useState<string>('VNPAY');
+  const [selectedGateway, setSelectedGateway] = useState<string>('PAYPAL');
   
   const [isQRModalVisible, setIsQRModalVisible] = useState(false);
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(60);
   const [isPaymentSuccess, setIsPaymentSuccess] = useState(false);
+  const [paymentUrl, setPaymentUrl] = useState<string>('');
+  const [paymentOrderId, setPaymentOrderId] = useState<string>('');
 
-  // Filter zones by vehicle type
-  const vehicleType = VEHICLES.find(v => v.id === selectedVehicle)?.type;
-  const filteredZones = MOCK_ZONES.filter(z => !vehicleType || z.type === vehicleType);
-
-  // Calculate fee
-  const hours = Math.max(1, Math.ceil(endTime.diff(arrivalTime, 'hour', true)));
-  const baseRate = selectedVehicle === 1 ? 25000 : 5000;
-  const totalFee = hours * baseRate;
-
-  useEffect(() => {
-    let timer: any;
-    if (isQRModalVisible && !isPaymentSuccess) {
-      if (countdown > 0) {
-        timer = setTimeout(() => setCountdown(c => c - 1), 1000);
-      } else {
-        setIsPaymentSuccess(true);
-        message.success('Thanh toán thành công! Chỗ của bạn đã được giữ.');
-        setTimeout(() => {
-          navigate('/customer/my-parking?tab=booking');
-        }, 2000);
-      }
+  // Fetch Zones
+  const { data: zonesData } = useQuery({
+    queryKey: ['zones', 'map'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/infrastructure/zones/map');
+      return res.data.data;
     }
-    return () => clearTimeout(timer);
-  }, [isQRModalVisible, countdown, isPaymentSuccess, navigate]);
+  });
+
+  const allZones = zonesData || [];
+  const vehicleType = VEHICLES.find(v => v.id === selectedVehicle)?.type;
+  const filteredZones = allZones.filter((z: any) => !vehicleType || z.vehicleType === vehicleType);
+
+  const durationMinutes = Math.max(1, Math.ceil(endTime.diff(arrivalTime, 'minute', true)));
+
+  // Calculate Fee from DB
+  const { data: feeData, isFetching: isFeeLoading } = useQuery({
+    queryKey: ['preview-price', selectedVehicle, durationMinutes],
+    queryFn: async () => {
+      if (!selectedVehicle) return 0;
+      // Tính phí tạm tính từ pricing engine
+      try {
+        const res = await axiosClient.post('/customer/reservations/preview', {
+          vehicleTypeId: selectedVehicle,
+          expectedDurationMinutes: durationMinutes
+        });
+        return res.data.data || 0;
+      } catch {
+        // Fallback: tính tạm theo công thức đơn giản nếu endpoint chưa có
+        return Math.ceil(durationMinutes / 60) * (selectedVehicle === 1 ? 15000 : 5000);
+      }
+    },
+    enabled: !!selectedVehicle && durationMinutes > 0,
+  });
+
+  const totalFee = feeData || 0;
+
+  const createBookingMutation = useMutation({
+    mutationFn: async () => {
+      const res = await axiosClient.post('/customer/reservations', {
+        vehicleTypeId: selectedVehicle,
+        plateNumber: plateNumber,
+        zoneId: selectedZone,
+        expectedEntryTime: arrivalTime.format('YYYY-MM-DDTHH:mm:ss'),
+        expectedDurationMinutes: durationMinutes
+      });
+      return res.data.data;
+    },
+    onSuccess: () => {
+      setCountdown(5);
+      setIsPaymentSuccess(true);
+      message.success('Thanh toán thành công! Chỗ của bạn đã được giữ.');
+      setTimeout(() => {
+        navigate('/customer/my-parking?tab=booking');
+      }, 2000);
+    },
+    onError: (err: any) => {
+      message.error(err.response?.data?.message || 'Có lỗi xảy ra khi tạo Đặt chỗ');
+      setIsQRModalVisible(false);
+    }
+  });
+
+  const generateLinkMutation = useMutation({
+    mutationFn: async () => {
+      const res = await axiosClient.post('/payments/generate-link', {
+        amount: totalFee,
+        gateway: selectedGateway
+      });
+      return res.data.data;
+    },
+    onSuccess: (data) => {
+      setPaymentUrl(data.paymentUrl);
+      if (selectedGateway === 'PAYPAL') {
+        const urlParams = new URL(data.paymentUrl).searchParams;
+        setPaymentOrderId(urlParams.get('token') || '');
+      } else {
+        setPaymentOrderId(data.paymentUrl.split('/').pop() || '');
+      }
+    },
+    onError: () => {
+      message.error('Lỗi khi tạo link thanh toán');
+      setIsQRModalVisible(false);
+    }
+  });
 
   const handleConfirm = () => {
     if (!selectedVehicle) return message.error('Vui lòng chọn loại phương tiện');
@@ -72,9 +128,36 @@ export const PreBookingScreen = () => {
     if (endTime.isBefore(arrivalTime)) return message.error('Thời gian ra phải sau thời gian vào');
     
     setIsQRModalVisible(true);
-    setCountdown(5);
     setIsPaymentSuccess(false);
+    setPaymentUrl('');
+    setPaymentOrderId('');
+    setCountdown(60);
+    generateLinkMutation.mutate();
   };
+
+  useEffect(() => {
+    let timer: any;
+    if (isQRModalVisible && !isPaymentSuccess && paymentOrderId) {
+      if (countdown > 0) {
+        timer = setTimeout(() => {
+          setCountdown(c => c - 1);
+          if (countdown % 3 === 0) {
+            axiosClient.post('/payments/paypal/capture', { token: paymentOrderId })
+              .then(res => {
+                if (res.data?.data?.status === 'COMPLETED') {
+                  createBookingMutation.mutate();
+                }
+              })
+              .catch(() => {});
+          }
+        }, 1000);
+      } else {
+        setIsQRModalVisible(false);
+        message.warning('Hết thời gian chờ thanh toán.');
+      }
+    }
+    return () => clearTimeout(timer);
+  }, [isQRModalVisible, isPaymentSuccess, paymentOrderId, countdown]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col relative pb-10">
@@ -85,7 +168,6 @@ export const PreBookingScreen = () => {
 
       <div className="max-w-7xl mx-auto w-full p-4 md:p-6 mt-2 md:mt-4 grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 items-start">
         
-        {/* LEFT COLUMN: Input Form */}
         <div className="lg:col-span-2 space-y-6">
           
           <Card title={<><CarOutlined className="mr-2 text-blue-500"/>1. Thông tin phương tiện</>} className="shadow-sm rounded-xl border-slate-200">
@@ -152,8 +234,8 @@ export const PreBookingScreen = () => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredZones.map(z => {
-                  const isFull = z.available === 0;
+                {filteredZones.map((z: any) => {
+                  const isFull = z.availableSlots === 0;
                   return (
                     <div
                       key={z.id}
@@ -171,10 +253,10 @@ export const PreBookingScreen = () => {
                         <div className="flex-1 bg-slate-200 h-2 rounded-full overflow-hidden">
                           <div 
                             className={`h-full ${isFull ? 'bg-red-500' : 'bg-green-500'}`} 
-                            style={{ width: `${((z.total - z.available) / z.total) * 100}%` }}
+                            style={{ width: `${((z.capacity - z.availableSlots) / z.capacity) * 100}%` }}
                           />
                         </div>
-                        <Text className="text-xs font-bold whitespace-nowrap">Trống {z.available}/{z.total}</Text>
+                        <Text className="text-xs font-bold whitespace-nowrap">Trống {z.availableSlots}/{z.capacity}</Text>
                       </div>
                     </div>
                   );
@@ -182,13 +264,10 @@ export const PreBookingScreen = () => {
               </div>
             )}
           </Card>
-
         </div>
 
-        {/* RIGHT COLUMN: Sticky Summary */}
         <div className="lg:col-span-1">
           <div className="lg:sticky lg:top-24 space-y-6">
-            
             <Card title="Tóm tắt Đơn Đặt Chỗ" className="shadow-lg rounded-xl border-slate-200 overflow-hidden" headStyle={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
               <Space direction="vertical" className="w-full" size="middle">
                 <div className="flex justify-between border-b border-dashed border-slate-200 pb-3">
@@ -200,20 +279,12 @@ export const PreBookingScreen = () => {
                   <Text strong className="text-slate-800 font-mono">{plateNumber || '---'}</Text>
                 </div>
                 <div className="flex justify-between border-b border-dashed border-slate-200 pb-3">
-                  <Text className="text-slate-500">Khu vực:</Text>
-                  <Text strong className="text-slate-800 text-right max-w-[150px]">{MOCK_ZONES.find(z => z.id === selectedZone)?.name || '---'}</Text>
+                  <Text className="text-slate-500">Khu vực (Zone):</Text>
+                  <Text strong className="text-slate-800 text-right max-w-[150px]">{allZones.find((z: any) => z.id === selectedZone)?.name || '---'}</Text>
                 </div>
-                <div className="flex justify-between border-b border-dashed border-slate-200 pb-3">
-                  <Text className="text-slate-500">Thời gian đỗ:</Text>
-                  <Text strong className="text-slate-800 text-right">
-                    {arrivalTime.format('HH:mm DD/MM')}<br/>đến {endTime.format('HH:mm DD/MM')}<br/>
-                    <span className="text-blue-500 text-xs">({hours.toFixed(1)} giờ)</span>
-                  </Text>
-                </div>
-                
-                <div className="bg-slate-50 p-4 rounded-lg mt-2 flex justify-between items-center border border-slate-200">
-                  <Text strong className="text-slate-600">TỔNG TIỀN:</Text>
-                  <Text className="text-2xl font-black text-blue-600">{selectedVehicle ? totalFee.toLocaleString() : 0} ₫</Text>
+                <div className="flex justify-between pb-1">
+                  <Text className="text-slate-500">Tổng phí tạm tính:</Text>
+                  {isFeeLoading ? <Spin size="small" /> : <Text strong className="text-xl text-blue-600 font-bold">{totalFee.toLocaleString()} VNĐ</Text>}
                 </div>
               </Space>
             </Card>
@@ -242,17 +313,17 @@ export const PreBookingScreen = () => {
             <Button 
               type="primary" 
               size="large" 
-              className="w-full h-14 text-lg font-bold rounded-xl shadow-lg bg-blue-600 hover:bg-blue-500 animate-pulse"
+              block 
+              className="h-14 text-lg font-bold shadow-md"
+              onClick={handleConfirm}
               onClick={handleConfirm}
             >
-              XÁC NHẬN ĐẶT CHỖ
+              Xác nhận & Thanh toán
             </Button>
           </div>
         </div>
-
       </div>
 
-      {/* QR Code Modal */}
       <Modal
         open={isQRModalVisible}
         footer={null}
@@ -269,8 +340,8 @@ export const PreBookingScreen = () => {
               <Text className="block mb-6 text-slate-500">Mở ứng dụng Ngân hàng hoặc Ví điện tử</Text>
               
               <div className="relative inline-block mb-6">
-                <div className="bg-white p-4 border-2 border-dashed border-slate-300 rounded-2xl shadow-sm relative z-10">
-                  <QrcodeOutlined className="text-[200px] text-slate-800" />
+                <div className="bg-white p-4 border-2 border-dashed border-slate-300 rounded-2xl shadow-sm relative z-10 flex justify-center items-center h-[240px] w-[240px]">
+                  {paymentUrl ? <QRCode value={paymentUrl} size={200} /> : <Spin size="large" />}
                 </div>
                 {/* Scanning animation line */}
                 <style>
@@ -282,11 +353,17 @@ export const PreBookingScreen = () => {
                     }
                   `}
                 </style>
-                <div className="absolute top-2 left-2 w-[calc(100%-16px)] h-1 bg-green-500 shadow-[0_0_15px_#22c55e] z-20" style={{ animation: 'scan 2s ease-in-out infinite' }}></div>
+                {paymentUrl && <div className="absolute top-2 left-2 w-[calc(100%-16px)] h-1 bg-green-500 shadow-[0_0_15px_#22c55e] z-20" style={{ animation: 'scan 2s ease-in-out infinite' }}></div>}
               </div>
               
               <div className="text-2xl font-black text-blue-600 mb-2">{totalFee.toLocaleString()} VND</div>
-              <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg">Mã GD: PBMS-{Math.floor(100000 + Math.random() * 900000)}</Text>
+              <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg break-all px-2 text-xs">
+                {selectedGateway === 'PAYPAL' ? (
+                  <a href={paymentUrl} target="_blank" rel="noreferrer">Mở PayPal Checkout</a>
+                ) : (
+                  <a href={paymentUrl} target="_blank" rel="noreferrer">Mở PayOS Checkout</a>
+                )}
+              </Text>
               
               <div className="flex items-center justify-center space-x-2 text-slate-600">
                 <Spin size="small" />

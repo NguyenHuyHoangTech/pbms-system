@@ -15,7 +15,8 @@ import {
   UserOutlined,
   NodeIndexOutlined,
   ScheduleOutlined,
-  SettingOutlined
+  SettingOutlined,
+  WarningOutlined
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../core/store/useAuthStore';
@@ -51,6 +52,7 @@ export const ManagerLayout = () => {
     { key: '/manager/building-profile', icon: <BankOutlined />, label: 'Hồ Sơ Tòa Nhà' },
     { key: '/manager/card-management', icon: <CreditCardOutlined />, label: 'Kho Thẻ (RFID)' },
     { key: '/manager/ticket-center', icon: <CustomerServiceOutlined />, label: 'Trung Tâm Xử Lý' },
+    { key: '/manager/incidents', icon: <WarningOutlined />, label: 'Quản Lý Sự Cố' },
   ];
 
   const userMenu = {

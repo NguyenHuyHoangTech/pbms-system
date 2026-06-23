@@ -38,7 +38,7 @@ export const StaffLayout = () => {
     navigate('/login');
   };
 
-  const userMenu = {
+  const userMenu: any = {
     items: [
       { key: 'settings', icon: <SettingOutlined />, label: 'Cài đặt', onClick: () => setIsSettingsOpen(true) },
       { type: 'divider' },
@@ -46,7 +46,7 @@ export const StaffLayout = () => {
     ],
   };
 
-  const activeGateType = sessionStorage.getItem('mockActiveGateType');
+  const activeGateType = sessionStorage.getItem('activeGateType');
 
   return (
     <Layout className="min-h-screen">
@@ -78,7 +78,7 @@ export const StaffLayout = () => {
             type="primary" 
             danger 
             icon={<AlertOutlined />} 
-            onClick={() => navigate('/staff/exception-desk')}
+            onClick={() => navigate('/staff/incidents')}
             className="font-bold shadow-lg"
             disabled={shiftStatus !== 'OPEN'}
             title={shiftStatus !== 'OPEN' ? "Vui lòng mở ca trực để thực hiện tác vụ này" : ""}

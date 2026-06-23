@@ -1,0 +1,1 @@
+public class H { public static void main(String[] a) { System.out.println(new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().encode("Fpt123456789@")); } }

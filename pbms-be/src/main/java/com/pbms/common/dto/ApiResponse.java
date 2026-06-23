@@ -17,7 +17,7 @@ public class ApiResponse<T> {
     private String message;
     private T data;
     @Builder.Default
-    private LocalDateTime timestamp = LocalDateTime.now();
+    private LocalDateTime timestamp = com.pbms.common.utils.TimeProvider.now();
 
     public static <T> ApiResponse<T> success(T data, String message) {
         return ApiResponse.<T>builder()

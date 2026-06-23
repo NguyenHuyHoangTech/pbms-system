@@ -8,6 +8,8 @@ import {
   CloseCircleOutlined, FilterOutlined, MoreOutlined, 
   ExclamationCircleOutlined, HistoryOutlined, UserOutlined, CarOutlined
 } from '@ant-design/icons';
+import { useQuery } from '@tanstack/react-query';
+import axiosClient from '../../core/api/axiosClient';
 
 const { Title, Text } = Typography;
 
@@ -18,28 +20,29 @@ interface MonthlyPass {
   phone: string;
   plate: string;
   type: string;
-  status: 'ACTIVE' | 'EXPIRING_SOON' | 'EXPIRED' | 'CANCELED' | 'PENDING';
+  status: 'ACTIVE' | 'EXPIRING_SOON' | 'EXPIRED' | 'CANCELED' | 'PENDING' | string;
   startDate: string;
   endDate: string;
 }
-
-const MOCK_PASSES: MonthlyPass[] = [
-  { id: 'MP-1001', user: 'Nguyen Van A', email: 'nva@gmail.com', phone: '0901234567', plate: '51G-123.45', type: 'Ô tô', status: 'PENDING', startDate: '-', endDate: '-' },
-  { id: 'MP-1002', user: 'Tran Thi B', email: 'ttb@gmail.com', phone: '0912345678', plate: '59A-999.99', type: 'Ô tô', status: 'ACTIVE', startDate: '2023-09-18', endDate: '2026-07-18' },
-  { id: 'MP-1003', user: 'Le Van C', email: 'lvc@gmail.com', phone: '0987654321', plate: '60B-111.22', type: 'Xe máy', status: 'EXPIRED', startDate: '2023-05-10', endDate: '2023-06-10' },
-  { id: 'MP-1004', user: 'Pham D', email: 'phamd@gmail.com', phone: '0922334455', plate: '51H-555.66', type: 'Xe điện', status: 'EXPIRING_SOON', startDate: '2023-09-25', endDate: '2023-10-25' },
-];
 
 export const MonthlyPassScreen = () => {
   const [selectedRecord, setSelectedRecord] = useState<MonthlyPass | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
-  const activeCount = MOCK_PASSES.filter(p => p.status === 'ACTIVE').length;
-  const expiringCount = MOCK_PASSES.filter(p => p.status === 'EXPIRING_SOON').length;
-  const inactiveCount = MOCK_PASSES.filter(p => p.status === 'EXPIRED' || p.status === 'CANCELED').length;
+  const { data: monthlyPassesData, isLoading } = useQuery({
+    queryKey: ['monthlyPasses'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/operation/monthly-tickets');
+      return res.data.data;
+    }
+  });
+
+  const passes: MonthlyPass[] = monthlyPassesData || [];
+
+  const activeCount = passes.filter(p => p.status === 'ACTIVE').length;
+  const expiringCount = passes.filter(p => p.status === 'EXPIRING_SOON').length;
+  const inactiveCount = passes.filter(p => p.status === 'EXPIRED' || p.status === 'CANCELED').length;
   
-  // Fake capacity metric
-  const currentCapacityPercent = 85;
 
   const handleOpenDrawer = (record: MonthlyPass) => {
     setSelectedRecord(record);
@@ -90,19 +93,6 @@ export const MonthlyPassScreen = () => {
 
   return (
     <div className="h-full overflow-y-auto bg-gray-50 p-6 pb-24">
-      {/* CẢNH BÁO TOÀN CỤC */}
-      {currentCapacityPercent > 80 && (
-        <Alert
-          message="CẢNH BÁO SỨC CHỨA: Tỷ lệ lấp đầy vé tháng đang ở mức rủi ro!"
-          description={`Hiện tại lượng khách đăng ký vé tháng đã chiếm ${currentCapacityPercent}% tổng số slot quy hoạch. Vui lòng mở rộng thêm Zone Vé tháng hoặc tạm ngưng nhận đăng ký mới để tránh Overbook.`}
-          type="warning"
-          showIcon
-          className="mb-6 font-semibold"
-          action={
-            <Button size="small" type="primary" danger>Khóa Đăng ký Mới</Button>
-          }
-        />
-      )}
 
       <div className="mb-6">
         <Title level={2} className="m-0 text-gray-800 flex items-center">
@@ -163,10 +153,11 @@ export const MonthlyPassScreen = () => {
       {/* DATA TABLE */}
       <Card className="shadow-sm rounded-xl border-gray-200" bodyStyle={{ padding: 0 }}>
         <Table 
-          dataSource={MOCK_PASSES} 
+          dataSource={passes} 
           columns={columns} 
           rowKey="id" 
           pagination={{ pageSize: 10 }}
+          loading={isLoading}
           rowClassName={(record) => record.status === 'EXPIRING_SOON' ? 'bg-yellow-50' : ''}
         />
       </Card>
@@ -202,12 +193,6 @@ export const MonthlyPassScreen = () => {
                       <div className="flex justify-between"><Text type="secondary">Loại xe:</Text> <Text strong><CarOutlined className="mr-1"/>{selectedRecord.type}</Text></div>
                     </div>
                   </Card>
-                  {selectedRecord.status === 'PENDING' && (
-                    <div className="mt-4 flex gap-3">
-                      <Button type="primary" className="flex-1 bg-green-600">Duyệt Yêu Cầu</Button>
-                      <Button danger className="flex-1">Từ Chối</Button>
-                    </div>
-                  )}
                 </div>
               )
             },
@@ -216,40 +201,9 @@ export const MonthlyPassScreen = () => {
               label: <span><HistoryOutlined /> Lịch sử Thanh toán</span>,
               children: (
                 <div className="mt-4">
-                  <Timeline
-                    items={[
-                      {
-                        color: 'green',
-                        children: (
-                          <div className="mb-4">
-                            <Text strong>Gia hạn 1 Tháng</Text>
-                            <div className="text-xs text-gray-500">25/09/2023 09:30 AM</div>
-                            <div className="mt-1"><Tag color="success">Thành công (VNPay)</Tag> <Text strong>+ 150.000đ</Text></div>
-                          </div>
-                        ),
-                      },
-                      {
-                        color: 'green',
-                        children: (
-                          <div className="mb-4">
-                            <Text strong>Gia hạn 1 Tháng</Text>
-                            <div className="text-xs text-gray-500">25/08/2023 10:15 AM</div>
-                            <div className="mt-1"><Tag color="success">Thành công (Tiền mặt)</Tag> <Text strong>+ 150.000đ</Text></div>
-                          </div>
-                        ),
-                      },
-                      {
-                        color: 'red',
-                        children: (
-                          <div className="mb-4">
-                            <Text strong>Gia hạn 1 Tháng</Text>
-                            <div className="text-xs text-gray-500">24/08/2023 15:00 PM</div>
-                            <div className="mt-1"><Tag color="error">Thất bại (Lỗi thẻ)</Tag></div>
-                          </div>
-                        ),
-                      },
-                    ]}
-                  />
+                  <div className="text-center py-6 text-gray-400 italic">
+                    (Tính năng xem lịch sử thanh toán đang được phát triển)
+                  </div>
                 </div>
               )
             }

@@ -1,6 +1,6 @@
 package com.pbms.modules.system.service;
 
-import com.pbms.modules.system.entity.BuildingProfile;
+import com.pbms.modules.system.domain.BuildingProfile;
 import com.pbms.modules.system.repository.BuildingProfileRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;

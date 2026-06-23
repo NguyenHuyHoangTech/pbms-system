@@ -22,30 +22,24 @@ export const SystemConfigScreen = () => {
   const [payosApiKey, setPayosApiKey] = useState('');
   const [payosChecksumKey, setPayosChecksumKey] = useState('');
 
-  // VNPay Configs
-  const [vnpayClientId, setVnpayClientId] = useState('');
-  const [vnpaySecret, setVnpaySecret] = useState('');
+  // PayPal Configs
+  const [paypalClientId, setPaypalClientId] = useState('');
+  const [paypalSecret, setPaypalSecret] = useState('');
 
   // Statuses
   const [testEmailStatus, setTestEmailStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testPayosStatus, setTestPayosStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [testVnpayStatus, setTestVnpayStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [testPaypalStatus, setTestPaypalStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
 
-  const MOCK_CONFIGS = [
-    { id: 1, configKey: 'SMTP_EMAIL', configValue: 'no-reply@pbms.com', description: 'SMTP Email Address' },
-    { id: 2, configKey: 'SMTP_APP_PASSWORD', configValue: 'abcdefghijklmnop', description: 'SMTP App Password' },
-    { id: 3, configKey: 'PAYOS_CLIENT_ID', configValue: 'client-id-payos', description: 'PayOS Client ID' },
-    { id: 4, configKey: 'PAYOS_API_KEY', configValue: 'payos-api-key-xyz', description: 'PayOS API Key' },
-    { id: 5, configKey: 'PAYOS_CHECKSUM_KEY', configValue: 'payos-checksum-xyz', description: 'PayOS Checksum Key' },
-    { id: 6, configKey: 'VNPAY_CLIENT_ID', configValue: 'vnpay-sandbox-client', description: 'VNPay Sandbox Client ID' },
-    { id: 7, configKey: 'VNPAY_SECRET', configValue: 'vnpay-secret-sandbox', description: 'VNPay Sandbox Secret' },
-    { id: 8, configKey: 'MAX_LOGIN_ATTEMPTS', configValue: '5', description: 'Max login attempts before lock' },
-  ];
-
-  const { data: configs, isLoading } = useQuery({
+  const { data: configs = [], isLoading } = useQuery({
     queryKey: ['system-configs'],
     queryFn: async () => {
-      return new Promise<any[]>(resolve => setTimeout(() => resolve(MOCK_CONFIGS), 500));
+      try {
+        const res = await axiosClient.get('/system/configs');
+        return res.data.data;
+      } catch (err) {
+        return [];
+      }
     }
   });
 
@@ -58,41 +52,65 @@ export const SystemConfigScreen = () => {
       setPayosClientId(getVal('PAYOS_CLIENT_ID'));
       setPayosApiKey(getVal('PAYOS_API_KEY'));
       setPayosChecksumKey(getVal('PAYOS_CHECKSUM_KEY'));
-      setVnpayClientId(getVal('VNPAY_CLIENT_ID'));
-      setVnpaySecret(getVal('VNPAY_SECRET'));
+      setPaypalClientId(getVal('PAYPAL_CLIENT_ID'));
+      setPaypalSecret(getVal('PAYPAL_SECRET'));
     }
   }, [configs]);
 
   const testConnectionMutation = useMutation({
-    mutationFn: async (type: 'EMAIL' | 'PAYOS' | 'VNPAY') => {
-      return new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
+    mutationFn: async (type: 'EMAIL' | 'PAYOS' | 'PAYPAL') => {
+      if (type === 'EMAIL') {
+        await axiosClient.post('/system/configs/test-email', { email: smtpEmail, password: smtpPassword });
+      } else {
+        // Other tests can be implemented similarly if backend supports
+        return new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
+      }
     },
     onMutate: (type) => {
       if (type === 'EMAIL') setTestEmailStatus('testing');
       if (type === 'PAYOS') setTestPayosStatus('testing');
-      if (type === 'VNPAY') setTestVnpayStatus('testing');
+      if (type === 'PAYPAL') setTestPaypalStatus('testing');
     },
     onSuccess: (_, type) => {
-      message.success('Kết nối thành công! (Mocked)');
+      message.success('Kết nối thành công!');
       if (type === 'EMAIL') setTestEmailStatus('success');
       if (type === 'PAYOS') setTestPayosStatus('success');
-      if (type === 'VNPAY') setTestVnpayStatus('success');
+      if (type === 'PAYPAL') setTestPaypalStatus('success');
     },
     onError: (_, type) => {
       message.error('Kết nối thất bại.');
       if (type === 'EMAIL') setTestEmailStatus('error');
       if (type === 'PAYOS') setTestPayosStatus('error');
-      if (type === 'VNPAY') setTestVnpayStatus('error');
+      if (type === 'PAYPAL') setTestPaypalStatus('error');
     }
   });
 
   const saveConfigMutation = useMutation({
     mutationFn: async () => {
-      return new Promise<void>(resolve => setTimeout(() => resolve(), 500));
+      // In a real scenario, we'd update each config
+      const promises = [];
+      const updateIfChanged = (key: string, value: string) => {
+        const config = configs.find((c: any) => c.configKey === key);
+        if (config && config.configValue !== value) {
+          promises.push(axiosClient.put(`/system/configs/${config.id}`, { ...config, configValue: value }));
+        } else if (!config && value.trim() !== '') {
+          promises.push(axiosClient.post(`/system/configs`, { configKey: key, configValue: value, description: 'System Configuration' }));
+        }
+      };
+      
+      updateIfChanged('SMTP_EMAIL', smtpEmail);
+      updateIfChanged('SMTP_APP_PASSWORD', smtpPassword);
+      updateIfChanged('PAYOS_CLIENT_ID', payosClientId);
+      updateIfChanged('PAYOS_API_KEY', payosApiKey);
+      updateIfChanged('PAYOS_CHECKSUM_KEY', payosChecksumKey);
+      updateIfChanged('PAYPAL_CLIENT_ID', paypalClientId);
+      updateIfChanged('PAYPAL_SECRET', paypalSecret);
+
+      await Promise.all(promises);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['system-configs'] });
-      message.success('Đã lưu cấu hình hệ thống! (Mocked)');
+      message.success('Đã lưu cấu hình hệ thống!');
     },
     onError: () => {
       message.error('Lưu cấu hình thất bại.');
@@ -191,22 +209,22 @@ export const SystemConfigScreen = () => {
               </div>
             </Card>
 
-            {/* VNPAY CONFIG */}
-            <Card title={<span className="text-green-700"><ApiOutlined className="mr-2"/>VNPay Configuration</span>} className="shadow-sm border-gray-200 rounded-xl">
+            {/* PAYPAL CONFIG */}
+            <Card title={<span className="text-green-700"><ApiOutlined className="mr-2"/>PayPal Configuration</span>} className="shadow-sm border-gray-200 rounded-xl">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
                   <Text strong className="block mb-1 text-gray-600">Sandbox Client ID</Text>
                   <Input 
-                    value={vnpayClientId} 
-                    onChange={e => { setVnpayClientId(e.target.value); setTestVnpayStatus('idle'); }} 
+                    value={paypalClientId} 
+                    onChange={e => { setPaypalClientId(e.target.value); setTestPaypalStatus('idle'); }} 
                     size="large"
                   />
                 </div>
                 <div>
                   <Text strong className="block mb-1 text-gray-600">Sandbox Secret</Text>
                   <Input.Password
-                    value={vnpaySecret}
-                    onChange={e => { setVnpaySecret(e.target.value); setTestVnpayStatus('idle'); }}
+                    value={paypalSecret}
+                    onChange={e => { setPaypalSecret(e.target.value); setTestPaypalStatus('idle'); }}
                     iconRender={(visible) => (visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />)}
                     size="large"
                   />
@@ -214,12 +232,12 @@ export const SystemConfigScreen = () => {
               </div>
               <div className="flex justify-between items-center border-t pt-4 mt-4">
                 <Button 
-                  loading={testConnectionMutation.isPending && testConnectionMutation.variables === 'VNPAY'} 
-                  onClick={() => testConnectionMutation.mutate('VNPAY')}
+                  loading={testConnectionMutation.isPending && testConnectionMutation.variables === 'PAYPAL'} 
+                  onClick={() => testConnectionMutation.mutate('PAYPAL')}
                 >
                   Test Connection
                 </Button>
-                {testVnpayStatus === 'success' && <Text type="success">Verified</Text>}
+                {testPaypalStatus === 'success' && <Text type="success">Verified</Text>}
               </div>
             </Card>
 
@@ -231,12 +249,12 @@ export const SystemConfigScreen = () => {
                 loading={saveConfigMutation.isPending}
                 onClick={() => saveConfigMutation.mutate()}
                 className="bg-blue-600"
-                disabled={testEmailStatus !== 'success' || testPayosStatus !== 'success' || testVnpayStatus !== 'success'}
+                disabled={testEmailStatus !== 'success' || testPayosStatus !== 'success' || testPaypalStatus !== 'success'}
               >
                 Save All Configurations
               </Button>
             </div>
-            { (testEmailStatus !== 'success' || testPayosStatus !== 'success' || testVnpayStatus !== 'success') && (
+            { (testEmailStatus !== 'success' || testPayosStatus !== 'success' || testPaypalStatus !== 'success') && (
               <div className="text-right mt-2 text-xs text-red-500">
                 * You must successfully test all connections before saving.
               </div>

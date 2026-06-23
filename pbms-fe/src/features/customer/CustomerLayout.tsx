@@ -15,8 +15,10 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../core/store/useAuthStore';
 import { useWebSocket } from '../../core/websocket/useWebSocket';
 import { UserProfileSettingsModal } from '../shared/components/UserProfileSettingsModal';
+import { useQuery } from '@tanstack/react-query';
+import axiosClient from '../../core/api/axiosClient';
 
-const { Header, Content } = Layout;
+const { Header, Content, Footer } = Layout;
 const { Text } = Typography;
 
 export const CustomerLayout = () => {
@@ -28,6 +30,18 @@ export const CustomerLayout = () => {
   const { connected } = useWebSocket();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+
+  const { data: buildingProfile } = useQuery({
+    queryKey: ['public-building-profile'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/public/building-profile');
+        return res.data.data;
+      } catch (err) {
+        return null;
+      }
+    }
+  });
 
   const handleLogout = () => {
     logout();
@@ -123,6 +137,29 @@ export const CustomerLayout = () => {
       <Content className="pt-16 md:pt-16 pb-6 m-0">
         <Outlet />
       </Content>
+
+      <Footer className="bg-white border-t border-gray-200 text-center text-gray-500 py-6 mt-auto">
+        <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <Text strong className="block mb-2 text-gray-700">{buildingProfile?.name || 'PBMS Parking'}</Text>
+            <Text className="text-gray-500 text-sm block">Hệ thống quản lý bãi đỗ xe thông minh hàng đầu.</Text>
+            <Text className="text-gray-500 text-sm block">An toàn - Nhanh chóng - Tiện lợi.</Text>
+          </div>
+          <div>
+            <Text strong className="block mb-2 text-gray-700">Liên hệ</Text>
+            <Text className="text-gray-500 text-sm block">Hotline: {buildingProfile?.hotline || '1900 1234'}</Text>
+            <Text className="text-gray-500 text-sm block">Giờ hoạt động: {buildingProfile?.operatingHours || '24/7'}</Text>
+          </div>
+          <div>
+            <Text strong className="block mb-2 text-gray-700">Địa chỉ</Text>
+            <Text className="text-gray-500 text-sm block">{buildingProfile?.address ? buildingProfile.address.split(',')[0] : 'Khu Công Nghệ Cao'}</Text>
+            <Text className="text-gray-500 text-sm block">{buildingProfile?.address ? buildingProfile.address.split(',').slice(1).join(',').trim() : 'Thành phố Thủ Đức, TP.HCM'}</Text>
+          </div>
+        </div>
+        <div className="mt-6 pt-4 border-t border-gray-100 text-xs">
+          PBMS © {new Date().getFullYear()} Hệ thống quản lý bãi xe chuyên nghiệp
+        </div>
+      </Footer>
 
       <UserProfileSettingsModal 
         isOpen={isSettingsOpen} 

@@ -1,7 +1,7 @@
 package com.pbms.modules.system.controller;
 
 import com.pbms.common.dto.ApiResponse;
-import com.pbms.modules.system.entity.SystemConfig;
+import com.pbms.modules.system.domain.SystemConfig;
 import com.pbms.modules.system.service.SystemConfigService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Typography, Space, DatePicker, message, Spin, Radio, Input, Modal, Row, Col } from 'antd';
-import { IdcardOutlined, CarOutlined, CreditCardOutlined, QrcodeOutlined, CheckCircleOutlined, UserOutlined, CalendarOutlined, NumberOutlined } from '@ant-design/icons';
+import { Card, Button, Typography, Space, DatePicker, message, Spin, Radio, Input, Modal, Row, Col, QRCode } from 'antd';
+import { IdcardOutlined, CarOutlined, CreditCardOutlined, CheckCircleOutlined, UserOutlined, CalendarOutlined, NumberOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useAuthStore } from '../../core/store/useAuthStore';
 
@@ -20,7 +20,7 @@ const PACKAGES = [
 ];
 
 const GATEWAYS = [
-  { id: 'VNPAY', name: 'VNPay', icon: 'https://vnpay.vn/s1/statics.vnpay.vn/2023/6/0oxhzjmxbksr1686814746087.png' },
+  { id: 'PAYPAL', name: 'PayPal Sandbox', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' },
   { id: 'PAYOS', name: 'PayOS', icon: 'https://payos.vn/wp-content/uploads/sites/13/2023/07/payos-logo.svg' }
 ];
 
@@ -34,11 +34,13 @@ export const CustomerMonthlyPassScreen = () => {
   const [selectedDuration, setSelectedDuration] = useState<number>(1);
   const [startDate, setStartDate] = useState<dayjs.Dayjs>(dayjs());
   
-  const [selectedGateway, setSelectedGateway] = useState<string>('VNPAY');
+  const [selectedGateway, setSelectedGateway] = useState<string>('PAYPAL');
   
   const [isQRModalVisible, setIsQRModalVisible] = useState(false);
-  const [countdown, setCountdown] = useState(5);
+  const [countdown, setCountdown] = useState(60);
   const [isPaymentSuccess, setIsPaymentSuccess] = useState(false);
+  const [paymentUrl, setPaymentUrl] = useState<string>('');
+  const [paymentOrderId, setPaymentOrderId] = useState<string>('');
 
   // Auto fill name if available from store
   useEffect(() => {
@@ -57,21 +59,51 @@ export const CustomerMonthlyPassScreen = () => {
 
   const endDate = startDate.add(selectedDuration, 'month');
 
-  useEffect(() => {
-    let timer: any;
-    if (isQRModalVisible && !isPaymentSuccess) {
-      if (countdown > 0) {
-        timer = setTimeout(() => setCountdown(c => c - 1), 1000);
-      } else {
-        setIsPaymentSuccess(true);
-        message.success('Thanh toán thành công! Vé tháng của bạn đã được kích hoạt.');
-        setTimeout(() => {
-          navigate('/customer/my-parking?tab=monthly');
-        }, 2000);
-      }
+  const createPassMutation = useMutation({
+    mutationFn: async () => {
+      const res = await axiosClient.post('/operation/monthly-tickets', {
+        vehicleTypeId: selectedVehicle,
+        plateNumber: plateNumber,
+        duration: selectedDuration
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      setCountdown(5);
+      setIsPaymentSuccess(true);
+      message.success('Thanh toán thành công! Vé tháng của bạn đã được kích hoạt.');
+      setTimeout(() => {
+        navigate('/customer/my-parking?tab=monthly');
+      }, 2000);
+    },
+    onError: () => {
+      message.error('Có lỗi xảy ra khi đăng ký vé tháng');
+      setIsQRModalVisible(false);
     }
-    return () => clearTimeout(timer);
-  }, [isQRModalVisible, countdown, isPaymentSuccess, navigate]);
+  });
+
+  const generateLinkMutation = useMutation({
+    mutationFn: async () => {
+      const res = await axiosClient.post('/payments/generate-link', {
+        amount: totalFee,
+        gateway: selectedGateway
+      });
+      return res.data.data;
+    },
+    onSuccess: (data) => {
+      setPaymentUrl(data.paymentUrl);
+      if (selectedGateway === 'PAYPAL') {
+        const urlParams = new URL(data.paymentUrl).searchParams;
+        setPaymentOrderId(urlParams.get('token') || '');
+      } else {
+        setPaymentOrderId(data.paymentUrl.split('/').pop() || '');
+      }
+    },
+    onError: () => {
+      message.error('Lỗi khi tạo link thanh toán');
+      setIsQRModalVisible(false);
+    }
+  });
 
   const handleConfirm = () => {
     if (!fullName.trim()) return message.error('Vui lòng nhập Họ và Tên');
@@ -80,9 +112,36 @@ export const CustomerMonthlyPassScreen = () => {
     if (!startDate) return message.error('Vui lòng chọn ngày bắt đầu hiệu lực');
     
     setIsQRModalVisible(true);
-    setCountdown(5);
     setIsPaymentSuccess(false);
+    setPaymentUrl('');
+    setPaymentOrderId('');
+    setCountdown(60);
+    generateLinkMutation.mutate();
   };
+
+  useEffect(() => {
+    let timer: any;
+    if (isQRModalVisible && !isPaymentSuccess && paymentOrderId) {
+      if (countdown > 0) {
+        timer = setTimeout(() => {
+          setCountdown(c => c - 1);
+          if (countdown % 3 === 0) {
+            axiosClient.post('/payments/paypal/capture', { token: paymentOrderId })
+              .then(res => {
+                if (res.data?.data?.status === 'COMPLETED') {
+                  createPassMutation.mutate();
+                }
+              })
+              .catch(() => {});
+          }
+        }, 1000);
+      } else {
+        setIsQRModalVisible(false);
+        message.warning('Hết thời gian chờ thanh toán.');
+      }
+    }
+    return () => clearTimeout(timer);
+  }, [isQRModalVisible, isPaymentSuccess, paymentOrderId, countdown]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col relative pb-10">
@@ -287,8 +346,8 @@ export const CustomerMonthlyPassScreen = () => {
               <Text className="block mb-6 text-slate-500">Mở ứng dụng Ngân hàng hoặc Ví điện tử</Text>
               
               <div className="relative inline-block mb-6">
-                <div className="bg-white p-4 border-2 border-dashed border-slate-300 rounded-2xl shadow-sm relative z-10">
-                  <QrcodeOutlined className="text-[200px] text-slate-800" />
+                <div className="bg-white p-4 border-2 border-dashed border-slate-300 rounded-2xl shadow-sm relative z-10 flex justify-center items-center h-[240px] w-[240px]">
+                  {paymentUrl ? <QRCode value={paymentUrl} size={200} /> : <Spin size="large" />}
                 </div>
                 {/* Scanning animation line */}
                 <style>
@@ -300,11 +359,17 @@ export const CustomerMonthlyPassScreen = () => {
                     }
                   `}
                 </style>
-                <div className="absolute top-2 left-2 w-[calc(100%-16px)] h-1 bg-green-500 shadow-[0_0_15px_#22c55e] z-20" style={{ animation: 'scan 2s ease-in-out infinite' }}></div>
+                {paymentUrl && <div className="absolute top-2 left-2 w-[calc(100%-16px)] h-1 bg-green-500 shadow-[0_0_15px_#22c55e] z-20" style={{ animation: 'scan 2s ease-in-out infinite' }}></div>}
               </div>
               
               <div className="text-2xl font-black text-blue-600 mb-2">{totalFee.toLocaleString()} VND</div>
-              <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg">Mã Hợp Đồng: HDVT-{Math.floor(1000 + Math.random() * 9000)}</Text>
+              <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg break-all px-2 text-xs">
+                {selectedGateway === 'PAYPAL' ? (
+                  <a href={paymentUrl} target="_blank" rel="noreferrer">Mở PayPal Checkout</a>
+                ) : (
+                  <a href={paymentUrl} target="_blank" rel="noreferrer">Mở PayOS Checkout</a>
+                )}
+              </Text>
               
               <div className="flex items-center justify-center space-x-2 text-slate-600">
                 <Spin size="small" />

@@ -24,20 +24,13 @@ export const BuildingProfileScreen = () => {
     name: '', address: '', hotline: '', operatingHours: '', rules: ''
   });
 
-  const MOCK_PROFILE: BuildingProfile = {
-    id: 1,
-    name: 'F-Town 3 Parking',
-    address: 'Khu công nghệ cao, Quận 9, TP.HCM',
-    hotline: '0123456789',
-    operatingHours: '06:00 - 22:00',
-    rules: 'Tuân thủ tốc độ 5km/h'
-  };
+
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['building-profile'],
     queryFn: async () => {
-      // MOCK DATA BYPASS
-      return new Promise<BuildingProfile>(resolve => setTimeout(() => resolve(MOCK_PROFILE), 500));
+      const res = await axiosClient.get('/system/building-profile');
+      return res.data.data;
     }
   });
 
@@ -47,12 +40,12 @@ export const BuildingProfileScreen = () => {
 
   const updateMutation = useMutation({
     mutationFn: async (updatedProfile: BuildingProfile) => {
-      // MOCK DATA BYPASS
-      return new Promise<BuildingProfile>(resolve => setTimeout(() => resolve(updatedProfile), 500));
+      const res = await axiosClient.put('/system/building-profile', updatedProfile);
+      return res.data.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['building-profile'] });
-      alert('Profile updated successfully! (Mocked)');
+      alert('Profile updated successfully!');
     },
     onError: () => {
       alert('Failed to update profile.');

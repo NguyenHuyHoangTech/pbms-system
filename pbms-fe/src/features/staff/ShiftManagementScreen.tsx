@@ -9,14 +9,14 @@ import axiosClient from '../../core/api/axiosClient';
 
 const { Title, Text } = Typography;
 
-const MOCK_GATES = [
-  { id: 1, name: 'Gate IN - Làn Ô tô (B1)', status: 'IDLE', type: 'IN', floor: 'B1' },
-  { id: 2, name: 'Gate IN - Làn Xe máy (B1)', status: 'OCCUPIED', staffName: 'Nguyen Van A', type: 'IN', floor: 'B1' },
-  { id: 3, name: 'Gate OUT - Tổng hợp (B1)', status: 'IDLE', type: 'OUT', floor: 'B1' },
-  { id: 4, name: 'Đội Tuần Tra - Tầng 1', status: 'IDLE', type: 'PATROL', floor: 'B1' },
-  { id: 5, name: 'Gate OUT - Tầng B2', status: 'IDLE', type: 'OUT', floor: 'B2' },
-  { id: 6, name: 'Đội Tuần Tra - Tầng 2', status: 'IDLE', type: 'PATROL', floor: 'B2' }
-];
+interface Gate {
+  id: number;
+  name: string;
+  status: string;
+  type: string;
+  floor: string;
+  staffName?: string;
+}
 
 export const ShiftManagementScreen = () => {
   const queryClient = useQueryClient();
@@ -25,23 +25,47 @@ export const ShiftManagementScreen = () => {
   const setAuthShiftStatus = useAuthStore(state => state.setShiftStatus);
   
   const [isStartModalVisible, setIsStartModalVisible] = useState(false);
-  const [selectedFloor, setSelectedFloor] = useState('B1');
+  const [selectedFloor, setSelectedFloor] = useState<string>('');
   const [selectedPostType, setSelectedPostType] = useState<'GATE' | 'PATROL'>('GATE');
-  const [selectedGateId, setSelectedGateId] = useState<number>(3);
+  const [selectedGateId, setSelectedGateId] = useState<number>(0);
   
   // Trí nhớ tạm cho việc hiển thị khi đang trực
-  const activeGateName = sessionStorage.getItem('mockActiveGateName') || 'Chưa xác định';
-  const activeGateType = sessionStorage.getItem('mockActiveGateType') || 'GATE';
+  const activeGateName = sessionStorage.getItem('activeGateName') || 'Chưa xác định';
+  const activeGateType = sessionStorage.getItem('activeGateType') || 'GATE';
   
   const [isCloseModalVisible, setIsCloseModalVisible] = useState(false);
   const [declaredCash, setDeclaredCash] = useState<number | null>(null);
+
+  const { data: gates = [] } = useQuery({
+    queryKey: ['gates'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/infrastructure/gates');
+        return res.data.data || [];
+      } catch (err) {
+        return [];
+      }
+    }
+  });
+
+  React.useEffect(() => {
+    if (gates.length > 0 && isStartModalVisible && !selectedFloor) {
+      const floors = Array.from(new Set(gates.map((g: Gate) => g.floor))).filter(Boolean) as string[];
+      if (floors.length > 0) {
+        const firstFloor = floors[0];
+        setSelectedFloor(firstFloor);
+        const firstGate = gates.find((g: Gate) => g.floor === firstFloor && (g.type === 'IN' || g.type === 'OUT'));
+        if (firstGate) setSelectedGateId(firstGate.id);
+      }
+    }
+  }, [gates, isStartModalVisible, selectedFloor]);
 
   // Fetch the current preview settlement
   const { data: settlementPreview, isLoading: isLoadingPreview } = useQuery({
     queryKey: ['shift-settlement-preview'],
     queryFn: async () => {
       try {
-        const res = await axiosClient.get('/api/v1/work-sessions/current/preview-settlement');
+        const res = await axiosClient.get('/work-sessions/current/preview-settlement');
         return res.data;
       } catch (e) {
         return null;
@@ -52,21 +76,20 @@ export const ShiftManagementScreen = () => {
 
   const startShiftMutation = useMutation({
     mutationFn: async () => {
-      const res = await axiosClient.post('/api/v1/work-sessions/start', { gateId: selectedGateId }); 
+      const res = await axiosClient.post('/work-sessions/start', { gateId: selectedGateId }); 
       return res.data;
     },
     onSuccess: () => {
       message.success('Đã mở ca trực thành công!');
       
-      const gate = MOCK_GATES.find(g => g.id === selectedGateId);
+      const gate = gates.find((g: Gate) => g.id === selectedGateId);
       if (gate) {
-        sessionStorage.setItem('mockActiveGateId', String(gate.id));
-        sessionStorage.setItem('mockActiveGateName', gate.name);
-        sessionStorage.setItem('mockActiveGateType', gate.type);
+        sessionStorage.setItem('activeGateId', String(gate.id));
+        sessionStorage.setItem('activeGateName', gate.name);
+        sessionStorage.setItem('activeGateType', gate.type);
       }
       
       setAuthShiftStatus('OPEN');
-      sessionStorage.setItem('mockShiftStatus', 'OPEN');
       setIsStartModalVisible(false);
       
       if (selectedPostType === 'PATROL') {
@@ -75,31 +98,14 @@ export const ShiftManagementScreen = () => {
         navigate('/staff/gate-console');
       }
     },
-    onError: () => {
-      message.success('Đã mở ca trực thành công! (Mocked)');
-      
-      const gate = MOCK_GATES.find(g => g.id === selectedGateId);
-      if (gate) {
-        sessionStorage.setItem('mockActiveGateId', String(gate.id));
-        sessionStorage.setItem('mockActiveGateName', gate.name);
-        sessionStorage.setItem('mockActiveGateType', gate.type);
-      }
-
-      setAuthShiftStatus('OPEN');
-      sessionStorage.setItem('mockShiftStatus', 'OPEN');
-      setIsStartModalVisible(false);
-      
-      if (selectedPostType === 'PATROL') {
-        navigate('/staff/exception-desk');
-      } else {
-        navigate('/staff/gate-console');
-      }
+    onError: (error) => {
+      message.error('Lỗi khi mở ca trực: ' + (error as any)?.response?.data?.message || 'Unknown error');
     }
   });
 
   const endShiftMutation = useMutation({
     mutationFn: async () => {
-      const res = await axiosClient.put('/api/v1/work-sessions/end', {
+      const res = await axiosClient.put('/work-sessions/end', {
         declaredCash,
         varianceReason: variance !== 0 ? 'User declared difference' : null
       });
@@ -108,24 +114,15 @@ export const ShiftManagementScreen = () => {
     onSuccess: () => {
       message.success('Đã chốt ca và bàn giao tài chính thành công!');
       setAuthShiftStatus('CLOSED');
-      sessionStorage.setItem('mockShiftStatus', 'CLOSED');
-      sessionStorage.removeItem('mockActiveGateId');
-      sessionStorage.removeItem('mockActiveGateName');
-      sessionStorage.removeItem('mockActiveGateType');
+      sessionStorage.removeItem('activeGateId');
+      sessionStorage.removeItem('activeGateName');
+      sessionStorage.removeItem('activeGateType');
       setIsCloseModalVisible(false);
       setDeclaredCash(null);
       queryClient.invalidateQueries({ queryKey: ['shift-settlement-preview'] });
     },
-    onError: () => {
-      // Mock success
-      message.success('Đã chốt ca và bàn giao tài chính thành công! (Mocked)');
-      setAuthShiftStatus('CLOSED');
-      sessionStorage.setItem('mockShiftStatus', 'CLOSED');
-      sessionStorage.removeItem('mockActiveGateId');
-      sessionStorage.removeItem('mockActiveGateName');
-      sessionStorage.removeItem('mockActiveGateType');
-      setIsCloseModalVisible(false);
-      setDeclaredCash(null);
+    onError: (error) => {
+      message.error('Lỗi khi chốt ca: ' + (error as any)?.response?.data?.message || 'Unknown error');
     }
   });
 
@@ -200,7 +197,7 @@ export const ShiftManagementScreen = () => {
 
           <Title level={4} className="mb-4">Trạng thái Làn xe & Tuần tra</Title>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {MOCK_GATES.map((gate) => (
+            {gates.map((gate: Gate) => (
               <div 
                 key={gate.id} 
                 className={`p-4 rounded-xl border-2 transition-all ${
@@ -216,7 +213,7 @@ export const ShiftManagementScreen = () => {
                   <Text strong className="text-base truncate">{gate.name}</Text>
                 </div>
                 <Tag color={gate.status === 'IDLE' ? 'success' : 'default'}>{gate.status}</Tag>
-                {gate.status === 'OCCUPIED' && (
+                {gate.status === 'OCCUPIED' && gate.staffName && (
                   <Text className="block mt-2 text-xs text-gray-500">Đang trực: <span className="font-medium text-gray-800">{gate.staffName}</span></Text>
                 )}
               </div>
@@ -247,14 +244,15 @@ export const ShiftManagementScreen = () => {
                 onChange={e => {
                   setSelectedFloor(e.target.value);
                   // Reset selected gate
-                  const firstGate = MOCK_GATES.find(g => g.floor === e.target.value && (g.type === 'IN' || g.type === 'OUT'));
+                  const firstGate = gates.find((g: Gate) => g.floor === e.target.value && (g.type === 'IN' || g.type === 'OUT'));
                   if (firstGate) setSelectedGateId(firstGate.id);
                 }}
                 buttonStyle="solid"
                 size="large"
               >
-                <Radio.Button value="B1">Hầm B1</Radio.Button>
-                <Radio.Button value="B2">Hầm B2</Radio.Button>
+                {Array.from(new Set(gates.map((g: Gate) => g.floor))).filter(Boolean).map((floor: any) => (
+                  <Radio.Button key={floor} value={floor}>{floor}</Radio.Button>
+                ))}
               </Radio.Group>
             </div>
 
@@ -264,7 +262,7 @@ export const ShiftManagementScreen = () => {
                 className={`cursor-pointer h-auto p-4 rounded-xl border-2 flex items-center transition-all ${selectedPostType === 'GATE' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-blue-300'}`}
                 onClick={() => {
                   setSelectedPostType('GATE');
-                  const firstGate = MOCK_GATES.find(g => g.floor === selectedFloor && (g.type === 'IN' || g.type === 'OUT'));
+                  const firstGate = gates.find((g: Gate) => g.floor === selectedFloor && (g.type === 'IN' || g.type === 'OUT'));
                   if (firstGate) setSelectedGateId(firstGate.id);
                 }}
               >
@@ -278,7 +276,7 @@ export const ShiftManagementScreen = () => {
                         <Text className="block mb-2 text-xs font-bold text-gray-500 uppercase">Chọn Làn Cụ Thể:</Text>
                         <Radio.Group onChange={(e) => setSelectedGateId(e.target.value)} value={selectedGateId}>
                           <Space direction="vertical">
-                            {MOCK_GATES.filter(g => g.floor === selectedFloor && (g.type === 'IN' || g.type === 'OUT')).map(g => (
+                            {gates.filter((g: Gate) => g.floor === selectedFloor && (g.type === 'IN' || g.type === 'OUT')).map((g: Gate) => (
                               <Radio key={g.id} value={g.id} disabled={g.status !== 'IDLE'}>
                                 {g.name} {g.status !== 'IDLE' && <Text type="danger" className="text-xs ml-2">(Đã có người trực)</Text>}
                               </Radio>
@@ -295,7 +293,7 @@ export const ShiftManagementScreen = () => {
                 className={`cursor-pointer h-auto p-4 rounded-xl border-2 flex items-center transition-all ${selectedPostType === 'PATROL' ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'}`}
                 onClick={() => {
                   setSelectedPostType('PATROL');
-                  const patrolGate = MOCK_GATES.find(g => g.floor === selectedFloor && g.type === 'PATROL');
+                  const patrolGate = gates.find((g: Gate) => g.floor === selectedFloor && g.type === 'PATROL');
                   if (patrolGate) setSelectedGateId(patrolGate.id);
                 }}
               >

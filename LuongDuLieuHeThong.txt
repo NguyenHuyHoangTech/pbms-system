@@ -1,0 +1,166 @@
+Dưới đây là 8 luồng dữ liệu cốt lõi của hệ thống PBMS, được ánh xạ trực tiếp vào các bảng cơ sở dữ liệu:
+
+---
+
+### LUỒNG 1: KHỞI TẠO HẠ TẦNG VÀ CẤU HÌNH (MASTER DATA FLOW)
+
+Luồng này do Manager/Admin thực hiện, là nền móng tĩnh để hệ thống hoạt động .
+
+1. 
+**Cấu hình bãi xe:** Manager nhập thông tin $\rightarrow$ API POST/PUT $\rightarrow$ Lưu vào bảng `building_profiles` (Chỉ có 1 bản ghi duy nhất) .
+
+
+2. 
+**Định nghĩa loại xe:** Manager thêm loại xe $\rightarrow$ Lưu vào `vehicle_types` (Định nghĩa `matrix_width`, `matrix_height` để vẽ bản đồ) .
+
+
+3. **Quy hoạch không gian:** Manager tạo Tầng $\rightarrow$ `floors`. Tạo Zone $\rightarrow$ `zones`. Kéo thả tự động sinh Slot $\rightarrow$ Lưu vào `slots` (ID dạng B1-ZA-01, trạng thái mặc định `EMPTY`) .
+
+
+4. 
+**Luật điều hướng:** Manager kéo thả thứ tự ưu tiên và ngưỡng lấp đầy $\rightarrow$ Lưu vào `routing_rules` (liên kết với `zone_id` và `vehicle_type`) .
+
+
+5. 
+**Cấu hình Bảng giá:** Manager chặt Block thời gian $\rightarrow$ Lưu vào `pricing_policies` (Bậc cơ bản toàn cảnh), `pricing_shifts` (Ca), và `pricing_blocks` (Phân mảnh trượt) .
+
+
+
+### LUỒNG 2: DANH TÍNH, OTP VÀ VÉ THÁNG (IDENTITY & SUBSCRIPTION FLOW)
+
+1. 
+**Đăng ký User:** Khách hàng nhập thông tin $\rightarrow$ Backend sinh mã OTP $\rightarrow$ Lưu tạm vào `otp_verifications` (Sống 5 phút) . Khách nhập đúng OTP $\rightarrow$ Cập nhật `users` (`is_verified = 1`) .
+
+
+2. 
+**Mua vé tháng:** Khách hàng đăng ký biển số và thanh toán qua Gateway (VNPay/PayOS) $\rightarrow$ Backend kiểm tra sức chứa `zones`. Nếu thanh toán thành công $\rightarrow$ Tự động lưu vào `monthly_tickets` (trạng thái `ACTIVE`). Manager chỉ có quyền xem (Read-only), không cần duyệt thủ công.
+
+3. 
+**Dọn dẹp đêm (Cronjob 2:00 AM):** Backend tự động quét `monthly_tickets`, nếu `valid_until` < Hiện tại $\rightarrow$ Update trạng thái thành `EXPIRED` .
+
+
+
+### LUỒNG 3: ĐẶT CHỖ TRƯỚC TRỰC TUYẾN (PRE-BOOKING FLOW)
+
+Luồng này sử dụng kiến trúc Sổ cái kép (Double-Entry Ledger) và định hướng sự kiện (TaskScheduler) .
+
+1. 
+**Giữ chỗ:** Khách hàng tạo Booking $\rightarrow$ Chuyển hướng thanh toán VNPay/PayOS .
+
+
+2. 
+**Webhook Thanh toán:** Đối tác bắn Webhook $\rightarrow$ Backend đối soát $\rightarrow$ Lưu `reservations` (Trạng thái `PAID`) và insert dòng tiền dương (+) vào `transactions` .
+
+
+3. 
+**Tự động dọn bãi (T - 30 phút):** TaskScheduler thức dậy lúc `start_time - 30 phút` $\rightarrow$ Kiểm tra bảng `slots` . Nếu trống $\rightarrow$ Update `slots` thành `RESERVED`. Nếu có xe $\rightarrow$ Bắn WebSocket báo Staff dời xe .
+
+
+4. 
+**Hết giờ (No-Show):** TaskScheduler quét lúc `end_time` $\rightarrow$ Nếu xe chưa vào, lật `reservations` thành `COMPLETED_UNUSED` và giải phóng `slots` về `AVAILABLE` .
+
+
+
+### LUỒNG 4: CHECK-IN VÀ ĐIỀU HƯỚNG BÃI (VEHICLE INBOUND FLOW)
+
+Đây là luồng "Sinh tử" yêu cầu tốc độ mili-giây, xử lý giao dịch ACID .
+
+1. 
+**Nhận diện:** IoT Camera quét biển $\rightarrow$ Gửi API `POST /scan` $\rightarrow$ Backend không lưu DB mà bắn thẳng WebSocket `/user/queue/gates/...` lên màn hình Staff .
+
+
+2. **Định tuyến (Routing):** Staff bấm xác nhận $\rightarrow$ Routing Engine quét `routing_rules` và đếm xe trên Redis. Dò bảng `slots` tìm ô `EMPTY` đầu tiên theo Alphabet (Có khóa lạc quan `@Version` để chống 2 làn tranh nhau 1 slot) .
+
+
+3. **Chốt DB (@Transactional):** Backend thực hiện:
+* Cập nhật `slots` thành `BOOKED`.
+
+
+* Bốc mã thẻ trống, cập nhật `rfid_cards` (`status = IN_USE`, `is_inside = 1`, `assigned_plate`) .
+
+
+* Insert `parking_sessions` (`status = INSIDE`, `check_in_time` lấy từ Server) .
+
+
+
+
+4. 
+**Phát Event:** Backend bắn Event cập nhật KPI trên Redis và bắn WebSocket đổi màu Slot trên Grid Map thành ĐỎ .
+
+
+
+### LUỒNG 5: CHECK-OUT, TÍNH PHÍ VÀ THANH TOÁN (VEHICLE OUTBOUND FLOW)
+
+1. **Nhận diện:** Staff quẹt thẻ thu hồi $\rightarrow$ Backend lôi `parking_sessions` ra. Camera OUT đọc biển số hiển thị lên Web .
+
+
+2. **Tính cước (Pricing Engine):** Staff bấm chốt $\rightarrow$ Backend đóng dấu `check_out_time`. Truyền thời gian vào Máy tính cước $\rightarrow$ Quét qua Lớp cơ bản toàn cảnh $\rightarrow$ Máy cắt theo ca (`pricing_shifts`) $\rightarrow$ Cỗ máy trượt Block (`pricing_blocks`) $\rightarrow$ Ra tổng tiền cước .
+
+
+3. 
+**Thanh toán:** Hệ thống sinh mã VietQR động . Khách quét QR $\rightarrow$ Webhook báo về.
+
+
+4. **Đóng phiên (@Transactional):** Backend thực hiện:
+* Update `parking_sessions` (`status = COMPLETED`, `payment_status = PAID`, `total_fee`).
+
+
+* Update `rfid_cards` về `AVAILABLE` (rửa sạch thẻ).
+
+
+* Update `slots` về `EMPTY`.
+
+
+* Insert vào `transactions` (Lưu lịch sử dòng tiền) .
+
+
+
+
+
+### LUỒNG 6: QUẢN LÝ SỰ CỐ VÀ CAN THIỆP NGOẠI LỆ (EXCEPTION HANDLING FLOW)
+
+Luồng này chạy song song để giải quyết các khiếm khuyết phần cứng hoặc lỗi con người. Toàn bộ 6 loại lỗi được lưu tập trung vào duy nhất bảng `incident_tickets`.
+
+1. 
+**LPR Correction (Sai biển số):** Staff sửa tay biển số do AI đọc sai $\rightarrow$ Lưu vào `incident_tickets` với `issue_type = 'LPR_MISMATCH'`.
+
+2. **Mất thẻ (Lost Card):** Staff xác nhận chụp Cà vẹt/CCCD $\rightarrow$ Backend khóa `rfid_cards` (`status = LOST`). Giải phóng `slots`. Lưu vào `incident_tickets` với `issue_type = 'LOST_CARD'`. Cộng phụ phí 50k vào `penalty_fee` của `parking_sessions`.
+
+3. **Điều chỉnh phí (Fee Adjustment):** Manager can thiệp hóa đơn, ấn định tiền mới $\rightarrow$ Lưu `total_fee` mới vào `parking_sessions` và ghi nhận lịch sử vào `incident_tickets` với `issue_type = 'FEE_ADJUSTMENT'`.
+
+4. 
+**Xe chiếm Slot (Zone Violation):** Hệ thống hoặc nhân viên phát hiện xe đỗ sai $\rightarrow$ Lưu vào `incident_tickets` với `issue_type = 'ZONE_VIOLATION'`. Ghi chú rõ `expected_zone_id` và `actual_zone_id`.
+
+5. 
+**Xe tồn đọng ban đêm (Overstay - Cronjob 2:00 AM):** Lệnh Batch Update quét `parking_sessions` (`status = INSIDE` & quá 72h) $\rightarrow$ Lưu sự cố vào `incident_tickets` với `issue_type = 'OVERSTAY'`.
+
+6. 
+**Trốn vé/Thất thoát (Ghost Vehicle):** Phát hiện xe ra mà không trả thẻ hoặc trốn vé $\rightarrow$ Lưu vào `incident_tickets` với `issue_type = 'GHOST_VEHICLE'`.
+
+### LUỒNG 7: TỔNG ĐÀI HELPDESK & ĐIỀU PHỐI (TRIAGE FLOW)
+
+1. 
+**Khách tạo Ticket (Customer Feedback):** Khách gửi khiếu nại, phản hồi qua App $\rightarrow$ API POST $\rightarrow$ Lưu vào `incident_tickets` với `issue_type = 'CUSTOMER_FEEDBACK'`.
+
+2. 
+**Điều phối (WebSocket):** Backend bắn Push Notification xuống máy Tablet của Staff đang đứng ở Zone đó hoặc lên màn hình Exception Desk của Manager để xử lý tập trung tất cả các ticket.
+
+
+
+### LUỒNG 8: KIỂM TOÁN VÀ BÁO CÁO (AUDIT & ANALYTICS FLOW)
+
+Dữ liệu không bao giờ bị xóa cứng (Hard Delete) mà tuân thủ Append-only (Ghi nối thêm).
+
+1. 
+**Lưu vết thao tác (AOP):** Mỗi khi Manager sửa giá, mở barie tay $\rightarrow$ Spring AOP chặn Request $\rightarrow$ Chạy ngầm (@Async) bóc tách JSON trước/sau $\rightarrow$ Insert vào `audit_logs` .
+
+
+2. 
+**Báo cáo Real-time:** Dashboard gọi API lấy tổng tiền $\rightarrow$ SQL quét hàm `SUM(amount)` từ `transactions` để đảm bảo khớp 100% tài khoản ngân hàng .
+
+
+3. **Báo cáo Lấp đầy (Hour Trend):** Cứ mỗi sự kiện xe vào/ra, Backend UPSERT (MERGE) dữ liệu vào bảng nén `zone_hourly_trends` theo giờ, ghi nhận % lấp đầy cao nhất (`peak_rate`). Khi Manager xem biểu đồ, chỉ cần `SELECT` từ bảng này bằng kỹ thuật PIVOT, không cần quét hàng vạn xe .
+
+
+
+Hi vọng cách gom nhóm theo 8 luồng chạy thực tế (Runtime Flows) này sẽ giúp bạn dễ dàng ánh xạ sang cấu trúc 24-25 bảng Database như đã thiết kế!

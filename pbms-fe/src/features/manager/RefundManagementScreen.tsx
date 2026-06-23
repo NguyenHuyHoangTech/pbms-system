@@ -30,62 +30,44 @@ interface RefundRecord {
   bankName: string;
   accountNumber: string;
   accountName: string;
+  accountName: string;
   rejectReason?: string;
+  proofUrl?: string;
 }
 
-const INITIAL_MOCK_DATA: RefundRecord[] = [
-  {
-    id: 'REF-1001',
-    customerName: 'Nguyễn Văn A',
-    registeredName: 'Nguyễn Văn A',
-    plateNumber: '51G-123.45',
-    bookingTime: '2023-10-25 08:00',
-    expectedInTime: '2023-10-25 09:00',
-    cancelTime: '2023-10-25 08:15',
-    paidAmount: 50000,
-    penaltyFee: 10000,
-    refundAmount: 40000,
-    status: 'PENDING',
-    bankName: 'Vietcombank',
-    accountNumber: '0123456789',
-    accountName: 'NGUYEN VAN A'
-  },
-  {
-    id: 'REF-1002',
-    customerName: 'Trần Thị B',
-    registeredName: 'Trần Thị Bảo', // Mismatch name
-    plateNumber: '29A-678.90',
-    bookingTime: '2023-10-25 10:00',
-    expectedInTime: '2023-10-25 14:00',
-    cancelTime: '2023-10-25 11:30',
-    paidAmount: 50000,
-    penaltyFee: 0,
-    refundAmount: 50000,
-    status: 'PENDING',
-    bankName: 'Techcombank',
-    accountNumber: '190333444555',
-    accountName: 'TRAN THI B'
-  },
-  {
-    id: 'REF-1003',
-    customerName: 'Lê Văn C',
-    registeredName: 'Lê Văn C',
-    plateNumber: '60C-333.22',
-    bookingTime: '2023-10-24 14:00',
-    expectedInTime: '2023-10-24 18:00',
-    cancelTime: '2023-10-24 14:10',
-    paidAmount: 50000,
-    penaltyFee: 0,
-    refundAmount: 50000,
-    status: 'REFUNDED',
-    bankName: 'MB Bank',
-    accountNumber: '0987654321',
-    accountName: 'LE VAN C'
-  }
-];
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axiosClient from '../../core/api/axiosClient';
 
 export const RefundManagementScreen = () => {
-  const [data, setData] = useState<RefundRecord[]>(INITIAL_MOCK_DATA);
+  const queryClient = useQueryClient();
+
+  const { data: refundsData = [], isLoading } = useQuery({
+    queryKey: ['refunds'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/finance/refunds');
+      return res.data.data;
+    }
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const numericId = id.replace('REF-', '');
+      await axiosClient.put(`/finance/refunds/${numericId}/approve`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['refunds'] });
+    }
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string, reason: string }) => {
+      const numericId = id.replace('REF-', '');
+      await axiosClient.put(`/finance/refunds/${numericId}/reject`, { rejectReason: reason });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['refunds'] });
+    }
+  });
   const [selectedRecord, setSelectedRecord] = useState<RefundRecord | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   
@@ -94,9 +76,9 @@ export const RefundManagementScreen = () => {
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
 
-  const pendingCount = data.filter(d => d.status === 'PENDING').length;
-  const totalPendingAmount = data.filter(d => d.status === 'PENDING').reduce((acc, curr) => acc + curr.refundAmount, 0);
-  const totalRefundedToday = data.filter(d => d.status === 'REFUNDED').reduce((acc, curr) => acc + curr.refundAmount, 0);
+  const pendingCount = refundsData.filter((d: RefundRecord) => d.status === 'PENDING').length;
+  const totalPendingAmount = refundsData.filter((d: RefundRecord) => d.status === 'PENDING').reduce((acc: number, curr: RefundRecord) => acc + curr.refundAmount, 0);
+  const totalRefundedToday = refundsData.filter((d: RefundRecord) => d.status === 'REFUNDED').reduce((acc: number, curr: RefundRecord) => acc + curr.refundAmount, 0);
 
   const handleOpenDrawer = (record: RefundRecord) => {
     setSelectedRecord(record);
@@ -114,13 +96,12 @@ export const RefundManagementScreen = () => {
   const handleApprove = () => {
     if (!selectedRecord) return;
     message.loading({ content: 'Đang xử lý đóng đơn...', key: 'process' });
-    setTimeout(() => {
-      setData(prev => prev.map(item => 
-        item.id === selectedRecord.id ? { ...item, status: 'REFUNDED' } : item
-      ));
-      setIsDrawerOpen(false);
-      message.success({ content: `Đã hoàn tiền thành công cho mã ${selectedRecord.id}!`, key: 'process', duration: 3 });
-    }, 1000);
+    approveMutation.mutate(selectedRecord.id, {
+      onSuccess: () => {
+        setIsDrawerOpen(false);
+        message.success({ content: `Đã hoàn tiền thành công cho mã ${selectedRecord.id}!`, key: 'process', duration: 3 });
+      }
+    });
   };
 
   const handleReject = () => {
@@ -130,25 +111,37 @@ export const RefundManagementScreen = () => {
       return;
     }
     message.loading({ content: 'Đang từ chối yêu cầu...', key: 'process' });
-    setTimeout(() => {
-      setData(prev => prev.map(item => 
-        item.id === selectedRecord.id ? { ...item, status: 'REJECTED', rejectReason } : item
-      ));
-      setSelectedRecord({ ...selectedRecord, status: 'REJECTED', rejectReason });
-      setIsDrawerOpen(false);
-      message.success({ content: `Đã từ chối đơn hoàn tiền ${selectedRecord.id}!`, key: 'process', duration: 3 });
-    }, 1000);
+    rejectMutation.mutate({ id: selectedRecord.id, reason: rejectReason }, {
+      onSuccess: () => {
+        setIsDrawerOpen(false);
+        message.success({ content: `Đã từ chối đơn hoàn tiền ${selectedRecord.id}!`, key: 'process', duration: 3 });
+      }
+    });
   };
 
   const uploadProps: UploadProps = {
     name: 'file',
     multiple: false,
-    customRequest: ({ onSuccess }) => {
-      setTimeout(() => {
+    customRequest: async ({ file, onSuccess, onError }) => {
+      if (!selectedRecord) return;
+      const formData = new FormData();
+      formData.append('file', file as Blob);
+      const numericId = selectedRecord.id.replace('REF-', '');
+      try {
+        const res = await axiosClient.post(`/finance/refunds/${numericId}/proof`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
         setProofUploaded(true);
-        onSuccess?.('ok');
+        onSuccess?.(res.data);
         message.success('Tải ảnh minh chứng thành công!');
-      }, 1000);
+        queryClient.invalidateQueries({ queryKey: ['refunds'] });
+        
+        // Update local state to show image immediately
+        setSelectedRecord(prev => prev ? {...prev, proofUrl: res.data.data} : null);
+      } catch (err) {
+        onError?.(err as any);
+        message.error('Tải ảnh thất bại!');
+      }
     },
     onRemove: () => {
       setProofUploaded(false);
@@ -275,7 +268,7 @@ export const RefundManagementScreen = () => {
       <Card className="shadow-sm rounded-xl border-slate-200" bodyStyle={{ padding: 0 }}>
         <Table 
           columns={columns} 
-          dataSource={data} 
+          dataSource={refundsData} 
           rowKey="id"
           pagination={{ pageSize: 10 }}
           rowClassName={(record) => record.status === 'PENDING' ? 'bg-orange-50/50' : ''}
@@ -412,18 +405,31 @@ export const RefundManagementScreen = () => {
             </div>
 
             {/* Phần C: Proof Upload */}
-            {selectedRecord.status === 'PENDING' && (
+            {(selectedRecord.status === 'PENDING' || selectedRecord.proofUrl) && (
               <div>
                 <Title level={5} className="text-indigo-800 border-b pb-2 mb-4">C. Minh chứng Chuyển khoản</Title>
-                <Dragger {...uploadProps}>
-                  <p className="ant-upload-drag-icon">
-                    <InboxOutlined className="text-blue-500" />
-                  </p>
-                  <p className="ant-upload-text font-semibold">Click hoặc Kéo thả ảnh Ủy nhiệm chi vào đây</p>
-                  <p className="ant-upload-hint px-4 text-xs">
-                    Để đảm bảo an toàn kiểm toán, Kế toán bắt buộc phải tải lên hình ảnh chụp giao dịch chuyển khoản thành công trước khi đóng đơn.
-                  </p>
-                </Dragger>
+                
+                {selectedRecord.proofUrl && (
+                  <div className="mb-4 text-center">
+                    <img 
+                      src={selectedRecord.proofUrl.startsWith('http') ? selectedRecord.proofUrl : `http://localhost:8080${selectedRecord.proofUrl}`} 
+                      alt="Minh chứng" 
+                      className="max-w-full h-auto max-h-64 rounded shadow-md border"
+                    />
+                  </div>
+                )}
+
+                {selectedRecord.status === 'PENDING' && (
+                  <Dragger {...uploadProps}>
+                    <p className="ant-upload-drag-icon">
+                      <InboxOutlined className="text-blue-500" />
+                    </p>
+                    <p className="ant-upload-text font-semibold">Click hoặc Kéo thả ảnh Ủy nhiệm chi vào đây</p>
+                    <p className="ant-upload-hint px-4 text-xs">
+                      Để đảm bảo an toàn kiểm toán, Kế toán bắt buộc phải tải lên hình ảnh chụp giao dịch chuyển khoản thành công trước khi đóng đơn.
+                    </p>
+                  </Dragger>
+                )}
               </div>
             )}
 

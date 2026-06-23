@@ -8,6 +8,9 @@ import {
   SaveOutlined
 } from '@ant-design/icons';
 import { useAuthStore } from '../../../core/store/useAuthStore';
+import { useMutation } from '@tanstack/react-query';
+import axiosClient from '../../../core/api/axiosClient';
+import { GoogleLogin } from '@react-oauth/google';
 
 const { Title, Text } = Typography;
 
@@ -48,13 +51,19 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
     // Không tự động đóng để người dùng có thể thao tác tiếp nếu muốn
   };
 
-  const handleLinkGoogle = () => {
-    message.loading({ content: 'Đang kết nối với Google...', key: 'google' });
-    setTimeout(() => {
-      linkGoogleAccount();
+  const linkGoogleMutation = useMutation({
+    mutationFn: async (credential: string) => {
+      const response = await axiosClient.post('/auth/link-google', { googleIdToken: credential });
+      return response.data;
+    },
+    onSuccess: () => {
       message.success({ content: 'Liên kết tài khoản Google thành công!', key: 'google', duration: 2 });
-    }, 1500);
-  };
+      linkGoogleAccount(); // Updates local Zustand store (authProvider='GOOGLE')
+    },
+    onError: (error: any) => {
+      message.error({ content: error.response?.data?.message || 'Lỗi khi liên kết Google', key: 'google', duration: 3 });
+    }
+  });
 
   const handleChangePassword = (values: any) => {
     if (values.newPassword !== values.confirmPassword) {
@@ -120,14 +129,22 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
               {authProvider !== 'GOOGLE' ? (
                 <>
                   <Text className="text-xs text-gray-500 block mb-3">Liên kết tài khoản Google giúp bạn đăng nhập nhanh chóng mà không cần nhập mật khẩu hay mã OTP.</Text>
-                  <Button 
-                    type="default" 
-                    icon={<GoogleOutlined />} 
-                    onClick={handleLinkGoogle}
-                    className="w-full flex items-center justify-center font-medium"
-                  >
-                    Liên kết ngay với Google
-                  </Button>
+                  <div className="flex justify-center mt-2">
+                    <GoogleLogin
+                      onSuccess={(credentialResponse) => {
+                        message.loading({ content: 'Đang xác thực với server...', key: 'google' });
+                        if (credentialResponse.credential) {
+                          linkGoogleMutation.mutate(credentialResponse.credential);
+                        }
+                      }}
+                      onError={() => {
+                        message.error('Đăng nhập Google thất bại');
+                      }}
+                      useOneTap={false}
+                      theme="outline"
+                      text="continue_with"
+                    />
+                  </div>
                 </>
               ) : (
                 <div className="flex items-center space-x-2 text-sm text-gray-600">

@@ -1,0 +1,174 @@
+Dưới đây là danh sách liệt kê chi tiết toàn bộ các đặc tả (Specifications) của Hệ thống Quản lý Tòa nhà Gửi xe (PBMS) dựa trên tài liệu bạn cung cấp. Tên các đặc tả được định dạng bằng thẻ Heading 2 (`##`) theo đúng yêu cầu:
+
+## Phân hệ Quản lý Bãi xe (Parking Manager)
+
+## UC-MNG01: Quản lý Thông tin Cơ sở Tòa nhà (Building Profile Management)
+
+Đặc tả việc thiết lập và cập nhật thông tin định danh toàn cục của bãi xe (Tên, Địa chỉ, Hotline, Giờ vận hành, Nội quy). Dữ liệu này (chỉ có duy nhất 1 bản ghi) dùng để in hóa đơn, vé QR và hiển thị trên Web khách hàng.
+
+## UC-MNG02: Quản lý Danh mục Loại phương tiện (Vehicle Type Management)
+
+Cho phép Manager định nghĩa các loại xe (Ô tô, Xe máy) và thiết lập kích thước gốc của xe (chiều ngang/chiều dọc tính bằng ô lưới) làm cơ sở để vẽ bản đồ sau này. Áp dụng cơ chế xóa mềm (Soft Delete) để bảo vệ dữ liệu lịch sử kế toán.
+
+## UC-MNG03: Quản lý Phân tầng, Thiết lập Khu vực (Zone) và Tự động sinh Slot
+
+Đặc tả luồng khởi tạo mặt bằng hầm xe dựa trên ma trận lưới 2D. Manager quy hoạch các Khu vực (Zone) với thuộc tính riêng (Vãng lai, Vi phạm) và hệ thống tự động sinh ra các Khối bóng ma (Ghost Zone) để Manager kéo thả, xoay chiều tạo ô đỗ. Áp dụng quy tắc 1 Tầng/Zone - 1 Loại xe.
+
+## UC-MNG04: Giám sát Thời gian thực và Quản lý Trạng thái Slot
+
+Cung cấp bản đồ trực quan 2D theo dõi tình trạng ô đỗ qua 4 mã màu: Xanh lá (Trống), Đỏ (Đang đỗ), Vàng (Đã đặt trước), Xám (Bảo trì). Cho phép điều phối xe thủ công trên giao diện nếu khách đỗ sai vị trí thực tế.
+
+## UC-MNG05: Quản lý Bảng giá & Thuật toán Tính phí Đa phân mảnh
+
+Đặc tả cỗ máy tính cước (Pricing Engine) sử dụng thanh thời gian (Visual Timeline). Manager "chặt" thời gian thành các Block trượt thay vì dùng công thức lũy tiến toán học thông thường. Bao gồm 3 chốt chặn: Bộ lọc toàn cảnh (Global Base), Máy cắt ca, và Máy trượt Block.
+
+## Báo cáo Doanh thu (Revenue Dashboard)
+
+Giao diện phân tích tài chính tổng hợp từ một Master Dataset duy nhất. Bao gồm bộ điều khiển thời gian, thẻ KPI (Tổng doanh thu, Lượt giao dịch, ARPU), biểu đồ Hero Chart, biểu đồ tròn cơ cấu nguồn thu và chức năng xuất báo cáo Excel (dùng dấu chấm phẩy `;` làm phân cách).
+
+## UC-MNG06: Báo cáo Lưu lượng, Tỷ lệ lấp đầy và Giờ cao điểm
+
+Trung tâm kiểm soát điều phái vật lý áp dụng kiến trúc Event-Driven Pre-calculation. Hệ thống không dùng SELECT COUNT mà tính toán trên RAM/Redis và bắn qua WebSocket. Chứa các thẻ Live KPI, biểu đồ xu hướng lấp đầy theo Zone và lưu lượng Vào/Ra theo khung giờ để phát hiện kẹt xe.
+
+## UC-MNG06 (Mở rộng): Điều chỉnh hóa đơn và Xử lý khiếu nại từ xa
+
+Cho phép Manager can thiệp hóa đơn khi khách khiếu nại (sai phí, kẹt xe) lúc xe vẫn ở dưới hầm. Đặc tả kiến trúc "Tính toán lười" (Lazy Evaluation): Khóa mốc thời gian tạm dừng, ấn định tiền mới và cấp lệnh thoát bãi trong 15 phút (Exit Window). Hệ thống sinh ra một bản ghi trong `incident_tickets` với loại `FEE_ADJUSTMENT` để lưu vết kiểm toán thay vì tạo bảng riêng lẻ.
+
+## UC-MNG07: Quản lý Trạng thái Cổng Tập trung (Centralized Gate Scheduling)
+
+Đặc tả trung tâm điều khiển cổng từ xa. Manager có thể cấu hình cổng theo lịch trình (Recurring Scheduler) hoặc can thiệp khẩn cấp (Live Override) để ép cổng thành luồng VÀO (FORCE_IN), luồng RA (FORCE_OUT) hoặc ĐÓNG CỔNG (CLOSED).
+
+## UC-MNG08: Quản lý Ngoại lệ & Xử lý Sự cố (Exception Management)
+
+Số hóa quy trình giải quyết các tình huống nằm ngoài luồng chuẩn để chống thất thoát doanh thu. Đặc tả giao diện "Exception Desk Screen" giúp Manager xử lý tập trung 7 luồng sự cố sử dụng chung nguồn dữ liệu từ bảng `incident_tickets`: `LPR_MISMATCH` (Sai biển số), `LOST_CARD` (Mất thẻ), `FEE_ADJUSTMENT` (Điều chỉnh phí), `ZONE_VIOLATION` (Đỗ sai khu), `OVERSTAY` (Quá hạn 72h), `GHOST_VEHICLE` (Trốn vé/Thất thoát), `CUSTOMER_FEEDBACK` (Phản hồi/Khiếu nại).
+
+## UC-MNG08 (Mở rộng): Quản lý Vé tháng & Định tuyến Zone Tự động
+
+Đặc tả luồng đăng ký vé tháng định danh độc quyền (1 xe - 1 vé). Hệ thống thanh toán vé tháng được tự động hóa thông qua Gateway (VNPay/PayOS), tự động cập nhật trạng thái thẻ mà không cần Manager duyệt tay, giúp giảm tải vận hành. Cấu hình cơ chế tràn bãi (Overflow): Xe vé tháng ưu tiên vào Zone Tháng, nếu đầy 100% tự động tràn sang bãi vãng lai. Có cơ chế cảnh báo khi lượng đăng ký vượt ngưỡng an toàn.
+
+## UC-MNG09: Điều hướng và Phân bổ Vị trí Đỗ xe (Smart Routing Engine)
+
+Đặc tả giao diện cấu hình luân chuyển dòng xe bằng thao tác kéo thả. Thuật toán 3 giai đoạn: Điền đầy theo ngưỡng cấu hình (Overflow Threshold), Vòng lặp vét cạn 100% (nếu bãi quá đông), và chọn Slot cụ thể theo thứ tự Alphabet để hiển thị lên bảng LED.
+
+## UC-MNG10: Quản lý Kho thẻ và Trạng thái (Card Pool Management)
+
+Công cụ khởi tạo tự động hàng loạt thẻ xe (sinh mã UID theo chuỗi). Quản lý trạng thái vòng đời xoay vòng của thẻ vật lý: AVAILABLE (Sẵn sàng), IN_USE (Đang đỗ xe), LOCKED (Khóa), LOST (Mất), DAMAGED (Hỏng).
+
+---
+
+## Phân hệ Nhân viên Trực trạm (Parking Staff)
+
+## UC-STF01: Hỗ trợ xử lý xe vào bãi & Quản lý Ca trực
+
+Đặc tả quy trình Staff mở ca, chọn cổng làm việc và đối chiếu ngoại quan xe vào hầm. Khi AI nhận diện biển số, Staff xác nhận hoặc sửa tay, hệ thống Backend tự động chạy thuật toán tìm Slot, cấp mã thẻ RFID và ra lệnh mở Barrier.
+
+## UC-STF02: Tạo lượt gửi xe theo lượt / Vãng lai (Parking Session Initialization)
+
+Đặc tả mặt luồng dữ liệu Backend khi Check-in: Hệ thống tự động bốc mã thẻ trống, ghi dấu thời gian tuyệt đối từ Server (chống gian lận giờ), xử lý giao dịch ACID để sinh phiên đỗ (status = INSIDE). Giải quyết rủi ro tranh chấp thẻ giữa các làn bằng Optimistic Locking.
+
+## UC-STF03: Hỗ trợ xử lý xe ra bãi, Thu phí & Chốt ca
+
+Đặc tả quy trình xe Check-out: Nhân viên quẹt thẻ, đối chiếu ảnh camera IN/OUT. Hệ thống chốt giờ, tính phí, sinh hóa đơn và mã QR VietQR động. Sau ca, nhân viên thực hiện luồng "Chốt ca & Bàn giao", đếm tiền mặt thực tế và giải trình độ lệch so với hệ thống.
+
+## UC-STF04: Hỗ trợ xử lý các trường hợp ngoại lệ tại quầy
+
+Cung cấp công cụ cho Staff xử lý 6 sự cố tại chỗ: Thu phí mất thẻ (bắt buộc chụp Webcam lưu bằng chứng), phân loại phí thẻ hỏng, sửa sai lệch biển số IN/OUT, cập nhật ô đỗ bảo trì, và hỗ trợ khách tìm xe.
+
+---
+
+## Phân hệ Khách hàng (Parking User / Driver)
+
+## UC-USR01: Xem thông tin bãi xe và Trạng thái ô đỗ (Public Interface)
+
+Giao diện Mobile Web công khai không cần đăng nhập. Hiển thị giờ hoạt động, biểu phí và đặc biệt là số lượng chỗ đỗ còn trống theo thời gian thực (nhảy số Real-time) của từng loại xe.
+
+## UC-USR02: Gửi xe theo lượt và Thanh toán (Walk-in Parking Journey)
+
+Mô tả hành trình vật lý của khách hàng: Chờ đọc biển số $\rightarrow$ Nhận thẻ RFID $\rightarrow$ Nhận điều hướng từ bảng LED $\rightarrow$ Lái xe xuống hầm đỗ. Khi ra, trả thẻ, xem hóa đơn trên màn hình phụ và thanh toán Tiền mặt hoặc quét mã QR PayOS.
+
+## Đặt chỗ trước (Pre-Booking)
+
+Đặc tả luồng khách hàng giữ chỗ online trả trước 100% qua VNPay/PayOS. Hệ thống dùng kiến trúc Sổ cái kép (Double-Entry Ledger) và TaskScheduler tự động điều khiển trạng thái. Có cơ chế điều phối bảo vệ dọn bãi nếu ô đỗ bị xe vãng lai chiếm dụng trước giờ khách đến. Bao gồm chính sách hoàn tiền tự động 3 cấp độ.
+
+## UC-USR05: Theo dõi và Tra cứu lượt gửi xe hiện tại
+
+Cho khách hàng tra cứu trạng thái xe ĐANG TRONG BÃI. Yêu cầu nhập Xác thực kép (Biển số + Mã thẻ). Giao diện hiển thị Đồng hồ đếm giờ Live và minh bạch hóa hóa đơn tạm tính (gồm cước phí và các phụ phí phạt vi phạm nếu có).
+
+## UC-USR06: Thanh toán phí gửi xe đa kênh (Omnichannel Payment)
+
+Cấu trúc hóa đơn tổng hợp (Phí gốc + Lố giờ + Vi phạm + Dịch vụ - Miễn giảm). Mô tả ngạch thanh toán trả trước online và thanh toán tại cổng qua mã VietQR động. Áp dụng luật Khóa 15 phút (Time Freeze) tại cổng để khách chuyển khoản.
+
+## UC-USR07: Báo cáo sự cố và Hỗ trợ trực tuyến (Incident Reporting)
+
+Hệ thống Helpdesk tự động phân loại sự cố (Mất thẻ, Ô đỗ bị chiếm, Sai phí) để điều hướng báo động đến Tablet của bảo vệ hoặc Web của Manager. Với sự cố bị chiếm Slot, khách bắt buộc phải chụp ảnh minh chứng, hệ thống sẽ tự động cấp đổi Slot khác.
+
+---
+
+## Phân hệ Quản trị Hệ thống (System Administrator)
+
+## UC-AD01: Quản lý Tài khoản Nội bộ và Phân quyền (RBAC)
+
+Chức năng tạo, cấp mật khẩu tự động và khóa (Soft Delete) tài khoản Manager/Staff. Ma trận phân quyền tĩnh khắt khe: SUPER_ADMIN (Hạ tầng), MANAGER (Vận hành kinh doanh), STAFF (Giải quyết trực tiếp tại cổng).
+
+## UC-AD02: Cấu hình Hệ thống và Kết nối Ngoại vi
+
+Giao diện quản lý các API Keys bảo mật. Cấu hình cổng PayOS, VNPay Sandbox và Google SMTP. Có tính năng Test Connection (ping kiểm tra) trước khi cho phép lưu cấu hình.
+
+## UC-AD03: Xem Nhật ký Hoạt động và Truy vết (System Audit Logs)
+
+Giao diện truy vết thao tác người dùng (Append-only). Tích hợp công cụ "Diff Viewer" soi mã JSON so sánh trực quan dữ liệu trước và sau khi bị chỉnh sửa (đặc biệt cho thao tác đổi bản đồ).
+
+## UC-SYS01: Quản lý Danh tính, OTP và Xác thực người dùng
+
+Cơ chế đăng nhập hợp nhất đa kênh (Local Email và Google OAuth2). Triển khai xác thực bảo mật qua mã OTP 6 số sống trong 5 phút thay thế hoàn toàn cơ chế Magic Link.
+
+## UC-SYS02: Ghi nhận Nhật ký Hệ thống và Kiểm toán (System Logging)
+
+Kiến trúc giám sát chạy ngầm qua 3 luồng: Log Kỹ thuật, Log Nghiệp vụ và Log Tích hợp Webhook. Sử dụng Spring AOP để tự động đánh chặn và lưu vết bất đồng bộ, giấu kín thông tin nhạy cảm (Data Masking).
+
+---
+
+## Đặc tả Kiến trúc và Kỹ thuật Hệ thống
+
+## Đặc tả Kiến trúc Backend (Spring Boot 5-Tier Modular Monolith)
+
+* 
+**Stack:** Java 17/21, Spring Boot 3.x, Spring Data JPA, Redis, MapStruct.
+
+
+* 
+**Cấu trúc 5 lớp:** Security/Gateway, REST/STOMP Controllers, Core Business (Pricing Engine, Routing Engine), Event-Driven Tier (Pub/Sub), Data & Cache.
+
+
+* **Giải quyết tử huyệt:** Dùng Optimistic Locking chống tranh chấp thẻ; Redis Atomic Counters để đếm xe Real-time không sập DB; Native SQL Update cho Cron Job ban đêm.
+
+
+
+## Đặc tả Kiến trúc Frontend (React & State Management)
+
+* 
+**Stack:** React 18, Vite, TanStack Query (Server State), Zustand (WebSocket State), Tailwind + Antd.
+
+
+* 
+**Quản lý Trạng thái:** Tách bạch dữ liệu REST API (giao cho TanStack Query lưu cache) và dữ liệu Real-time (hứng từ STOMP bơm vào Zustand Store).
+
+
+* **Tối ưu hiệu năng:** Áp dụng Micro-subscriptions để chống Re-render toàn trang; Dùng thuật toán Throttle/Debounce để chống nhiễu loạn UI khi dữ liệu nhảy liên tục.
+
+
+
+## Đặc tả Giao thức API và WebSocket (Communication Contracts)
+
+* 
+**REST API:** Chuẩn hóa Wrapper JSON (Status, Code, Message, Data), cấu trúc thư mục endpoint theo Version `/api/v1/`.
+
+
+* 
+**WebSocket:** Handshake qua STOMP, xác thực JWT trong Header. Phân tách kênh rõ ràng: Broadcast (`/topic/...`) và Unicast đích danh (`/user/queue/...`). Bắt buộc áp dụng luật Nhịp tim (Heartbeat) và Stateless Broker (Redis Pub/Sub).
+
+
+
+## Đặc tả Hệ thống Giả lập Phần cứng (Hardware Mocking Tool)
+
+Công cụ web kỹ thuật dành cho Tester mô phỏng thiết bị vật lý IoT. Cung cấp màn hình giả lập Camera LPR (bắn API biển số), đầu đọc thẻ RFID, Barrier, và màn hình ma trận tương tác giả lập cảm biến tại ô đỗ.

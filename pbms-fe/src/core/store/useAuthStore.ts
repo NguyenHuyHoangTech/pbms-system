@@ -5,13 +5,12 @@ interface AuthState {
   token: string | null;
   email: string | null;
   role: string | null;
-  shiftStatus: 'OPEN' | 'CLOSED';
-  activeGateId: string | null;
   name: string | null;
   authProvider: 'LOCAL' | 'GOOGLE' | null;
   hasPassword: boolean;
-  setAuth: (token: string, email: string, role: string) => void;
-  mockLogin: (role: string) => void;
+  shiftStatus: 'OPEN' | 'CLOSED';
+  activeGateId: string | null;
+  setAuth: (token: string, email: string, role: string, name?: string, hasPassword?: boolean, linkedGoogle?: boolean) => void;
   logout: () => void;
   isAuthenticated: () => boolean;
   setShiftStatus: (status: 'OPEN' | 'CLOSED') => void;
@@ -27,20 +26,18 @@ export const useAuthStore = create<AuthState>()(
       token: null,
       email: null,
       role: null,
-      shiftStatus: 'CLOSED',
-      activeGateId: null,
       name: null,
       authProvider: null,
       hasPassword: false,
-      setAuth: (token, email, role) => set({ token, email, role }),
-      mockLogin: (role) => set({ 
-        token: 'mock-jwt-token', 
-        email: `mock_${role.toLowerCase()}@pbms.com`, 
+      shiftStatus: 'CLOSED',
+      activeGateId: null,
+      setAuth: (token, email, role, name, hasPassword, linkedGoogle) => set({
+        token,
+        email,
         role,
-        name: `User ${role}`,
-        authProvider: Math.random() > 0.5 ? 'GOOGLE' : 'LOCAL',
-        hasPassword: Math.random() > 0.5,
-        shiftStatus: 'CLOSED'
+        name: name || null,
+        hasPassword: hasPassword ?? false,
+        authProvider: linkedGoogle ? 'GOOGLE' : 'LOCAL',
       }),
       logout: () => set({ token: null, email: null, role: null, shiftStatus: 'CLOSED', activeGateId: null, name: null, authProvider: null, hasPassword: false }),
       isAuthenticated: () => !!get().token,
@@ -50,8 +47,6 @@ export const useAuthStore = create<AuthState>()(
       linkGoogleAccount: () => set({ authProvider: 'GOOGLE' }),
       createPassword: () => set({ hasPassword: true }),
     }),
-    {
-      name: 'auth-storage',
-    }
+    { name: 'auth-storage' }
   )
 );

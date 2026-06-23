@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuthStore } from '../../core/store/useAuthStore';
 import { useWebSocket } from '../../core/websocket/useWebSocket';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, Button, message, Tag, Typography, Modal, Row, Col, Radio, Input, Divider, Select, InputNumber } from 'antd';
 import { CarOutlined, LockOutlined, UnlockOutlined, CheckCircleOutlined, DollarOutlined, AimOutlined, WarningOutlined, CloseCircleOutlined, QrcodeOutlined, IdcardOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
@@ -10,32 +11,30 @@ import Konva from 'konva';
 
 const { Title, Text } = Typography;
 
-const MOCK_GATES = [
-  { id: 1, name: 'Gate IN - Làn Ô tô (B1)', status: 'IDLE', type: 'IN', floor: 'B1' },
-  { id: 2, name: 'Gate IN - Làn Xe máy (B1)', status: 'OCCUPIED', staffName: 'Nguyen Van A', type: 'IN', floor: 'B1' },
-  { id: 3, name: 'Gate OUT - Tổng hợp (B1)', status: 'IDLE', type: 'OUT', floor: 'B1' },
-  { id: 4, name: 'Đội Tuần Tra - Tầng 1', status: 'IDLE', type: 'PATROL', floor: 'B1' },
-  { id: 5, name: 'Gate OUT - Tầng B2', status: 'IDLE', type: 'OUT', floor: 'B2' },
-  { id: 6, name: 'Đội Tuần Tra - Tầng 2', status: 'IDLE', type: 'PATROL', floor: 'B2' }
-];
-
 const GRID_SIZE = 50;
-const STAFF_MOCK_ZONES = [
-  { id: 1, name: 'Zone A', capacity: 5, vehicleType: 'CAR', layoutX: 100, layoutY: 100, rotation: 0, slots: Array.from({length: 5}).map((_, i) => ({ id: `A0${i+1}`, status: i % 2 === 0 ? 'OCCUPIED' : 'EMPTY', name: `A0${i+1}`, plate: i % 2 === 0 ? `51A-${100+i}.4${i}` : undefined })) },
-  { id: 2, name: 'Zone B', capacity: 8, vehicleType: 'MOTORBIKE', layoutX: 100, layoutY: 400, rotation: 0, slots: Array.from({length: 8}).map((_, i) => ({ id: `B0${i+1}`, status: i === 1 ? 'OCCUPIED' : 'EMPTY', name: `B0${i+1}`, plate: i === 1 ? '59G-123.45' : undefined })) },
-  { id: 3, name: 'Zone C', capacity: 4, vehicleType: 'CAR', layoutX: 500, layoutY: 100, rotation: 90, slots: Array.from({length: 4}).map((_, i) => ({ id: `C0${i+1}`, status: i === 1 ? 'OCCUPIED' : 'EMPTY', name: `C0${i+1}`, plate: i === 1 ? '30A-999.99' : undefined })) },
-];
 
-const getVehicleDimensions = (type: string) => {
-  if (type === 'CAR') return { width: 3 * GRID_SIZE, height: 5 * GRID_SIZE }; 
-  if (type === 'MOTORBIKE') return { width: 1 * GRID_SIZE, height: 2 * GRID_SIZE }; 
-  return { width: 2 * GRID_SIZE, height: 4 * GRID_SIZE };
-};
+
 
 export const GateConsoleScreen = () => {
-  const { connected } = useWebSocket();
-  
+  const { connected, stompClient } = useWebSocket();
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
+
+  const { data: gatesData } = useQuery({
+    queryKey: ['gates'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/infrastructure/gates');
+      return res.data.data;
+    }
+  });
+
+  const { data: mapData } = useQuery({
+    queryKey: ['zonesMap'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/infrastructure/zones/map');
+      return res.data.data;
+    }
+  });
 
   const [isShiftActive, setIsShiftActive] = useState(false);
   const [activeGate, setActiveGate] = useState<any>(null);
@@ -43,23 +42,18 @@ export const GateConsoleScreen = () => {
   const [scanData, setScanData] = useState<any>(null);
   const [editablePlate, setEditablePlate] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
-  const [mockZones, setMockZones] = useState(STAFF_MOCK_ZONES);
-  const [preBookingSlotId, setPreBookingSlotId] = useState<string | null>(null);
   
   // OUT Gate states
   const [checkoutFee, setCheckoutFee] = useState<number | null>(null);
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'PAYOS' | 'VNPAY'>('CASH');
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
 
-  // Pre-booking notification state
-  const [showPreBooking, setShowPreBooking] = useState(true);
-
   const shiftStatus = useAuthStore((state) => state.shiftStatus);
 
   useEffect(() => {
-    const activeGateIdStr = sessionStorage.getItem('mockActiveGateId');
-    if (shiftStatus === 'OPEN' && activeGateIdStr) {
-      const gate = MOCK_GATES.find(g => String(g.id) === activeGateIdStr);
+    const activeGateIdStr = sessionStorage.getItem('activeGateId');
+    if (shiftStatus === 'OPEN' && activeGateIdStr && gatesData) {
+      const gate = gatesData.find((g: any) => String(g.id) === activeGateIdStr);
       if (gate) {
         setActiveGate(gate);
         setIsShiftActive(true);
@@ -67,26 +61,40 @@ export const GateConsoleScreen = () => {
     } else {
       setIsShiftActive(false);
     }
-  }, [shiftStatus]);
+  }, [shiftStatus, gatesData]);
+
+  // WebSocket for real-time map IoT updates
+  useEffect(() => {
+    if (stompClient && connected) {
+      const sub = stompClient.subscribe('/topic/map-updates', (message) => {
+        const payload = JSON.parse(message.body);
+        queryClient.setQueryData(['zonesMap'], (oldData: any) => {
+          if (!oldData) return oldData;
+          return oldData.map((z: any) => ({
+            ...z,
+            slots: z.slots.map((s: any) => s.id === payload.id ? { ...s, status: payload.status } : s)
+          }));
+        });
+      });
+      return () => sub.unsubscribe();
+    }
+  }, [stompClient, connected, queryClient]);
 
   // Konva State
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [stagePos, setStagePos] = useState({ x: 0, y: 0 });
   const [stageScale, setStageScale] = useState(1);
-  const [mapCols] = useState(30);
-  const [mapRows] = useState(20);
+  const [mapCols] = useState(60);
+  const [mapRows] = useState(40);
   
   const activeSlotRef = useRef<Konva.Rect | null>(null);
   const tweenRef = useRef<Konva.Tween | null>(null);
-  
-  const preBookingSlotRef = useRef<Konva.Rect | null>(null);
-  const preBookingTweenRef = useRef<any>(null);
 
   useEffect(() => {
     if (containerRef.current && isShiftActive) {
-      const containerW = containerRef.current.clientWidth;
-      const containerH = containerRef.current.clientHeight;
+      const containerW = (containerRef.current?.clientWidth || 0);
+      const containerH = (containerRef.current?.clientHeight || 0);
       const mapW = mapCols * GRID_SIZE;
       const mapH = mapRows * GRID_SIZE;
       
@@ -102,156 +110,53 @@ export const GateConsoleScreen = () => {
   }, [isShiftActive, mapCols, mapRows]);
 
   useEffect(() => {
-    // Handle flashing animation for allocated slot (First empty slot in Zone)
-    if (scanData?.allocatedZoneId && activeGate?.type === 'IN') {
-      const stage = stageRef.current;
-      if (stage) {
-        const zone = mockZones.find(z => z.id === scanData.allocatedZoneId);
-        if (zone) {
-           const firstEmptySlot = [...zone.slots].sort((a,b) => a.name.localeCompare(b.name)).find(s => s.status === 'EMPTY');
-           if (firstEmptySlot) {
-             const slotNode = stage.findOne(`#slot-${firstEmptySlot.id}`);
-             if (slotNode) {
-               activeSlotRef.current = slotNode as Konva.Rect;
-               const rect = activeSlotRef.current;
-               
-               let isYellow = false;
-               const blinkInterval = setInterval(() => {
-                 rect.fill(isYellow ? 'transparent' : '#fef08a'); // yellow-200
-                 isYellow = !isYellow;
-                 rect.getLayer()?.batchDraw();
-               }, 500);
-
-               tweenRef.current = blinkInterval as any;
-             }
-           }
-        }
-      }
-    } else {
-      if (tweenRef.current) {
-        clearInterval(tweenRef.current as any);
-        tweenRef.current = null;
-      }
-      if (activeSlotRef.current) {
-        activeSlotRef.current.fill('transparent');
-        activeSlotRef.current.getLayer()?.batchDraw();
-        activeSlotRef.current = null;
-      }
-    }
-    
+    // Only cleanup active slot logic if any
     return () => {
       if (tweenRef.current) clearInterval(tweenRef.current as any);
     }
-  }, [scanData, activeGate]);
+  }, []);
 
   useEffect(() => {
-    // Handle flashing for pre-booking notification
-    if (showPreBooking && isShiftActive && activeGate?.type === 'IN') {
-      const stage = stageRef.current;
-      if (stage) {
-        const zoneA = mockZones.find(z => z.id === 1);
-        if (zoneA) {
-          const firstEmpty = [...zoneA.slots].sort((a,b) => a.name.localeCompare(b.name)).find(s => s.status === 'EMPTY');
-          if (firstEmpty) {
-            setPreBookingSlotId(firstEmpty.id);
-            const slotNode = stage.findOne(`#slot-${firstEmpty.id}`);
-            if (slotNode) {
-              preBookingSlotRef.current = slotNode as Konva.Rect;
-              const rect = preBookingSlotRef.current;
-              
-              let isBlue = false;
-              const blinkInterval = setInterval(() => {
-                rect.fill(isBlue ? 'transparent' : '#bfdbfe'); // blue-200
-                isBlue = !isBlue;
-                rect.getLayer()?.batchDraw();
-              }, 500);
+    if (isShiftActive && activeGate && stompClient && connected) {
+      const destination = `/topic/gates/${activeGate.id}/scans`;
+      const subscription = stompClient.subscribe(destination, (message) => {
+        console.log("RECEIVED WEBSOCKET MESSAGE:", message.body);
+        const payload = JSON.parse(message.body);
+        
+        // IOT payload contains plateNumber, imageBase64, confidence
+        // For UI purposes, we'll map it to our UI state shape
+        setEditablePlate(payload.plateNumber || 'UNKNOWN');
+        
+        setScanData({
+            plateNumber: payload.plateNumber,
+            imageBase64: payload.imageBase64 || 'https://placehold.co/600x400/2c3e50/ffffff?text=Camera+Feed',
+            lprImageBase64: payload.lprImageBase64 || 'https://placehold.co/300x100/34495e/ffffff?text=LPR+Crop',
+            imageInBase64: 'https://placehold.co/600x400/2c3e50/ffffff?text=IN+Cam',
+            imageOutBase64: payload.imageBase64 || 'https://placehold.co/600x400/2c3e50/ffffff?text=OUT+Cam',
+            lprImageInBase64: 'https://placehold.co/300x100/34495e/ffffff?text=IN+LPR',
+            lprImageOutBase64: payload.lprImageBase64 || 'https://placehold.co/300x100/34495e/ffffff?text=OUT+LPR',
+            plateNumberIn: payload.plateNumber || 'UNKNOWN',
+            timeIn: '--:--',
+            timeOut: '--:--',
+            duration: '--',
+            feeBase: 0,
+            feePenalty: 0,
+            discount: 0,
+            isBlacklisted: false,
+            warnings: [],
+            rfid: payload.rfid || '---',
+            customerType: 'VANG LAI',
+            vehicleType: 'CAR',
+            allocatedZoneId: null,
+            routing: 'Đang phân tích...'
+          });
+      });
 
-              preBookingTweenRef.current = blinkInterval;
-            }
-          }
-        }
-      }
-    } else {
-      if (preBookingTweenRef.current) {
-        clearInterval(preBookingTweenRef.current);
-        preBookingTweenRef.current = null;
-      }
-      if (preBookingSlotRef.current) {
-        preBookingSlotRef.current.fill('transparent');
-        preBookingSlotRef.current.getLayer()?.batchDraw();
-        preBookingSlotRef.current = null;
-      }
+      return () => {
+        subscription.unsubscribe();
+      };
     }
-
-    return () => {
-      if (preBookingTweenRef.current) clearInterval(preBookingTweenRef.current);
-    }
-  }, [showPreBooking, isShiftActive, activeGate, mockZones]);
-
-
-
-  useEffect(() => {
-    if (isShiftActive && activeGate) {
-      // Enhanced Mock Data Generator for UI Demonstration
-      const mockInterval = setInterval(() => {
-        if (!scanData) {
-          const isBlacklisted = Math.random() > 0.8;
-          const types = ['VÃNG LAI', 'ĐẶT TRƯỚC', 'VÉ THÁNG'];
-          const customerType = types[Math.floor(Math.random() * types.length)];
-          const isCar = Math.random() > 0.5;
-
-          if (activeGate.type === 'IN') {
-            const plate = isCar ? `51G-${Math.floor(100+Math.random()*899)}.${Math.floor(10+Math.random()*89)}` : `59X1-${Math.floor(10000+Math.random()*89999)}`;
-            const hasWarning = Math.random() > 0.5;
-            const warnings = hasWarning ? ['Khách hàng nợ phí tháng trước', 'Biển số có dấu hiệu bị mờ'] : [];
-            
-            setEditablePlate(plate);
-            setScanData({
-              plateNumber: plate,
-              imageBase64: 'https://placehold.co/600x400/2c3e50/ffffff?text=Panorama+Camera+Feed',
-              lprImageBase64: 'https://placehold.co/300x100/34495e/ffffff?text=LPR+Crop',
-              isBlacklisted,
-              warnings,
-              rfid: `CARD-${Math.floor(10000 + Math.random() * 89999)}`,
-              customerType,
-              vehicleType: isCar ? 'CAR' : 'MOTORBIKE',
-              allocatedZoneId: isCar ? 1 : 2,
-              routing: isCar ? `Tầng B1 - Zone A` : `Tầng B1 - Zone B`
-            });
-          } else {
-            // OUT Gate mock data
-            const plate = isCar ? `51G-${Math.floor(100+Math.random()*899)}.${Math.floor(10+Math.random()*89)}` : `59X1-${Math.floor(10000+Math.random()*89999)}`;
-            const hasWarning = Math.random() > 0.6;
-            const warnings = hasWarning ? ['Thời gian ra trễ hơn đăng ký', 'Biển số AI nhận dạng có 1 ký tự sai lệch'] : [];
-
-            setEditablePlate(plate);
-            setScanData({
-              plateNumberOut: plate,
-              plateNumberIn: plate.replace(/.$/, (Math.random() > 0.5 ? 'X' : plate.slice(-1))),
-              imageOutBase64: 'https://placehold.co/600x400/2c3e50/ffffff?text=OUT+Panorama',
-              lprImageOutBase64: 'https://placehold.co/300x100/34495e/ffffff?text=OUT+LPR',
-              imageInBase64: 'https://placehold.co/600x400/27ae60/ffffff?text=IN+Panorama',
-              lprImageInBase64: 'https://placehold.co/300x100/27ae60/ffffff?text=IN+LPR',
-              feeBase: isCar ? 30000 : 5000,
-              feePenalty: Math.random() > 0.8 ? 50000 : 0, 
-              discount: Math.random() > 0.8 ? 10000 : 0,
-              rfid: `CARD-${Math.floor(10000 + Math.random() * 89999)}`,
-              customerType,
-              vehicleType: isCar ? 'CAR' : 'MOTORBIKE',
-              allocatedZoneId: isCar ? 1 : 2,
-              timeIn: '08:00 18/06',
-              timeOut: '13:30 18/06',
-              duration: '5 giờ 30 phút',
-              isBlacklisted: false,
-              warnings
-            });
-          }
-        }
-      }, 10000);
-
-      return () => clearInterval(mockInterval);
-    }
-  }, [isShiftActive, activeGate, scanData]);
+  }, [isShiftActive, activeGate, stompClient, connected]);
 
   const handleCancel = () => {
     setScanData(null);
@@ -265,42 +170,63 @@ export const GateConsoleScreen = () => {
   const handleCheckIn = async () => {
     if (!scanData || !activeGate) return;
     setIsLoading(true);
-    setTimeout(() => {
-      message.success(`Xác nhận xe vào thành công! Barrier đã mở.`);
+    try {
+      const payload = {
+        gateId: activeGate.id,
+        plateNumber: editablePlate,
+        vehicleType: scanData.vehicleType || 'CAR',
+        rfid: scanData.rfid,
+        imageBase64: scanData.imageBase64
+      };
+      const response = await axiosClient.post('/operation/gates/check-in', payload);
+      
+      const suggestedZone = response.data.data.suggestedZoneName || 'Tự do';
+      message.success(`Xác nhận xe vào thành công! Gợi ý khu: ${suggestedZone}`);
       setScanData(null);
       setEditablePlate('');
+    } catch (error: any) {
+      message.error(error.response?.data?.message || 'Lỗi khi check-in xe vào.');
+    } finally {
       setIsLoading(false);
-    }, 800);
+    }
   };
 
-  const handleCalculateFee = () => {
-    if (!scanData) return;
-    setIsLoading(true);
-    setTimeout(() => {
-      const total = scanData.feeBase + scanData.feePenalty - (scanData.discount || 0);
-      setCheckoutFee(total > 0 ? total : 0);
-      setIsLoading(false);
-    }, 500);
-  };
 
-  const handleMockPaymentSuccess = () => {
+  const handleManualPaymentConfirm = () => {
     setPaymentConfirmed(true);
     message.success('Hệ thống ghi nhận thanh toán thành công!');
   };
 
-  const handleCompletePaymentAndOpen = () => {
-    message.success('Đã mở barrier cho xe ra!');
-    setScanData(null);
-    setEditablePlate('');
-    setCheckoutFee(null);
-    setPaymentMethod('CASH');
-    setPaymentConfirmed(false);
+  const handleCompletePaymentAndOpen = async () => {
+    if (!scanData || !activeGate) return;
+    setIsLoading(true);
+    try {
+      const payload = {
+        gateId: activeGate.id,
+        plateNumber: editablePlate,
+        rfid: scanData.rfid,
+        imageBase64: scanData.imageOutBase64
+      };
+      const response = await axiosClient.post('/operation/gates/check-out', payload);
+      
+      message.success(`Đã mở barrier cho xe ra! Phí thanh toán: ${(response.data.data.checkoutFee || 0).toLocaleString()} ₫`);
+      setScanData(null);
+      setEditablePlate('');
+      setCheckoutFee(null);
+      setPaymentMethod('CASH');
+      setPaymentConfirmed(false);
+    } catch (error: any) {
+      message.error(error.response?.data?.message || 'Lỗi khi check-out xe ra.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleAutoZoom = (zone: any) => {
     if (!stageRef.current || !containerRef.current) return;
     
-    const { width: slotW, height: slotH } = getVehicleDimensions(zone.vehicleType);
+    const slotW = (zone.vehicleMatrixWidth || 3) * GRID_SIZE;
+    const slotH = (zone.vehicleMatrixHeight || 6) * GRID_SIZE;
     let zoneW = zone.capacity * slotW;
     let zoneH = slotH;
     
@@ -309,8 +235,8 @@ export const GateConsoleScreen = () => {
       zoneH = zone.capacity * slotW;
     }
 
-    const containerW = containerRef.current.clientWidth;
-    const containerH = containerRef.current.clientHeight;
+    const containerW = (containerRef.current?.clientWidth || 0);
+    const containerH = (containerRef.current?.clientHeight || 0);
 
     const padding = 100;
     const scaleX = (containerW - padding) / zoneW;
@@ -318,8 +244,8 @@ export const GateConsoleScreen = () => {
     let newScale = Math.min(scaleX, scaleY);
     newScale = Math.min(newScale, 3);
 
-    let centerX = zone.layoutX;
-    let centerY = zone.layoutY;
+    let centerX = zone.layoutX || 0;
+    let centerY = zone.layoutY || 0;
     
     if (zone.rotation === 0) {
       centerX += zoneW / 2;
@@ -395,43 +321,6 @@ export const GateConsoleScreen = () => {
     );
   }
 
-  // Universal Identity Card
-  const renderIdentityCard = () => {
-    let tagColor = 'blue';
-    if (scanData?.customerType === 'ĐẶT TRƯỚC') tagColor = 'gold';
-    if (scanData?.customerType === 'VÉ THÁNG') tagColor = 'green';
-
-    return (
-      <div className="bg-white border-2 border-slate-200 rounded-xl p-4 mb-4 shadow-sm">
-        <div className="flex justify-between items-center mb-4">
-          <div className="flex items-center space-x-2">
-            <IdcardOutlined className="text-2xl text-blue-500" />
-            <Text className="text-xl font-bold text-slate-800">{scanData?.rfid || '---'}</Text>
-          </div>
-          <div className="flex items-center space-x-2">
-            {scanData?.customerType && (
-              <Tag color={tagColor} className="m-0 font-bold px-3 py-1 text-sm border-0">
-                {scanData.customerType}
-              </Tag>
-            )}
-            <Tag color="default" className="m-0 font-bold px-3 py-1 text-sm border-0 flex items-center">
-              {scanData?.vehicleType === 'CAR' ? '🚗 Ô tô' : (scanData ? '🛵 Xe máy' : '---')}
-            </Tag>
-          </div>
-        </div>
-        <div className="flex flex-col">
-          <Text className="text-slate-500 font-bold mb-1 block">Biển số nhận diện (Chỉnh sửa nếu AI sai):</Text>
-          <Input 
-            size="large" 
-            value={editablePlate} 
-            onChange={(e) => setEditablePlate(e.target.value)} 
-            disabled={!scanData}
-            className="text-4xl font-mono font-bold text-center h-16 tracking-widest text-slate-900 border-2 border-blue-400 focus:border-blue-600"
-          />
-        </div>
-      </div>
-    );
-  };
 
   const renderInGatePanel = () => (
     <div className="flex flex-col h-full overflow-hidden w-full bg-slate-100">
@@ -709,8 +598,8 @@ export const GateConsoleScreen = () => {
                           <>
                             <QrcodeOutlined className="text-5xl text-slate-800 mb-1" />
                             <Text type="secondary" className="font-bold text-[9px] uppercase">Khách quét QR</Text>
-                            <Button type="primary" size="small" className="mt-2 bg-blue-600 w-full font-bold text-xs" onClick={handleMockPaymentSuccess}>
-                              Xác nhận đã nhận tiền
+                            <Button type="primary" size="small" className="mt-2 bg-blue-600 w-full font-bold text-xs" onClick={handleManualPaymentConfirm}>
+                              Xác nhận KH đã chuyển khoản
                             </Button>
                           </>
                         ) : (
@@ -779,29 +668,6 @@ export const GateConsoleScreen = () => {
                 <Title level={4} className="m-0 text-slate-800 whitespace-nowrap flex items-center">
                   {activeGate?.name} <span className="text-[10px] ml-2 bg-blue-600 text-white px-1.5 py-0.5 rounded shadow-sm">LIVE</span>
                 </Title>
-                
-                {showPreBooking && (
-                  <div className="flex-1 bg-blue-50 border border-blue-300 p-1 px-2 rounded-lg flex items-center shadow-sm relative overflow-hidden group transition-all">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-                    <ClockCircleOutlined className="text-blue-600 text-sm ml-1 mr-1.5 animate-pulse" />
-                    <div className="flex-1 mr-2 flex flex-col justify-center">
-                      <Text className="text-blue-800 font-bold text-[9px] uppercase tracking-widest block leading-none mb-0.5">Hệ Thống Đặt trước</Text>
-                      <Text className="text-blue-700 text-[10px] leading-none block">
-                        VIP 51H-555.22 - <span className="font-bold text-white bg-blue-600 px-1 rounded shadow-sm">Khu: Zone A</span>
-                      </Text>
-                    </div>
-                    <Button type="primary" className="h-6 text-[10px] px-2 py-0" onClick={() => {
-                      if (preBookingSlotId) {
-                        setMockZones(prev => prev.map(z => z.id === 1 ? {
-                          ...z,
-                          slots: z.slots.map(s => s.id === preBookingSlotId ? { ...s, status: 'OCCUPIED', plate: '51H-555.22' } : s)
-                        } : z));
-                      }
-                      message.success('Đã xác nhận sắp xếp chỗ đỗ Đặt trước!');
-                      setShowPreBooking(false);
-                    }}>Xác nhận</Button>
-                  </div>
-                )}
               </div>
               {renderInGatePanel()}
             </Col>
@@ -814,34 +680,34 @@ export const GateConsoleScreen = () => {
                   if (containerRef.current) {
                     const mapW = mapCols * GRID_SIZE;
                     const mapH = mapRows * GRID_SIZE;
-                    const scale = Math.min(containerRef.current.clientWidth / mapW, containerRef.current.clientHeight / mapH) * 0.95;
+                    const scale = Math.min((containerRef.current?.clientWidth || 0) / mapW, (containerRef.current?.clientHeight || 0) / mapH) * 0.95;
                     const minScaleLocked = Math.min(scale, 1);
                     const tween = new Konva.Tween({
                       node: stageRef.current,
                       duration: 0.5,
                       easing: Konva.Easings.EaseInOut,
-                      x: (containerRef.current.clientWidth - mapW * minScaleLocked) / 2,
-                      y: (containerRef.current.clientHeight - mapH * minScaleLocked) / 2,
+                      x: ((containerRef.current?.clientWidth || 0) - mapW * minScaleLocked) / 2,
+                      y: ((containerRef.current?.clientHeight || 0) - mapH * minScaleLocked) / 2,
                       scaleX: minScaleLocked,
                       scaleY: minScaleLocked,
                       onFinish: () => {
-                        setStagePos({ x: (containerRef.current.clientWidth - mapW * minScaleLocked) / 2, y: (containerRef.current.clientHeight - mapH * minScaleLocked) / 2 });
+                        setStagePos({ x: ((containerRef.current?.clientWidth || 0) - mapW * minScaleLocked) / 2, y: ((containerRef.current?.clientHeight || 0) - mapH * minScaleLocked) / 2 });
                         setStageScale(minScaleLocked);
                       }
                     });
                     tween.play();
                   }
                 }}>Tổng thể</Button>
-                {STAFF_MOCK_ZONES.map(z => (
-                  <Button key={z.id} size="small" onClick={() => handleAutoZoom(z)}>{z.name}</Button>
+                {mapData && mapData.filter((z: any) => z.floorId === activeGate?.floorId).map((zone: any) => (
+                  <Button key={zone.id} size="small" onClick={() => handleAutoZoom(zone)}>{zone.name || zone.zoneName}</Button>
                 ))}
               </div>
 
               <div className="flex-1 w-full h-full cursor-grab active:cursor-grabbing" ref={containerRef}>
                 {containerRef.current && (
                   <Stage 
-                    width={containerRef.current.clientWidth} 
-                    height={containerRef.current.clientHeight}
+                    width={(containerRef.current?.clientWidth || 0)} 
+                    height={(containerRef.current?.clientHeight || 0)}
                     draggable
                     scaleX={stageScale}
                     scaleY={stageScale}
@@ -858,22 +724,23 @@ export const GateConsoleScreen = () => {
                       {drawGrid()}
                     </Layer>
                     <Layer>
-                      {mockZones.map((zone) => {
-                        const { width: slotW, height: slotH } = getVehicleDimensions(zone.vehicleType);
+                      {mapData && mapData.filter((z: any) => z.floorId === activeGate?.floorId).map((zone: any) => {
+                        const slotW = (zone.vehicleMatrixWidth || 3) * GRID_SIZE;
+                        const slotH = (zone.vehicleMatrixHeight || 6) * GRID_SIZE;
                         const zoneW = zone.capacity * slotW;
                         const zoneH = slotH;
                         
                         return (
                           <Group
                             key={zone.id}
-                            x={zone.layoutX}
-                            y={zone.layoutY}
-                            rotation={zone.rotation}
+                            x={zone.layoutX || 100}
+                            y={zone.layoutY || 100}
+                            rotation={zone.rotation || 0}
                           >
                             <KonvaText
                               x={0}
                               y={-20}
-                              text={`${zone.name}`}
+                              text={`${zone.name || zone.zoneName}`}
                               fontSize={18}
                               fontFamily="sans-serif"
                               fill="#334155"
@@ -886,7 +753,7 @@ export const GateConsoleScreen = () => {
                               stroke="#64748b"
                               strokeWidth={2}
                             />
-                            {zone.slots.map((slot, i) => {
+                            {zone.slots.map((slot: any, i: number) => {
                               const xPos = i * slotW;
                               let slotFill = 'transparent';
                               if (slot.status === 'OCCUPIED') slotFill = '#fecaca';
@@ -906,25 +773,12 @@ export const GateConsoleScreen = () => {
                                     y={slotH / 2 - 16}
                                     width={slotW}
                                     align="center"
-                                    text={slot.name}
+                                    text={slot.slotName}
                                     fontSize={16}
                                     fill="#334155"
                                     fontStyle="bold"
                                     listening={false}
                                   />
-                                  {slot.status === 'OCCUPIED' && slot.plate && (
-                                    <KonvaText
-                                      x={0}
-                                      y={slotH / 2 + 4}
-                                      width={slotW}
-                                      align="center"
-                                      text={slot.plate}
-                                      fontSize={12}
-                                      fill="#ef4444"
-                                      fontStyle="bold"
-                                      listening={false}
-                                    />
-                                  )}
                                 </Group>
                               );
                             })}

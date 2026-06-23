@@ -3,487 +3,303 @@ import { useMutation } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
 import { useAuthStore } from '../../core/store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
+import { GoogleLogin } from '@react-oauth/google';
+
+type View = 'login' | 'register' | 'forgot-password' | 'setup-password';
 
 export const LoginScreen = () => {
-  const [view, setView] = useState<'login' | 'register' | 'forgot-password'>('login');
-  const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
-  const [otpStep, setOtpStep] = useState<1 | 2>(1);
-  const [forgotStep, setForgotStep] = useState<1 | 2 | 3>(1);
-  
+  const [view, setView] = useState<View>('login');
+  const [regStep, setRegStep] = useState<1 | 2>(1);      // 1=form, 2=otp
+  const [forgotStep, setForgotStep] = useState<1 | 2 | 3>(1); // 1=email, 2=otp, 3=new-password
+
   const [email, setEmail] = useState('');
+  const [fullName, setFullName] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [otpCode, setOtpCode] = useState('');
-  const [tempToken, setTempToken] = useState('');
-  
+  const [resetToken, setResetToken] = useState('');
+  const [setupToken, setSetupToken] = useState('');
+
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-  
-  const setAuth = useAuthStore((state) => state.setAuth);
+  const [isOtpMode, setIsOtpMode] = useState(false); // login OTP mode
+
+  const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
 
-  const handleSuccessAuth = (data: any) => {
-    const { token, email: userEmail, role } = data.data;
-    setAuth(token, userEmail, role);
-    
+  const clearMessages = () => { setError(''); setSuccessMsg(''); };
+
+  const navigateByRole = (role: string) => {
     switch (role) {
-      case 'ROLE_SUPER_ADMIN':
-        navigate('/admin/users');
-        break;
-      case 'ROLE_MANAGER':
-        navigate('/manager/building-profile');
-        break;
-      case 'ROLE_STAFF':
-        navigate('/staff/shift-management');
-        break;
-      case 'ROLE_CUSTOMER':
-        navigate('/customer/home');
-        break;
-      default:
-        navigate('/login');
-        break;
+      case 'ROLE_SUPER_ADMIN': navigate('/admin/users'); break;
+      case 'ROLE_MANAGER': navigate('/manager/building-profile'); break;
+      case 'ROLE_STAFF': navigate('/staff/shift-management'); break;
+      case 'ROLE_CUSTOMER': navigate('/customer/home'); break;
+      default: navigate('/login');
     }
   };
 
-  const loginPasswordMutation = useMutation({
-    mutationFn: async () => {
-      const response = await axiosClient.post('/auth/login', { email, password });
-      return response.data;
-    },
+  const handleSuccessAuth = (data: any) => {
+    const d = data.data;
+    setAuth(d.accessToken, d.email, d.role, d.fullName, d.hasPassword, d.linkedGoogle);
+    if (d.needsPasswordSetup) {
+      setSetupToken(d.accessToken);
+      setView('setup-password');
+    } else {
+      navigateByRole(d.role);
+    }
+  };
+
+  // --- LOGIN ---
+  const loginMutation = useMutation({
+    mutationFn: async () => (await axiosClient.post('/auth/login', { email, password })).data,
     onSuccess: handleSuccessAuth,
     onError: (err: any) => {
-      const status = err.response?.status;
-      const message = err.response?.data?.message || err.message;
-      
-      if (status === 403 && message.includes('ACCOUNT_UNVERIFIED')) {
-        setError('Tài khoản chưa được xác thực. Vui lòng kiểm tra email và nhập mã OTP để tiếp tục.');
-        setLoginMethod('otp');
-        setOtpStep(2);
-      } else if (status === 403 && message.includes('ACCOUNT_INACTIVE')) {
-        setError('Tài khoản đã bị khóa. Vui lòng liên hệ Admin.');
-      } else {
-        setError(message || 'Login failed. Please check your credentials.');
-      }
+      const msg = err.response?.data?.message || err.message || 'Đăng nhập thất bại';
+      setError(msg);
     }
   });
 
+  // --- REGISTER ---
   const registerMutation = useMutation({
-    mutationFn: async () => {
-      const response = await axiosClient.post('/auth/register', { email, password, confirmPassword });
-      return response.data;
-    },
-    onSuccess: () => {
-      setSuccessMsg('Registration successful. An OTP has been sent to your email.');
-      setError('');
-      setView('login');
-      setLoginMethod('otp');
-      setOtpStep(2);
-      setPassword('');
-      setConfirmPassword('');
-    },
-    onError: (err: any) => {
-      setError(err.response?.data?.message || 'Registration failed.');
-      setSuccessMsg('');
-    }
+    mutationFn: async () => (await axiosClient.post('/auth/register', { email, password, confirmPassword, fullName })).data,
+    onSuccess: () => { setSuccessMsg('Đăng ký thành công! Mã OTP đã gửi đến email.'); setError(''); setRegStep(2); },
+    onError: (err: any) => { setError(err.response?.data?.message || 'Đăng ký thất bại.'); setSuccessMsg(''); }
   });
 
-  const sendOtpMutation = useMutation({
-    mutationFn: async () => {
-      const response = await axiosClient.post('/auth/send-otp', { email });
-      return response.data;
-    },
-    onSuccess: () => {
-      setOtpStep(2);
-      setError('');
-      setSuccessMsg('OTP has been sent to your email.');
-    },
-    onError: (err: any) => {
-      setError(err.response?.data?.message || 'Failed to send OTP');
-      setSuccessMsg('');
-    }
+  const verifyRegisterOtpMutation = useMutation({
+    mutationFn: async () => (await axiosClient.post('/auth/verify-otp', { email, otpCode, purpose: 'REGISTER' })).data,
+    onSuccess: (data) => { setSuccessMsg('Xác thực thành công! Chuyển đến trang đăng nhập.'); setError(''); setTimeout(() => goToLogin(), 1500); },
+    onError: (err: any) => { setError(err.response?.data?.message || 'Mã OTP không hợp lệ.'); }
   });
 
-  const verifyOtpMutation = useMutation({
-    mutationFn: async () => {
-      const response = await axiosClient.post('/auth/verify-otp', { email, otpCode });
-      return response.data;
-    },
-    onSuccess: handleSuccessAuth,
-    onError: (err: any) => {
-      setError(err.response?.data?.message || 'Invalid OTP');
-      setSuccessMsg('');
-    }
-  });
-
-  // --- FORGOT PASSWORD MUTATIONS ---
-  const forgotPasswordMutation = useMutation({
-    mutationFn: async () => {
-      const response = await axiosClient.post('/auth/forgot-password', { email });
-      return response.data;
-    },
-    onSuccess: () => {
-      setForgotStep(2);
-      setError('');
-      setSuccessMsg('Mã OTP đã được gửi đến email của bạn.');
-    },
-    onError: (err: any) => {
-      setError(err.response?.data?.message || 'Không tìm thấy tài khoản.');
-      setSuccessMsg('');
-    }
+  // --- FORGOT PASSWORD ---
+  const forgotMutation = useMutation({
+    mutationFn: async () => (await axiosClient.post('/auth/forgot-password', { email })).data,
+    onSuccess: () => { setForgotStep(2); setSuccessMsg('Mã OTP đã gửi đến email.'); setError(''); },
+    onError: (err: any) => { setError(err.response?.data?.message || 'Không tìm thấy tài khoản.'); setSuccessMsg(''); }
   });
 
   const verifyForgotOtpMutation = useMutation({
-    mutationFn: async () => {
-      const response = await axiosClient.post('/auth/verify-forgot-password', { email, otpCode });
-      return response.data;
-    },
+    mutationFn: async () => (await axiosClient.post('/auth/verify-forgot-password', { email, otpCode })).data,
     onSuccess: (data) => {
-      setTempToken(data.data.token);
+      setResetToken(data.data);
       setForgotStep(3);
-      setError('');
-      setSuccessMsg('Xác thực thành công. Vui lòng nhập mật khẩu mới.');
       setOtpCode('');
+      setPassword('');
+      setConfirmPassword('');
+      setSuccessMsg('Xác thực thành công! Nhập mật khẩu mới.'); setError('');
     },
-    onError: (err: any) => {
-      setError(err.response?.data?.message || 'Mã OTP không hợp lệ.');
-      setSuccessMsg('');
-    }
+    onError: (err: any) => { setError(err.response?.data?.message || 'Mã OTP không hợp lệ.'); setSuccessMsg(''); }
   });
 
   const resetPasswordMutation = useMutation({
-    mutationFn: async () => {
-      const response = await axiosClient.post('/auth/reset-password', { newPassword: password }, {
-        headers: { Authorization: `Bearer ${tempToken}` }
-      });
-      return response.data;
-    },
-    onSuccess: () => {
-      setSuccessMsg('Đổi mật khẩu thành công! Bạn có thể đăng nhập.');
-      setError('');
-      setView('login');
-      setLoginMethod('password');
-      setPassword('');
-      setConfirmPassword('');
-    },
-    onError: (err: any) => {
-      setError(err.response?.data?.message || 'Đổi mật khẩu thất bại.');
-      setSuccessMsg('');
-    }
+    mutationFn: async () => (await axiosClient.post('/auth/reset-password', { newPassword: password, confirmPassword }, { headers: { Authorization: `Bearer ${resetToken}` } })).data,
+    onSuccess: () => { setSuccessMsg('Đổi mật khẩu thành công! Hãy đăng nhập.'); setError(''); setTimeout(() => goToLogin(), 1500); },
+    onError: (err: any) => { setError(err.response?.data?.message || 'Đổi mật khẩu thất bại.'); setSuccessMsg(''); }
   });
 
+  // --- SEND OTP (resend) ---
+  const sendOtpMutation = useMutation({
+    mutationFn: async (purpose: string) => (await axiosClient.post('/auth/send-otp', { email, purpose })).data,
+    onSuccess: () => { setSuccessMsg('Mã OTP mới đã được gửi đến email.'); setError(''); },
+    onError: (err: any) => { setError(err.response?.data?.message || 'Gửi OTP thất bại.'); }
+  });
+
+  // --- GOOGLE LOGIN ---
+  const googleLoginMutation = useMutation({
+    mutationFn: async (credential: string) => (await axiosClient.post('/auth/login/google', { googleIdToken: credential })).data,
+    onSuccess: handleSuccessAuth,
+    onError: (err: any) => { setError(err.response?.data?.message || 'Đăng nhập Google thất bại.'); }
+  });
+
+  // --- SETUP PASSWORD (after Google login) ---
+  const setupPasswordMutation = useMutation({
+    mutationFn: async () => (await axiosClient.post('/auth/set-password', { newPassword: password, confirmPassword }, { headers: { Authorization: `Bearer ${setupToken}` } })).data,
+    onSuccess: () => {
+      const store = useAuthStore.getState();
+      store.setAuth(setupToken, store.email!, store.role!, store.name || '', true, store.authProvider === 'GOOGLE');
+      setSuccessMsg('Thiết lập mật khẩu thành công!');
+      setTimeout(() => navigateByRole(useAuthStore.getState().role || ''), 1000);
+    },
+    onError: (err: any) => { setError(err.response?.data?.message || 'Thiết lập mật khẩu thất bại.'); }
+  });
+
+  const goToLogin = () => { setView('login'); setEmail(''); setPassword(''); setConfirmPassword(''); setOtpCode(''); setRegStep(1); setForgotStep(1); setIsOtpMode(false); clearMessages(); };
+
   const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccessMsg('');
-    
-    if (view === 'register') {
-      if (!email || !password || !confirmPassword) return setError('All fields are required');
-      if (password !== confirmPassword) return setError('Passwords do not match');
-      registerMutation.mutate();
+    e.preventDefault(); clearMessages();
+    if (view === 'login') {
+      if (!email || !password) return setError('Vui lòng nhập email và mật khẩu.');
+      loginMutation.mutate();
+    } else if (view === 'register') {
+      if (regStep === 1) {
+        if (!email || !fullName || !password || !confirmPassword) return setError('Vui lòng điền đầy đủ thông tin.');
+        if (password !== confirmPassword) return setError('Mật khẩu xác nhận không khớp.');
+        if (password.length < 6) return setError('Mật khẩu phải có ít nhất 6 ký tự.');
+        registerMutation.mutate();
+      } else {
+        if (!otpCode) return setError('Vui lòng nhập mã OTP.');
+        verifyRegisterOtpMutation.mutate();
+      }
     } else if (view === 'forgot-password') {
       if (forgotStep === 1) {
-        if (!email) return setError('Email is required');
-        forgotPasswordMutation.mutate();
+        if (!email) return setError('Vui lòng nhập email.');
+        forgotMutation.mutate();
       } else if (forgotStep === 2) {
-        if (!otpCode) return setError('OTP is required');
+        if (!otpCode) return setError('Vui lòng nhập mã OTP.');
         verifyForgotOtpMutation.mutate();
-      } else if (forgotStep === 3) {
-        if (!password || !confirmPassword) return setError('All fields are required');
-        if (password !== confirmPassword) return setError('Passwords do not match');
+      } else {
+        if (!password || !confirmPassword) return setError('Vui lòng nhập mật khẩu mới.');
+        if (password !== confirmPassword) return setError('Mật khẩu xác nhận không khớp.');
+        if (password.length < 6) return setError('Mật khẩu phải có ít nhất 6 ký tự.');
         resetPasswordMutation.mutate();
       }
-    } else {
-      if (loginMethod === 'password') {
-        if (!email || !password) return setError('Email and password are required');
-        loginPasswordMutation.mutate();
-      } else {
-        if (otpStep === 1) {
-          if (!email) return setError('Email is required');
-          sendOtpMutation.mutate();
-        } else {
-          if (!otpCode) return setError('OTP is required');
-          verifyOtpMutation.mutate();
-        }
-      }
+    } else if (view === 'setup-password') {
+      if (!password || !confirmPassword) return setError('Vui lòng nhập mật khẩu.');
+      if (password !== confirmPassword) return setError('Mật khẩu xác nhận không khớp.');
+      if (password.length < 6) return setError('Mật khẩu phải có ít nhất 6 ký tự.');
+      setupPasswordMutation.mutate();
     }
   };
 
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="max-w-md w-full p-8 bg-white rounded-xl shadow-lg border border-gray-100">
-        <h2 className="text-2xl font-bold text-center text-gray-800 mb-6">
-          {view === 'register' ? 'Đăng ký Tài khoản' : view === 'forgot-password' ? 'Quên Mật khẩu' : 'PBMS Login'}
-        </h2>
-        
-        {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>}
-        {successMsg && <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm">{successMsg}</div>}
+  const inputCls = "w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors text-gray-800 placeholder-gray-400";
+  const btnPrimary = "w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded-lg transition-colors disabled:opacity-60 disabled:cursor-not-allowed";
+  const btnSecondary = "text-sm text-blue-600 font-medium hover:underline disabled:opacity-50";
+  const btnGhost = "text-sm text-gray-500 hover:text-gray-700 transition-colors";
+  const labelCls = "block text-sm font-medium text-gray-700 mb-1";
 
-        {view === 'login' && (
-          <div className="flex mb-6 bg-gray-100 p-1 rounded-lg">
-            <button
-              type="button"
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${loginMethod === 'password' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-              onClick={() => { setLoginMethod('password'); setError(''); setSuccessMsg(''); }}
-            >
-              Mật khẩu
-            </button>
-            <button
-              type="button"
-              className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${loginMethod === 'otp' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
-              onClick={() => { setLoginMethod('otp'); setOtpStep(1); setError(''); setSuccessMsg(''); }}
-            >
-              OTP
-            </button>
+  const titles: Record<View, string> = {
+    login: '🅿 PBMS Đăng nhập',
+    register: 'Tạo tài khoản',
+    'forgot-password': 'Quên mật khẩu',
+    'setup-password': 'Thiết lập mật khẩu',
+  };
+
+  const isAnyPending = loginMutation.isPending || registerMutation.isPending || verifyRegisterOtpMutation.isPending || forgotMutation.isPending || verifyForgotOtpMutation.isPending || resetPasswordMutation.isPending || setupPasswordMutation.isPending;
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-gray-100">
+      <div className="max-w-md w-full m-4 p-8 bg-white rounded-2xl shadow-xl border border-gray-100">
+        <h2 className="text-2xl font-bold text-center text-gray-800 mb-2">{titles[view]}</h2>
+
+        {view === 'forgot-password' && (
+          <div className="flex justify-center gap-2 mb-6 mt-3">
+            {['Nhập email', 'Xác thực OTP', 'Mật khẩu mới'].map((label, i) => (
+              <div key={i} className="flex items-center">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${forgotStep > i + 1 ? 'bg-green-500 text-white' : forgotStep === i + 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'}`}>{forgotStep > i + 1 ? '✓' : i + 1}</div>
+                {i < 2 && <div className={`w-8 h-0.5 ${forgotStep > i + 1 ? 'bg-green-400' : 'bg-gray-200'}`} />}
+              </div>
+            ))}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Email field applies to all views EXCEPT Forgot Password Step 3 */}
-          {(view !== 'forgot-password' || (view === 'forgot-password' && forgotStep !== 3)) && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                placeholder="user@example.com"
-                disabled={loginPasswordMutation.isPending || registerMutation.isPending || sendOtpMutation.isPending || verifyOtpMutation.isPending || forgotStep > 1}
-              />
-            </div>
-          )}
+        {view === 'register' && regStep === 1 && <p className="text-center text-sm text-gray-500 mb-5">Điền thông tin để tạo tài khoản mới</p>}
+        {view === 'register' && regStep === 2 && <p className="text-center text-sm text-gray-500 mb-5">Nhập mã OTP đã gửi đến <span className="font-semibold text-gray-700">{email}</span></p>}
+        {view === 'setup-password' && <p className="text-center text-sm text-gray-500 mb-5">Tài khoản Google đã được xác thực. Hãy thiết lập mật khẩu để đăng nhập bằng email sau này.</p>}
 
-          {/* Register View */}
-          {view === 'register' && (
+        {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm flex items-start gap-2"><span>⚠️</span><span>{error}</span></div>}
+        {successMsg && <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-lg text-sm flex items-start gap-2"><span>✅</span><span>{successMsg}</span></div>}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* ============ LOGIN VIEW ============ */}
+          {view === 'login' && (
             <>
+              <div><label className={labelCls}>Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} placeholder="user@example.com" disabled={isAnyPending} /></div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="••••••••"
-                />
+                <label className={labelCls}>Mật khẩu</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={inputCls} placeholder="••••••••" disabled={isAnyPending} />
+                <div className="flex justify-end mt-1">
+                  <button type="button" onClick={() => { setView('forgot-password'); setForgotStep(1); clearMessages(); }} className="text-xs text-blue-600 hover:underline">Quên mật khẩu?</button>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Xác nhận mật khẩu</label>
-                <input
-                  type="password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="••••••••"
-                />
+              <button type="submit" disabled={isAnyPending} className={btnPrimary}>{loginMutation.isPending ? 'Đang đăng nhập...' : 'Đăng nhập'}</button>
+              <div className="relative my-4"><div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"/></div><div className="relative flex justify-center text-sm"><span className="px-3 bg-white text-gray-400">Hoặc</span></div></div>
+              <div className="flex justify-center">
+                <GoogleLogin onSuccess={cr => { if (cr.credential) googleLoginMutation.mutate(cr.credential); }} onError={() => setError('Đăng nhập Google thất bại.')} useOneTap theme="outline" size="large" text="signin_with" shape="rectangular" />
               </div>
-              <button
-                type="submit"
-                disabled={registerMutation.isPending}
-                className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-70 mt-2"
-              >
-                {registerMutation.isPending ? 'Đang đăng ký...' : 'Đăng ký'}
-              </button>
-              <div className="text-center mt-4 text-sm text-gray-600">
-                Đã có tài khoản?{' '}
-                <button type="button" onClick={() => setView('login')} className="text-blue-600 font-medium hover:underline">
-                  Đăng nhập
-                </button>
-              </div>
+              <p className="text-center mt-4 text-sm text-gray-500">Chưa có tài khoản? <button type="button" onClick={() => { setView('register'); clearMessages(); setRegStep(1); }} className={btnSecondary}>Đăng ký ngay</button></p>
             </>
           )}
 
-          {/* Forgot Password View */}
+          {/* ============ REGISTER VIEW ============ */}
+          {view === 'register' && (
+            <>
+              <div><label className={labelCls}>Email</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} placeholder="user@example.com" disabled={regStep === 2 || isAnyPending} /></div>
+              <div><label className={labelCls}>Họ và tên</label><input type="text" value={fullName} onChange={e => setFullName(e.target.value)} className={inputCls} placeholder="Nguyễn Văn A" disabled={regStep === 2 || isAnyPending} /></div>
+              <div><label className={labelCls}>Mật khẩu</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} className={inputCls} placeholder="Ít nhất 6 ký tự" disabled={regStep === 2 || isAnyPending} /></div>
+              <div><label className={labelCls}>Xác nhận mật khẩu</label><input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className={inputCls} placeholder="••••••••" disabled={regStep === 2 || isAnyPending} /></div>
+
+              {regStep === 1 && <button type="submit" disabled={isAnyPending} className={btnPrimary}>{registerMutation.isPending ? 'Đang gửi mã OTP...' : 'Đăng ký & Lấy mã OTP'}</button>}
+
+              {regStep === 2 && (
+                <div className="pt-4 border-t border-gray-200 space-y-3">
+                  <div>
+                    <label className={labelCls}>Mã OTP (6 chữ số)</label>
+                    <div className="flex gap-2">
+                      <input type="text" value={otpCode} onChange={e => setOtpCode(e.target.value)} className={`${inputCls} flex-1 tracking-widest text-center text-lg font-bold`} placeholder="123456" maxLength={6} autoFocus />
+                      <button type="button" onClick={() => sendOtpMutation.mutate('REGISTER')} disabled={sendOtpMutation.isPending} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm font-medium rounded-lg whitespace-nowrap disabled:opacity-50">
+                        {sendOtpMutation.isPending ? 'Đang gửi...' : 'Gửi lại'}
+                      </button>
+                    </div>
+                  </div>
+                  <button type="submit" disabled={isAnyPending} className={`${btnPrimary} !bg-green-600 hover:!bg-green-700`}>{verifyRegisterOtpMutation.isPending ? 'Đang xác nhận...' : 'Xác nhận & Hoàn tất'}</button>
+                  <div className="text-center"><button type="button" onClick={() => { setRegStep(1); clearMessages(); }} className={btnGhost}>← Sửa thông tin</button></div>
+                </div>
+              )}
+              <p className="text-center text-sm text-gray-500">Đã có tài khoản? <button type="button" onClick={() => goToLogin()} className={btnSecondary}>Đăng nhập</button></p>
+            </>
+          )}
+
+          {/* ============ FORGOT PASSWORD VIEW ============ */}
           {view === 'forgot-password' && (
             <>
               {forgotStep === 1 && (
-                <button
-                  type="submit"
-                  disabled={forgotPasswordMutation.isPending}
-                  className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-70 mt-2"
-                >
-                  {forgotPasswordMutation.isPending ? 'Đang gửi OTP...' : 'Gửi mã xác nhận'}
-                </button>
+                <>
+                  <div><label className={labelCls}>Email tài khoản</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} className={inputCls} placeholder="user@example.com" disabled={isAnyPending} /></div>
+                  <button type="submit" disabled={isAnyPending} className={btnPrimary}>{forgotMutation.isPending ? 'Đang gửi OTP...' : 'Gửi mã xác nhận'}</button>
+                </>
               )}
-              
               {forgotStep === 2 && (
                 <>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Mã OTP (6 số)</label>
-                    <input
-                      type="text"
-                      value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none tracking-widest text-center"
-                      placeholder="123456"
-                      maxLength={6}
-                    />
+                    <label className={labelCls}>Mã OTP (6 chữ số)</label>
+                    <div className="flex gap-2">
+                      <input type="text" value={otpCode} onChange={e => setOtpCode(e.target.value)} className={`${inputCls} flex-1 tracking-widest text-center text-lg font-bold`} placeholder="123456" maxLength={6} autoFocus />
+                      <button type="button" onClick={() => sendOtpMutation.mutate('FORGOT_PASSWORD')} disabled={sendOtpMutation.isPending} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 text-sm font-medium rounded-lg whitespace-nowrap disabled:opacity-50">
+                        {sendOtpMutation.isPending ? 'Đang gửi...' : 'Gửi lại'}
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    type="submit"
-                    disabled={verifyForgotOtpMutation.isPending}
-                    className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-70 mt-2"
-                  >
-                    {verifyForgotOtpMutation.isPending ? 'Đang xác thực...' : 'Xác thực OTP'}
-                  </button>
+                  <button type="submit" disabled={isAnyPending} className={btnPrimary}>{verifyForgotOtpMutation.isPending ? 'Đang xác thực...' : 'Xác thực OTP'}</button>
+                  <div className="text-center"><button type="button" onClick={() => { setForgotStep(1); setOtpCode(''); clearMessages(); }} className={btnGhost}>← Thay đổi email</button></div>
                 </>
               )}
-
               {forgotStep === 3 && (
                 <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu mới</label>
-                    <input
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                      placeholder="••••••••"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Xác nhận mật khẩu mới</label>
-                    <input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                      placeholder="••••••••"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={resetPasswordMutation.isPending}
-                    className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-70 mt-2"
-                  >
-                    {resetPasswordMutation.isPending ? 'Đang đổi...' : 'Xác nhận đổi mật khẩu'}
-                  </button>
+                  <div><label className={labelCls}>Mật khẩu mới</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} className={inputCls} placeholder="Ít nhất 6 ký tự" disabled={isAnyPending} autoFocus /></div>
+                  <div><label className={labelCls}>Xác nhận mật khẩu mới</label><input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className={inputCls} placeholder="••••••••" disabled={isAnyPending} /></div>
+                  <button type="submit" disabled={isAnyPending} className={btnPrimary}>{resetPasswordMutation.isPending ? 'Đang lưu...' : 'Xác nhận đổi mật khẩu'}</button>
                 </>
               )}
-
-              <div className="text-center mt-4 text-sm text-gray-600">
-                <button type="button" onClick={() => { setView('login'); setForgotStep(1); }} className="text-gray-500 font-medium hover:underline">
-                  Quay lại đăng nhập
-                </button>
-              </div>
+              <div className="text-center"><button type="button" onClick={() => goToLogin()} className={btnGhost}>← Quay lại đăng nhập</button></div>
             </>
           )}
 
-          {/* Login Password View */}
-          {view === 'login' && loginMethod === 'password' && (
+          {/* ============ SETUP PASSWORD (after Google login) ============ */}
+          {view === 'setup-password' && (
             <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="••••••••"
-                />
-                <div className="flex justify-end mt-1">
-                   <button type="button" onClick={() => { setView('forgot-password'); setForgotStep(1); setError(''); setSuccessMsg(''); }} className="text-xs text-blue-600 hover:underline">
-                    Quên mật khẩu?
-                  </button>
-                </div>
-              </div>
-              <button
-                type="submit"
-                disabled={loginPasswordMutation.isPending}
-                className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-70 mt-2"
-              >
-                {loginPasswordMutation.isPending ? 'Đang đăng nhập...' : 'Đăng nhập'}
-              </button>
-              <div className="text-center mt-4 text-sm text-gray-600">
-                Chưa có tài khoản?{' '}
-                <button type="button" onClick={() => setView('register')} className="text-blue-600 font-medium hover:underline">
-                  Đăng ký ngay
-                </button>
+              <div><label className={labelCls}>Mật khẩu mới</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} className={inputCls} placeholder="Ít nhất 6 ký tự" disabled={isAnyPending} autoFocus /></div>
+              <div><label className={labelCls}>Xác nhận mật khẩu</label><input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} className={inputCls} placeholder="••••••••" disabled={isAnyPending} /></div>
+              <button type="submit" disabled={isAnyPending} className={btnPrimary}>{setupPasswordMutation.isPending ? 'Đang thiết lập...' : 'Thiết lập mật khẩu'}</button>
+              <div className="text-center">
+                <button type="button" onClick={() => navigateByRole(useAuthStore.getState().role || '')} className={btnGhost}>Bỏ qua, vào hệ thống →</button>
               </div>
             </>
           )}
 
-          {/* Login OTP View */}
-          {view === 'login' && loginMethod === 'otp' && (
-            <>
-              {otpStep === 1 ? (
-                <button
-                  type="submit"
-                  disabled={sendOtpMutation.isPending}
-                  className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-70 mt-2"
-                >
-                  {sendOtpMutation.isPending ? 'Đang gửi...' : 'Gửi mã OTP'}
-                </button>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Mã OTP (6 số)</label>
-                    <input
-                      type="text"
-                      value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none tracking-widest text-center"
-                      placeholder="123456"
-                      maxLength={6}
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={verifyOtpMutation.isPending}
-                    className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-70 mt-2"
-                  >
-                    {verifyOtpMutation.isPending ? 'Đang xác thực...' : 'Xác thực & Đăng nhập'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setOtpStep(1); setOtpCode(''); }}
-                    className="w-full py-2 px-4 text-gray-500 hover:text-gray-800 text-sm font-medium mt-2"
-                  >
-                    Quay lại
-                  </button>
-                </>
-              )}
-            </>
-          )}
         </form>
-
-        {/* DEV BYPASS SECTION */}
-        <div className="mt-8 pt-6 border-t border-gray-200">
-          <div className="text-xs text-center text-gray-400 font-mono mb-3 uppercase tracking-wider">
-            Developer Quick Login Bypass
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            <button
-              onClick={() => handleSuccessAuth({ data: { token: 'mock', email: 'mock_admin@pbms.com', role: 'ROLE_SUPER_ADMIN' } })}
-              className="py-2 bg-purple-100 hover:bg-purple-200 text-purple-700 text-xs font-bold rounded-lg transition-colors"
-            >
-              ADMIN
-            </button>
-            <button
-              onClick={() => handleSuccessAuth({ data: { token: 'mock', email: 'mock_manager@pbms.com', role: 'ROLE_MANAGER' } })}
-              className="py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 text-xs font-bold rounded-lg transition-colors"
-            >
-              MANAGER
-            </button>
-            <button
-              onClick={() => handleSuccessAuth({ data: { token: 'mock', email: 'mock_staff@pbms.com', role: 'ROLE_STAFF' } })}
-              className="py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 text-xs font-bold rounded-lg transition-colors"
-            >
-              STAFF
-            </button>
-            <button
-              onClick={() => handleSuccessAuth({ data: { token: 'mock', email: 'mock_customer@pbms.com', role: 'ROLE_CUSTOMER' } })}
-              className="py-2 bg-orange-100 hover:bg-orange-200 text-orange-700 text-xs font-bold rounded-lg transition-colors"
-            >
-              CUSTOMER
-            </button>
-            <button
-              onClick={() => navigate('/tester/iot-mock')}
-              className="py-2 bg-gray-800 hover:bg-black text-gray-200 text-xs font-bold rounded-lg transition-colors sm:col-span-2"
-            >
-              TESTER (IoT MOCK)
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   );

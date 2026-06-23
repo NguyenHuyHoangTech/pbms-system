@@ -7,16 +7,8 @@ import dayjs from 'dayjs';
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
-// Master Dataset Mock
-const MASTER_DATA = [
-  { date: '2023-10-01', revenue: 12000000, transactions: 400, byVehicle: { CAR: 8000000, MOTORBIKE: 4000000 }, bySource: { WALK_IN: 9000000, BOOKING: 3000000 }, byPayment: { CASH: 5000000, VNPAY: 7000000 } },
-  { date: '2023-10-02', revenue: 13500000, transactions: 450, byVehicle: { CAR: 9500000, MOTORBIKE: 4000000 }, bySource: { WALK_IN: 10000000, BOOKING: 3500000 }, byPayment: { CASH: 4500000, VNPAY: 9000000 } },
-  { date: '2023-10-03', revenue: 11000000, transactions: 380, byVehicle: { CAR: 7000000, MOTORBIKE: 4000000 }, bySource: { WALK_IN: 8000000, BOOKING: 3000000 }, byPayment: { CASH: 4000000, VNPAY: 7000000 } },
-  { date: '2023-10-04', revenue: 15000000, transactions: 500, byVehicle: { CAR: 10000000, MOTORBIKE: 5000000 }, bySource: { WALK_IN: 11000000, BOOKING: 4000000 }, byPayment: { CASH: 6000000, VNPAY: 9000000 } },
-  { date: '2023-10-05', revenue: 14500000, transactions: 480, byVehicle: { CAR: 9500000, MOTORBIKE: 5000000 }, bySource: { WALK_IN: 10500000, BOOKING: 4000000 }, byPayment: { CASH: 5500000, VNPAY: 9000000 } },
-  { date: '2023-10-06', revenue: 16000000, transactions: 520, byVehicle: { CAR: 11000000, MOTORBIKE: 5000000 }, bySource: { WALK_IN: 12000000, BOOKING: 4000000 }, byPayment: { CASH: 6000000, VNPAY: 10000000 } },
-  { date: '2023-10-07', revenue: 18000000, transactions: 600, byVehicle: { CAR: 12000000, MOTORBIKE: 6000000 }, bySource: { WALK_IN: 13000000, BOOKING: 5000000 }, byPayment: { CASH: 8000000, VNPAY: 10000000 } },
-];
+import { useQuery } from '@tanstack/react-query';
+import axiosClient from '../../core/api/axiosClient';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
 
@@ -24,15 +16,26 @@ export const RevenueDashboardScreen = () => {
   const [dateRange, setDateRange] = useState<any>([dayjs().subtract(7, 'day'), dayjs()]);
   const [compareMode, setCompareMode] = useState('vehicle');
 
+  const { data: dashboardData } = useQuery({
+    queryKey: ['revenueDashboard', dateRange[0]?.format('YYYY-MM-DD'), dateRange[1]?.format('YYYY-MM-DD')],
+    queryFn: async () => {
+      const res = await axiosClient.get(`/dashboard/revenue?startDate=${dateRange[0].format('YYYY-MM-DD')} 00:00:00&endDate=${dateRange[1].format('YYYY-MM-DD')} 23:59:59`);
+      return res.data.data;
+    },
+    enabled: !!dateRange[0] && !!dateRange[1]
+  });
+
+  const masterData = dashboardData?.dailyRevenue || [];
+  const overview = dashboardData?.overview || { totalRevenue: 0, totalTransactions: 0 };
+
   const handleApply = () => {
-    // In a real app, fetch data based on dateRange
+    // Handled by useQuery dependency
   };
 
   const handleExportCSV = () => {
-    let csvContent = "Date;Total Revenue;Transactions;ARPU\n";
-    MASTER_DATA.forEach(row => {
-      const arpu = Math.round(row.revenue / row.transactions);
-      csvContent += `${row.date};${row.revenue};${row.transactions};${arpu}\n`;
+    let csvContent = "Date;Total Revenue\n";
+    masterData.forEach((row: any) => {
+      csvContent += `${row.date};${row.revenue}\n`;
     });
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -47,50 +50,15 @@ export const RevenueDashboardScreen = () => {
   };
 
   // Aggregations
-  const totalRevenue = MASTER_DATA.reduce((acc, curr) => acc + curr.revenue, 0);
-  const totalTransactions = MASTER_DATA.reduce((acc, curr) => acc + curr.transactions, 0);
-  const arpu = Math.round(totalRevenue / totalTransactions);
+  const totalRevenue = overview.totalRevenue || 0;
+  const totalTransactions = overview.totalTransactions || 0;
+  const arpu = totalTransactions > 0 ? Math.round(totalRevenue / totalTransactions) : 0;
 
-  const vehiclePieData = [
-    { name: 'Ô tô', value: MASTER_DATA.reduce((acc, curr) => acc + curr.byVehicle.CAR, 0) },
-    { name: 'Xe máy', value: MASTER_DATA.reduce((acc, curr) => acc + curr.byVehicle.MOTORBIKE, 0) }
-  ];
+  const vehiclePieData = dashboardData?.byVehicle || [];
+  const sourcePieData = dashboardData?.bySource || [];
+  const paymentPieData = dashboardData?.byPayment || [];
 
-  const sourcePieData = [
-    { name: 'Vãng lai', value: MASTER_DATA.reduce((acc, curr) => acc + curr.bySource.WALK_IN, 0) },
-    { name: 'Đặt trước', value: MASTER_DATA.reduce((acc, curr) => acc + curr.bySource.BOOKING, 0) }
-  ];
 
-  const paymentPieData = [
-    { name: 'Tiền mặt', value: MASTER_DATA.reduce((acc, curr) => acc + curr.byPayment.CASH, 0) },
-    { name: 'VNPAY', value: MASTER_DATA.reduce((acc, curr) => acc + curr.byPayment.VNPAY, 0) }
-  ];
-
-  // Dynamic Comparison Line Chart Data
-  const getLineChartLines = () => {
-    if (compareMode === 'vehicle') {
-      return (
-        <>
-          <Line type="monotone" dataKey="byVehicle.CAR" name="Ô tô" stroke="#0088FE" strokeWidth={2} />
-          <Line type="monotone" dataKey="byVehicle.MOTORBIKE" name="Xe máy" stroke="#00C49F" strokeWidth={2} />
-        </>
-      );
-    }
-    if (compareMode === 'source') {
-      return (
-        <>
-          <Line type="monotone" dataKey="bySource.WALK_IN" name="Vãng lai" stroke="#FFBB28" strokeWidth={2} />
-          <Line type="monotone" dataKey="bySource.BOOKING" name="Đặt trước" stroke="#FF8042" strokeWidth={2} />
-        </>
-      );
-    }
-    return (
-      <>
-        <Line type="monotone" dataKey="byPayment.CASH" name="Tiền mặt" stroke="#FF8042" strokeWidth={2} />
-        <Line type="monotone" dataKey="byPayment.VNPAY" name="VNPAY" stroke="#0088FE" strokeWidth={2} />
-      </>
-    );
-  };
 
   const columns = [
     { title: 'Ngày', dataIndex: 'date', key: 'date' },
@@ -142,7 +110,7 @@ export const RevenueDashboardScreen = () => {
           <Card title="Xu hướng Doanh Thu" className="shadow-sm h-full">
             <div style={{ height: 400 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={MASTER_DATA} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                <BarChart data={masterData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis dataKey="date" />
                   <YAxis tickFormatter={formatYAxis} />
@@ -193,27 +161,7 @@ export const RevenueDashboardScreen = () => {
         </Col>
       </Row>
 
-      {/* Toggle Comparison Chart (Row 3) */}
-      <Card title="So sánh Chi Tiết" className="mb-6 shadow-sm" extra={
-        <Radio.Group value={compareMode} onChange={e => setCompareMode(e.target.value)} buttonStyle="solid">
-          <Radio.Button value="vehicle">Loại Xe</Radio.Button>
-          <Radio.Button value="source">Nguồn</Radio.Button>
-          <Radio.Button value="payment">Thanh Toán</Radio.Button>
-        </Radio.Group>
-      }>
-        <div style={{ height: 350 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={MASTER_DATA} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="date" />
-              <YAxis tickFormatter={formatYAxis} />
-              <Tooltip formatter={(value: number) => new Intl.NumberFormat('vi-VN').format(value) + ' VNĐ'} />
-              <Legend />
-              {getLineChartLines()}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </Card>
+
 
       {/* DataTable & Export */}
       <Card title="Dữ Liệu Chi Tiết" className="shadow-sm" extra={
@@ -221,7 +169,7 @@ export const RevenueDashboardScreen = () => {
       }>
         <Table 
           columns={columns} 
-          dataSource={MASTER_DATA.map((d, i) => ({ ...d, key: i }))} 
+          dataSource={masterData.map((d: any, i: number) => ({ ...d, key: i }))} 
           pagination={{ pageSize: 5 }} 
         />
       </Card>

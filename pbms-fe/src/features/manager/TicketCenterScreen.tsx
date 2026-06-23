@@ -23,43 +23,13 @@ import {
   WarningOutlined
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axiosClient from '../../core/api/axiosClient';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 const { Search } = Input;
 const { TextArea } = Input;
-
-// --- MOCK DATA ---
-
-const MOCK_LPR = [
-  { id: '1', time: '10:05 19/06/2026', gate: 'IN - Gate 1', staff: 'Nguyễn Văn A', aiPlate: '51G-12345', staffPlate: '51C-12345', status: 'PENDING' }
-];
-
-const MOCK_LOST_CARDS = [
-  { id: '1', time: '09:30 19/06/2026', plate: '59A-99999', cardId: 'RFID-10023', type: 'MẤT THẺ', fee: 50000, status: 'PENDING' }
-];
-
-const MOCK_FEE_ADJUST = [
-  { id: 'TCK-002', plate: '60B-55555', liveFee: 120000, status: 'INSIDE', state: 'PENDING' }
-];
-
-const MOCK_ZONE_VIOLATIONS = [
-  { id: '1', time: '08:15 19/06/2026', plate: '72C-11122', expectedZone: 'Khu B (Xe Tải)', actualZone: 'Khu A (Xe 4 Chỗ)', reporter: 'Hệ thống Camera' }
-];
-
-const MOCK_OVERSTAY = [
-  { id: '1', plate: '29D-88888', checkIn: '10:00 15/06/2026', days: 4, slot: 'B-05', status: 'PENDING' }
-];
-
-const MOCK_GHOST = [
-  { id: '1', plate: '61A-33344', timeIn: '07:00 19/06/2026', timeOut: 'NULL', currentFee: 35000, status: 'SUSPICIOUS' }
-];
-
-const MOCK_FEEDBACKS = [
-  { id: 'FB-101', customer: 'Trần C', category: 'Vệ sinh', status: 'OPEN', content: 'Hầm B mùi rác quá nồng.' }
-];
-
-// --- COMPONENT ---
 
 export const TicketCenterScreen = () => {
   const [activeTab, setActiveTab] = useState('1');
@@ -71,6 +41,59 @@ export const TicketCenterScreen = () => {
   const [overrideFee, setOverrideFee] = useState<number | null>(null);
   const [overrideReason, setOverrideReason] = useState('');
   const [chatMessage, setChatMessage] = useState('');
+
+  const queryClient = useQueryClient();
+
+  const { data: incidentsData, isLoading } = useQuery({
+    queryKey: ['incidents'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/incidents');
+      return res.data.data;
+    }
+  });
+
+  const incidents = incidentsData || [];
+  
+  const lprData = incidents.filter((i: any) => i.type === 'LPR_MISMATCH');
+  const lostCardData = incidents.filter((i: any) => i.type === 'LOST_CARD');
+  const feeAdjustData = incidents.filter((i: any) => i.type === 'FEE_ADJUSTMENT');
+  const zoneViolationData = incidents.filter((i: any) => i.type === 'ZONE_VIOLATION');
+  const overstayData = incidents.filter((i: any) => i.type === 'OVERSTAY');
+  const ghostData = incidents.filter((i: any) => i.type === 'GHOST_VEHICLE');
+  const feedbackData = incidents.filter((i: any) => i.type === 'CUSTOMER_FEEDBACK');
+
+  const resolveMutation = useMutation({
+    mutationFn: async (data: { id: string, notes: string }) => {
+      await axiosClient.put(`/incidents/${data.id}/resolve`, { resolutionNotes: data.notes });
+    },
+    onSuccess: () => {
+      message.success('Đã xử lý sự cố');
+      queryClient.invalidateQueries({ queryKey: ['incidents'] });
+      closeDrawer();
+    }
+  });
+
+  const reportLostCardMutation = useMutation({
+    mutationFn: async (data: { plate: string, fee: number }) => {
+      await axiosClient.post(`/incidents/lost-card`, data);
+    },
+    onSuccess: () => {
+      message.success('Đã báo mất thẻ và tính phí');
+      queryClient.invalidateQueries({ queryKey: ['incidents'] });
+      closeDrawer();
+    }
+  });
+
+  const adjustFeeMutation = useMutation({
+    mutationFn: async (data: { plate: string, liveFee: number }) => {
+      await axiosClient.post(`/incidents/adjust-fee`, data);
+    },
+    onSuccess: () => {
+      message.success('Đã điều chỉnh phí');
+      queryClient.invalidateQueries({ queryKey: ['incidents'] });
+      closeDrawer();
+    }
+  });
 
   const openDrawer = (record: any) => {
     setSelectedRecord(record);
@@ -84,48 +107,49 @@ export const TicketCenterScreen = () => {
 
   const closeDrawer = () => {
     setDrawerVisible(false);
-    setTimeout(() => setSelectedRecord(null), 300);
+    setSelectedRecord(null);
   };
 
   // --- RENDER TABLES ---
 
-  const renderLPRTable = () => (
-    <Table dataSource={MOCK_LPR} rowKey="id" pagination={false}>
+  const renderLprTable = () => (
+    <Table dataSource={lprData} rowKey="id" pagination={false} loading={isLoading}>
       <Table.Column title="Thời gian" dataIndex="time" />
       <Table.Column title="Cổng" dataIndex="gate" />
       <Table.Column title="Nhân viên" dataIndex="staff" />
       <Table.Column title="Biển số AI" dataIndex="aiPlate" render={(val: string) => <Text delete className="text-gray-400">{val}</Text>} />
-      <Table.Column title="Biển số Staff sửa" dataIndex="staffPlate" render={(val: string) => <Text strong className="text-green-600">{val}</Text>} />
-      <Table.Column title="Thao tác" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Kiểm tra</Button>} />
+      <Table.Column title="Nhân viên sửa" dataIndex="staffPlate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
+      <Table.Column title="Trạng thái" dataIndex="status" render={(val: string) => <Tag color="warning">{val}</Tag>} />
+      <Table.Column title="Thao tác" render={(rec: any) => <Button type="primary" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Hậu kiểm</Button>} />
     </Table>
   );
 
   const renderLostCardTable = () => (
-    <Table dataSource={MOCK_LOST_CARDS} rowKey="id" pagination={false}>
+    <Table dataSource={lostCardData} rowKey="id" pagination={false} loading={isLoading}>
       <Table.Column title="Thời gian" dataIndex="time" />
       <Table.Column title="Biển số" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
-      <Table.Column title="Mã thẻ cũ" dataIndex="cardId" />
-      <Table.Column title="Trạng thái" dataIndex="type" render={(val: string) => <Tag color="error">{val}</Tag>} />
-      <Table.Column title="Phí đền thẻ" dataIndex="fee" render={(val: number) => <Text strong className="text-orange-600">{val.toLocaleString()} đ</Text>} />
+      <Table.Column title="Mã thẻ" dataIndex="cardId" />
+      <Table.Column title="Trạng thái" dataIndex="status" render={(val: string) => <Tag color="error">{val}</Tag>} />
+      <Table.Column title="Phí phạt" dataIndex="fee" render={(val: number) => <Text strong className="text-orange-600">{(val || 0).toLocaleString()} VNĐ</Text>} />
       <Table.Column title="Thao tác" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Kiểm toán</Button>} />
     </Table>
   );
 
   const renderFeeAdjustTable = () => (
-    <Table dataSource={MOCK_FEE_ADJUST} rowKey="id" pagination={false}>
-      <Table.Column title="Mã Ticket" dataIndex="id" />
+    <Table dataSource={feeAdjustData} rowKey="id" pagination={false} loading={isLoading}>
+      <Table.Column title="ID Sự cố" dataIndex="id" />
       <Table.Column title="Biển số" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
-      <Table.Column title="Phí đang đếm (Live)" dataIndex="liveFee" render={(val: number) => <Text strong className="text-red-500">{val.toLocaleString()} đ</Text>} />
+      <Table.Column title="Phí điều chỉnh" dataIndex="liveFee" render={(val: number) => <Text strong className="text-red-500">{(val || 0).toLocaleString()} VNĐ</Text>} />
       <Table.Column title="Trạng thái" dataIndex="status" render={(val: string) => <Tag color="cyan">{val}</Tag>} />
       <Table.Column title="Thao tác" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Xử lý</Button>} />
     </Table>
   );
 
   const renderZoneTable = () => (
-    <Table dataSource={MOCK_ZONE_VIOLATIONS} rowKey="id" pagination={false}>
+    <Table dataSource={zoneViolationData} rowKey="id" pagination={false} loading={isLoading}>
       <Table.Column title="Thời gian" dataIndex="time" />
       <Table.Column title="Biển số" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
-      <Table.Column title="Zone Quy Định" dataIndex="expectedZone" />
+      <Table.Column title="Zone Quy định" dataIndex="expectedZone" />
       <Table.Column title="Đỗ Sai Thực Tế" dataIndex="actualZone" render={(val: string) => <Text type="danger" strong>{val}</Text>} />
       <Table.Column title="Người báo cáo" dataIndex="reporter" />
       <Table.Column title="Thao tác" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Chi tiết</Button>} />
@@ -133,7 +157,7 @@ export const TicketCenterScreen = () => {
   );
 
   const renderOverstayTable = () => (
-    <Table dataSource={MOCK_OVERSTAY} rowKey="id" pagination={false}>
+    <Table dataSource={overstayData} rowKey="id" pagination={false} loading={isLoading}>
       <Table.Column title="Biển số" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
       <Table.Column title="Giờ Check-in" dataIndex="checkIn" />
       <Table.Column title="Số ngày tồn" dataIndex="days" render={(val: number) => <Text type="danger" strong>{val} Ngày</Text>} />
@@ -143,18 +167,18 @@ export const TicketCenterScreen = () => {
   );
 
   const renderGhostTable = () => (
-    <Table dataSource={MOCK_GHOST} rowKey="id" pagination={false}>
+    <Table dataSource={ghostData} rowKey="id" pagination={false} loading={isLoading}>
       <Table.Column title="Biển số" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
       <Table.Column title="Giờ Vào" dataIndex="timeIn" />
       <Table.Column title="Giờ Ra" dataIndex="timeOut" render={() => <Text type="secondary" italic>NULL (Trốn vé)</Text>} />
-      <Table.Column title="Nợ cước đếm" dataIndex="currentFee" render={(val: number) => <Text type="danger" strong>{val.toLocaleString()} đ</Text>} />
+      <Table.Column title="Nợ cước" dataIndex="currentFee" render={(val: number) => <Text type="danger" strong>{(val || 0).toLocaleString()} VNĐ</Text>} />
       <Table.Column title="Thao tác" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Xem thông tin</Button>} />
     </Table>
   );
 
   const renderFeedbackTable = () => (
-    <Table dataSource={MOCK_FEEDBACKS} rowKey="id" pagination={false}>
-      <Table.Column title="Mã Ticket" dataIndex="id" />
+    <Table dataSource={feedbackData} rowKey="id" pagination={false} loading={isLoading}>
+      <Table.Column title="ID Sự cố" dataIndex="id" />
       <Table.Column title="Tên khách" dataIndex="customer" />
       <Table.Column title="Phân loại" dataIndex="category" />
       <Table.Column title="Trạng thái" dataIndex="status" render={(val: string) => <Tag color={val === 'OPEN' ? 'orange' : 'success'}>{val}</Tag>} />
@@ -191,8 +215,8 @@ export const TicketCenterScreen = () => {
               </Col>
             </Row>
             <div className="flex gap-2">
-              <Button type="primary" className="flex-1" onClick={() => { message.success('Đã xác nhận Staff gõ đúng.'); closeDrawer(); }}>Duyệt (Staff đúng)</Button>
-              <Button danger className="flex-1" onClick={() => { message.error('Đã cảnh cáo Staff.'); closeDrawer(); }}>Phạt (Staff gõ láo)</Button>
+              <Button type="primary" className="flex-1" onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Staff đúng' })}>Duyệt (Staff đúng)</Button>
+              <Button danger className="flex-1" onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Staff gõ láo' })}>Phạt (Staff gõ láo)</Button>
             </div>
           </div>
         );
@@ -215,7 +239,7 @@ export const TicketCenterScreen = () => {
                 </div>
               </div>
             </div>
-            <Button type="primary" size="large" block icon={<CheckCircleOutlined />} onClick={() => { message.success('Kiểm toán hoàn tất.'); closeDrawer(); }}>
+            <Button type="primary" size="large" block icon={<CheckCircleOutlined />} onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Đã Kiểm Toán' })}>
               Đánh dấu Đã Kiểm Toán
             </Button>
           </div>
@@ -270,10 +294,7 @@ export const TicketCenterScreen = () => {
                   size="large" 
                   className="flex-1 font-bold"
                   disabled={feeAdjustStep > 0 || !overrideReason}
-                  onClick={() => {
-                    message.success(`Đã gửi lý do từ chối về màn hình Khách hàng.`);
-                    closeDrawer();
-                  }}
+                  onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Từ chối: ' + overrideReason })}
                 >
                   Từ Chối Yêu Cầu
                 </Button>
@@ -282,10 +303,7 @@ export const TicketCenterScreen = () => {
                   size="large" 
                   className="flex-1 font-bold"
                   disabled={feeAdjustStep === 0 || overrideFee === null}
-                  onClick={() => {
-                    message.success(`Đã cập nhật phí ${overrideFee?.toLocaleString()} đ và cấp lệnh xuất bến.`);
-                    closeDrawer();
-                  }}
+                  onClick={() => adjustFeeMutation.mutate({ plate: selectedRecord.plate, liveFee: overrideFee || 0 })}
                 >
                   Duyệt & Cấp Lệnh Ra
                 </Button>
@@ -376,7 +394,7 @@ export const TicketCenterScreen = () => {
                 placeholder="Nhập nội dung phản hồi xin lỗi / giải thích..." 
                 className="mb-2"
               />
-              <Button type="primary" icon={<SendOutlined />} block disabled={!chatMessage} onClick={() => { message.success('Đã phản hồi khách hàng và Đóng Ticket.'); closeDrawer(); }}>
+              <Button type="primary" icon={<SendOutlined />} block disabled={!chatMessage} onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: chatMessage })}>
                 Gửi Phản Hồi & Đóng Ticket
               </Button>
             </div>
@@ -404,7 +422,7 @@ export const TicketCenterScreen = () => {
   // --- TABS DEFINITION ---
 
   const items = [
-    { key: '1', label: <span><Badge dot offset={[5, 0]}>Sai lệch Biển số LPR</Badge></span>, children: renderLPRTable() },
+    { key: '1', label: <span><Badge dot offset={[5, 0]}>Sai lệch Biển số LPR</Badge></span>, children: renderLprTable() },
     { key: '2', label: <span><Badge count={1} offset={[10, 0]}>Mất & Hỏng Thẻ</Badge></span>, children: renderLostCardTable() },
     { key: '3', label: <span><Badge count={1} offset={[10, 0]}>Sai phí & Giảm giá</Badge></span>, children: renderFeeAdjustTable() },
     { key: '4', label: 'Xe đỗ sai khu vực', children: renderZoneTable() },

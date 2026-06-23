@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Typography, Collapse, List, Tag, Badge, Divider } from 'antd';
+import { useQuery } from '@tanstack/react-query';
+import axiosClient from '../../core/api/axiosClient';
 import { 
   CarOutlined, 
   SafetyCertificateOutlined,
@@ -31,25 +33,42 @@ export const HomeScreen = () => {
     { type: 'EBIKE', label: 'XE ĐẠP ĐIỆN', available: 15, icon: <ThunderboltOutlined /> },
   ]);
 
-  // Giả lập Real-time WebSockets
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSlots(prev => prev.map(slot => {
-        // Randomly adjust slots by -2, -1, 0, 1, or 2 to simulate movement
-        const delta = Math.floor(Math.random() * 5) - 2; 
-        let newAvailable = slot.available + delta;
-        // Giới hạn không cho xuống dưới 0
-        if (newAvailable < 0) newAvailable = 0;
-        // Tạo biến động nhỏ để test cảnh báo (Ví dụ xe đạp điện sẽ dễ về 0 hơn để test)
-        if (slot.type === 'EBIKE' && Math.random() > 0.7) {
-          newAvailable = Math.max(0, newAvailable - 1);
-        }
-        return { ...slot, available: newAvailable };
-      }));
-    }, 4000);
+  const { data: parkingStatusData } = useQuery({
+    queryKey: ['public-parking-status'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/public/parking-status');
+        return res.data.data;
+      } catch (err) {
+        return [];
+      }
+    },
+    refetchInterval: 5000 // Real-time polling
+  });
 
-    return () => clearInterval(interval);
-  }, []);
+  useEffect(() => {
+    if (parkingStatusData && parkingStatusData.length > 0) {
+      setSlots(prev => prev.map(slot => {
+        const matchingData = parkingStatusData.find((d: any) => d.type === slot.type);
+        if (matchingData) {
+          return { ...slot, available: matchingData.available };
+        }
+        return slot;
+      }));
+    }
+  }, [parkingStatusData]);
+
+  const { data: buildingProfile } = useQuery({
+    queryKey: ['public-building-profile'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/public/building-profile');
+        return res.data.data;
+      } catch (err) {
+        return null;
+      }
+    }
+  });
 
   // Helpers cho UI Cảnh báo
   const renderSlotCard = (slot: SlotData) => {
@@ -179,13 +198,20 @@ export const HomeScreen = () => {
             </div>
             
             <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight mb-2">
-              Hệ thống Bãi xe Thông minh Trung tâm
+              {buildingProfile?.name || "Hệ thống Bãi xe Thông minh"}
             </h1>
             
-            <div className="flex items-center text-gray-400 mt-4 space-x-4">
+            <div className="flex flex-wrap items-center text-gray-300 mt-4 gap-4">
               <div className="flex items-center">
                 <ClockCircleOutlined className="mr-2 text-blue-400" />
-                <span className="font-medium text-lg">Giờ hoạt động: <span className="text-white font-bold">24/7</span></span>
+                <span className="font-medium text-lg">Giờ hoạt động: <span className="text-white font-bold">{buildingProfile?.operatingHours || "24/7"}</span></span>
+              </div>
+              <div className="flex items-center">
+                <InfoCircleOutlined className="mr-2 text-indigo-400" />
+                <span className="font-medium text-lg">Hotline: <span className="text-white font-bold">{buildingProfile?.hotline || "Đang cập nhật"}</span></span>
+              </div>
+              <div className="flex items-center w-full mt-2">
+                <span className="font-medium text-sm">Địa chỉ: {buildingProfile?.address || "Đang cập nhật"}</span>
               </div>
             </div>
           </div>
@@ -247,13 +273,13 @@ export const HomeScreen = () => {
           <Card className="rounded-2xl shadow-sm border border-gray-100 h-full bg-orange-50/30" title={<span className="font-bold flex items-center"><BookOutlined className="mr-2 text-orange-600"/> Nội quy bãi xe</span>}>
             <List
               size="small"
-              dataSource={[
+              dataSource={buildingProfile?.rules ? buildingProfile.rules.split('\n') : [
                 'Cảnh báo xe tồn bãi > 72 giờ sẽ bị lập biên bản theo quy định.',
                 'Nhắc nhở KHÔNG để lại tài sản có giá trị lớn trên xe (Laptop, tiền mặt...). Ban quản lý từ chối bồi thường trong trường hợp mất mát.',
                 'Tuân thủ tốc độ giới hạn 5km/h trong hầm.',
                 'Đỗ đúng vạch kẻ, cấm đỗ vào khu vực dành cho người khuyết tật nếu không có thẻ.',
               ]}
-              renderItem={(item, index) => (
+              renderItem={(item: any, index: number) => (
                 <List.Item className="border-b-0 py-2 text-gray-700">
                   <div className="flex items-start">
                     <span className="bg-orange-200 text-orange-800 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold mr-3 mt-0.5 shrink-0">{index + 1}</span> 

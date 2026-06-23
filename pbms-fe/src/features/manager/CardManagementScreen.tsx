@@ -21,26 +21,37 @@ interface RfidCard {
   location: string;
 }
 
-const MOCK_CARDS: RfidCard[] = [
-  { uid: 'A1B2C3D4', visualId: 'CARD-VL-001', status: 'AVAILABLE', location: 'Nằm trống' },
-  { uid: 'E5F6G7H8', visualId: 'CARD-VL-002', status: 'IN_USE', location: 'Đang gán cho xe 51G-123.45 (Trong bãi)' },
-  { uid: 'I9J0K1L2', visualId: 'CARD-VL-003', status: 'IN_USE', location: 'Đang gán cho xe 29A-678.90 (Trong bãi)' },
-  { uid: 'M3N4O5P6', visualId: 'CARD-VL-004', status: 'LOST', location: 'Không xác định' },
-  { uid: 'Q7R8S9T0', visualId: 'CARD-VL-005', status: 'DAMAGED', location: 'Kho phế liệu' },
-  { uid: 'U1V2W3X4', visualId: 'CARD-VL-006', status: 'AVAILABLE', location: 'Nằm trống' },
-];
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axiosClient from '../../core/api/axiosClient';
 
 export const CardManagementScreen = () => {
-  const [data, setData] = useState<RfidCard[]>(MOCK_CARDS);
+  const queryClient = useQueryClient();
+  const { data: cardsData = [], isLoading } = useQuery({
+    queryKey: ['cards'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/infrastructure/cards');
+      return res.data.data;
+    }
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ uid, status }: { uid: string, status: string }) => {
+      await axiosClient.put(`/infrastructure/cards/${uid}/status`, { status });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cards'] });
+    }
+  });
+
   const [selectedRecord, setSelectedRecord] = useState<RfidCard | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
-  const totalCards = 5000; // Mock total
-  const availableCount = 45; // Hardcoded < 50 for flashing effect
-  const inUseCount = 4850;
-  const lostDamagedCount = 105;
+  const totalCards = cardsData.length;
+  const availableCount = cardsData.filter((c: RfidCard) => c.status === 'AVAILABLE').length;
+  const inUseCount = cardsData.filter((c: RfidCard) => c.status === 'IN_USE').length;
+  const lostDamagedCount = cardsData.filter((c: RfidCard) => c.status === 'LOST' || c.status === 'DAMAGED').length;
 
   const handleOpenDrawer = (record: RfidCard) => {
     setSelectedRecord(record);
@@ -48,24 +59,35 @@ export const CardManagementScreen = () => {
   };
 
   const handleAction = (id: string, newStatus: RfidCard['status'], newLocation: string, successMsg: string) => {
-    setData(prev => prev.map(item => 
-      item.uid === id ? { ...item, status: newStatus, location: newLocation } : item
-    ));
-    message.success(successMsg);
-    setIsDrawerOpen(false);
+    updateStatusMutation.mutate({ uid: id, status: newStatus }, {
+      onSuccess: () => {
+        message.success(successMsg);
+        setIsDrawerOpen(false);
+      }
+    });
   };
 
   const uploadProps: UploadProps = {
     name: 'file',
     multiple: false,
-    customRequest: ({ onSuccess }) => {
+    customRequest: async ({ file, onSuccess, onError }) => {
       setIsUploading(true);
-      setTimeout(() => {
+      const formData = new FormData();
+      formData.append('file', file as Blob);
+      try {
+        const res = await axiosClient.post('/infrastructure/cards/import', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
         setIsUploading(false);
-        onSuccess?.('ok');
-        message.success('Nhập lô thẻ thành công!');
+        onSuccess?.(res.data);
+        message.success(`Nhập thành công ${res.data.data} thẻ RFID mới!`);
         setIsModalVisible(false);
-      }, 1500);
+        queryClient.invalidateQueries({ queryKey: ['cards'] });
+      } catch (err) {
+        setIsUploading(false);
+        onError?.(err as any);
+        message.error('Nhập lô thẻ thất bại, vui lòng kiểm tra lại định dạng file!');
+      }
     },
   };
 
@@ -177,7 +199,7 @@ export const CardManagementScreen = () => {
       {/* KHU VỰC 3: DATA TABLE */}
       <Card className="shadow-sm rounded-xl border-gray-200" bodyStyle={{ padding: 0 }}>
         <Table 
-          dataSource={data} 
+          dataSource={cardsData} 
           columns={columns} 
           rowKey="uid" 
           pagination={{ pageSize: 10 }}
@@ -290,19 +312,29 @@ export const CardManagementScreen = () => {
       >
         <div className="py-4">
           <Alert 
-            message="Hướng dẫn Import" 
-            description="Vui lòng upload file Excel (.xlsx, .csv) do nhà máy sản xuất cung cấp. Hệ thống sẽ tự động quét cột UID và Visual ID để lưu vào CSDL." 
+            message="Hướng dẫn Import (Định dạng CSV)" 
+            description={
+              <div className="text-sm mt-2">
+                Vui lòng upload file <strong>.csv</strong> có cấu trúc cột như sau:
+                <div className="bg-white border p-2 mt-2 rounded font-mono text-xs">
+                  cardCode,status,assignedPlate<br/>
+                  E200001968130118,AVAILABLE,<br/>
+                  E200001968130119,AVAILABLE,<br/>
+                  E200001968130120,IN_USE,29A-123.45
+                </div>
+              </div>
+            }
             type="info" 
             showIcon 
             className="mb-4"
           />
-          <Dragger {...uploadProps} disabled={isUploading}>
+          <Dragger {...uploadProps} disabled={isUploading} accept=".csv">
             <p className="ant-upload-drag-icon">
               <InboxOutlined className={isUploading ? "text-gray-400" : "text-indigo-500"} />
             </p>
-            <p className="ant-upload-text font-semibold">Click hoặc Kéo thả file Excel vào đây</p>
+            <p className="ant-upload-text font-semibold">Click hoặc Kéo thả file CSV vào đây</p>
             <p className="ant-upload-hint px-4 text-xs">
-              Hỗ trợ nhập tối đa 10,000 dòng UID cùng lúc.
+              Hỗ trợ nhập tối đa 10,000 dòng UID cùng lúc. Chỉ chấp nhận định dạng .csv.
             </p>
           </Dragger>
         </div>

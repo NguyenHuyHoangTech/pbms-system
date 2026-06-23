@@ -6,22 +6,7 @@ import lombok.Data;
 
 public class AuthRequest {
     
-    @Data
-    public static class SendOtp {
-        @NotBlank(message = "Email is required")
-        @Email(message = "Invalid email format")
-        private String email;
-    }
 
-    @Data
-    public static class VerifyOtp {
-        @NotBlank(message = "Email is required")
-        @Email(message = "Invalid email format")
-        private String email;
-
-        @NotBlank(message = "OTP is required")
-        private String otpCode;
-    }
 
     @Data
     public static class Login {

@@ -1,68 +1,113 @@
 package com.pbms.modules.identity.controller;
 
 import com.pbms.common.dto.ApiResponse;
-import com.pbms.modules.identity.dto.AuthRequest;
-import com.pbms.modules.identity.dto.AuthResponse;
+import com.pbms.modules.identity.dto.*;
 import com.pbms.modules.identity.service.AuthService;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/v1/auth")
+@RequiredArgsConstructor
 public class AuthController {
 
     private final AuthService authService;
 
-    public AuthController(AuthService authService) {
-        this.authService = authService;
-    }
-
     @PostMapping("/register")
-    public ResponseEntity<ApiResponse<String>> register(@Valid @RequestBody AuthRequest.Register request) {
+    public ResponseEntity<ApiResponse<String>> register(@Valid @RequestBody RegisterRequest request) {
         authService.register(request);
-        return ResponseEntity.ok(ApiResponse.success("User registered successfully", "Please check your email for the OTP"));
-    }
-
-    @PostMapping("/login")
-    public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody AuthRequest.Login request) {
-        AuthResponse response = authService.login(request);
-        return ResponseEntity.ok(ApiResponse.success(response, "Login successful"));
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.success("Success", "Mã OTP đã được gửi đến email của bạn."));
     }
 
     @PostMapping("/send-otp")
-    public ResponseEntity<ApiResponse<String>> sendOtp(@Valid @RequestBody AuthRequest.SendOtp request) {
-        authService.sendOtp(request);
-        return ResponseEntity.ok(ApiResponse.success("OTP sent successfully", "Please check your email"));
+    public ResponseEntity<ApiResponse<String>> sendOtp(@Valid @RequestBody SendOtpRequest request) {
+        authService.sendOtp(request.getEmail(), request.getPurpose());
+        return ResponseEntity.ok(ApiResponse.success("Success", "Mã OTP đã được gửi lại đến email của bạn."));
     }
 
     @PostMapping("/verify-otp")
-    public ResponseEntity<ApiResponse<AuthResponse>> verifyOtp(@Valid @RequestBody AuthRequest.VerifyOtp request) {
+    public ResponseEntity<ApiResponse<AuthResponse>> verifyOtp(@Valid @RequestBody VerifyOtpRequest request) {
         AuthResponse response = authService.verifyOtp(request);
-        return ResponseEntity.ok(ApiResponse.success(response, "OTP verified successfully"));
+        return ResponseEntity.ok(ApiResponse.success(response, "Xác thực OTP thành công."));
+    }
+
+    @PostMapping("/login")
+    public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
+        AuthResponse response = authService.login(request);
+        return ResponseEntity.ok(ApiResponse.success(response, "Đăng nhập thành công."));
+    }
+
+    @PostMapping("/login/google")
+    public ResponseEntity<ApiResponse<AuthResponse>> loginGoogle(@Valid @RequestBody GoogleAuthRequest request) {
+        AuthResponse response = authService.googleLogin(request);
+        return ResponseEntity.ok(ApiResponse.success(response, "Đăng nhập Google thành công."));
     }
 
     @PostMapping("/forgot-password")
-    public ResponseEntity<ApiResponse<String>> forgotPassword(@Valid @RequestBody AuthRequest.ForgotPassword request) {
-        authService.forgotPassword(request);
-        return ResponseEntity.ok(ApiResponse.success("OTP sent successfully", "Please check your email for the OTP"));
+    public ResponseEntity<ApiResponse<String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request.getEmail());
+        return ResponseEntity.ok(ApiResponse.success("Success", "Mã OTP đặt lại mật khẩu đã được gửi đến email của bạn."));
     }
 
     @PostMapping("/verify-forgot-password")
-    public ResponseEntity<ApiResponse<AuthResponse>> verifyForgotPassword(@Valid @RequestBody AuthRequest.VerifyOtp request) {
-        AuthResponse response = authService.verifyForgotPassword(request);
-        return ResponseEntity.ok(ApiResponse.success(response, "OTP verified successfully. Use the temporary token to reset password."));
+    public ResponseEntity<ApiResponse<String>> verifyForgotPassword(@Valid @RequestBody VerifyForgotPasswordRequest request) {
+        String resetToken = authService.verifyForgotPasswordOtp(request.getEmail(), request.getOtpCode());
+        return ResponseEntity.ok(ApiResponse.success(resetToken, "Xác thực OTP thành công. Vui lòng đặt mật khẩu mới."));
     }
 
     @PostMapping("/reset-password")
-    public ResponseEntity<ApiResponse<String>> resetPassword(@Valid @RequestBody AuthRequest.ResetPassword request, java.security.Principal principal) {
-        if (principal == null) {
-            return ResponseEntity.status(401).body(ApiResponse.error(401, "Unauthorized"));
+    public ResponseEntity<ApiResponse<String>> resetPassword(
+            Authentication authentication,
+            @Valid @RequestBody ResetPasswordRequest request) {
+        
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        authService.resetPassword(principal.getName(), request);
-        return ResponseEntity.ok(ApiResponse.success("Password reset successfully", "You can now login with your new password"));
+        if (!request.getNewPassword().equals(request.getConfirmPassword())) {
+            return ResponseEntity.badRequest().body(ApiResponse.success(null, "Mật khẩu xác nhận không khớp."));
+        }
+
+        String email = authentication.getName();
+        authService.resetPassword(email, request.getNewPassword());
+        return ResponseEntity.ok(ApiResponse.success("Success", "Đặt lại mật khẩu thành công. Vui lòng đăng nhập."));
+    }
+
+    @PostMapping("/set-password")
+    public ResponseEntity<ApiResponse<String>> setPassword(
+            Authentication authentication,
+            @Valid @RequestBody SetPasswordRequest request) {
+        
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        
+        String email = authentication.getName();
+        authService.setPassword(email, request);
+        return ResponseEntity.ok(ApiResponse.success("Success", "Đã thiết lập mật khẩu thành công."));
+    }
+
+    @PostMapping("/link-google")
+    public ResponseEntity<ApiResponse<String>> linkGoogle(
+            Authentication authentication,
+            @Valid @RequestBody GoogleAuthRequest request) {
+        
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        String email = authentication.getName();
+        authService.linkGoogle(email, request);
+        return ResponseEntity.ok(ApiResponse.success("Success", "Đã liên kết tài khoản Google thành công."));
+    }
+
+    @GetMapping("/test-get-otp")
+    public ResponseEntity<String> getOtpForTest(@RequestParam String email, @RequestParam String purpose) {
+        return ResponseEntity.ok(authService.getOtpForTest(email, purpose));
     }
 }
+

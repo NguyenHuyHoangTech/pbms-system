@@ -12,6 +12,7 @@ import { MyParkingScreen } from '../../features/customer/MyParkingScreen';
 import { HelpdeskScreen } from '../../features/customer/HelpdeskScreen';
 import { CustomerMonthlyPassScreen } from '../../features/customer/CustomerMonthlyPassScreen';
 import { UserManagementScreen } from '../../features/admin/UserManagementScreen';
+import { IncidentDeskScreen } from '../../features/incident/IncidentDeskScreen';
 
 import { VehicleTypeScreen } from '../../features/manager/VehicleTypeScreen';
 import { SpaceMapScreen } from '../../features/manager/SpaceMapScreen';
@@ -24,7 +25,6 @@ import { CardManagementScreen } from '../../features/manager/CardManagementScree
 import { TicketCenterScreen } from '../../features/manager/TicketCenterScreen';
 import { VehicleRoutingScreen } from '../../features/manager/VehicleRoutingScreen';
 import { PreBookingManagementScreen } from '../../features/manager/PreBookingManagementScreen';
-import { IotMockingScreen } from '../../features/system/IotMockingScreen';
 
 import { ManagerLayout } from '../../features/manager/ManagerLayout';
 import { StaffLayout } from '../../features/staff/StaffLayout';
@@ -53,9 +53,6 @@ export const AppRouter = () => {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<LoginScreen />} />
-        
-        {/* TESTER IOT MOCK ROUTE */}
-        <Route path="/tester/iot-mock" element={<IotMockingScreen />} />
 
         {/* ADMIN LAYOUT ROUTES */}
         <Route 
@@ -92,6 +89,7 @@ export const AppRouter = () => {
           <Route path="ticket-center" element={<TicketCenterScreen />} />
           <Route path="routing" element={<VehicleRoutingScreen />} />
           <Route path="pre-bookings" element={<PreBookingManagementScreen />} />
+          <Route path="incidents" element={<IncidentDeskScreen />} />
         </Route>
 
         {/* CUSTOMER LAYOUT ROUTES */}
@@ -122,6 +120,7 @@ export const AppRouter = () => {
           <Route path="gate-console" element={<GateConsoleScreen />} />
           <Route path="shift-management" element={<ShiftManagementScreen />} />
           <Route path="exception-desk" element={<ExceptionDeskScreen />} />
+          <Route path="incidents" element={<IncidentDeskScreen />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />

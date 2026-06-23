@@ -8,55 +8,24 @@ const { Title, Text } = Typography;
 interface AuditLog {
   id: number;
   action: string;
-  entityName: string;
-  entityId: string;
-  performedBy: string;
-  timestamp: string;
+  resource: string;
+  actor: { email: string };
+  createdAt: string;
   oldValue: string | null;
   newValue: string | null;
+  ipAddress: string;
 }
 
-const MOCK_AUDIT_LOGS: AuditLog[] = [
-  {
-    id: 1,
-    action: 'UPDATE',
-    entityName: 'SystemConfig',
-    entityId: 'SMTP_EMAIL',
-    performedBy: 'admin@pbms.com',
-    timestamp: '2026-06-18 10:00:00',
-    oldValue: '{"configValue": "old@pbms.com"}',
-    newValue: '{"configValue": "no-reply@pbms.com"}'
-  },
-  {
-    id: 2,
-    action: 'CREATE',
-    entityName: 'User',
-    entityId: 'manager@pbms.com',
-    performedBy: 'admin@pbms.com',
-    timestamp: '2026-06-18 10:15:00',
-    oldValue: null,
-    newValue: '{"email": "manager@pbms.com", "role": "ROLE_MANAGER"}'
-  },
-  {
-    id: 3,
-    action: 'DELETE',
-    entityName: 'VehicleType',
-    entityId: 'VT_004',
-    performedBy: 'manager@pbms.com',
-    timestamp: '2026-06-18 11:30:00',
-    oldValue: '{"name": "Light Truck", "isActive": false}',
-    newValue: null
-  }
-];
+import axiosClient from '../../core/api/axiosClient';
 
 export const AuditLogScreen = () => {
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
-  const { data: logs, isLoading } = useQuery({
+  const { data: logs = [], isLoading } = useQuery({
     queryKey: ['audit-logs'],
     queryFn: async () => {
-      // MOCK DATA BYPASS
-      return new Promise<AuditLog[]>(resolve => setTimeout(() => resolve(MOCK_AUDIT_LOGS), 500));
+      const res = await axiosClient.get('/system/audit-logs');
+      return res.data.data;
     }
   });
 
@@ -74,10 +43,10 @@ export const AuditLogScreen = () => {
         return <Tag color={color}>{action}</Tag>;
       }
     },
-    { title: 'Entity', dataIndex: 'entityName', key: 'entityName', render: (text: string) => <Text strong>{text}</Text> },
-    { title: 'Record ID', dataIndex: 'entityId', key: 'entityId' },
-    { title: 'Performed By', dataIndex: 'performedBy', key: 'performedBy' },
-    { title: 'Time', dataIndex: 'timestamp', key: 'timestamp' },
+    { title: 'Resource', dataIndex: 'resource', key: 'resource', render: (text: string) => <Text strong>{text}</Text> },
+    { title: 'Performed By', dataIndex: ['actor', 'email'], key: 'performedBy' },
+    { title: 'Time', dataIndex: 'createdAt', key: 'timestamp', render: (text: string) => text ? new Date(text).toLocaleString() : '' },
+    { title: 'IP', dataIndex: 'ipAddress', key: 'ip' },
     {
       title: 'Details',
       key: 'details',

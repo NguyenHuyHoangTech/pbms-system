@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axiosClient from '../../core/api/axiosClient';
 import { Typography, Tabs, Button, InputNumber, Switch, Input, TimePicker, Collapse, Modal, message, Checkbox, Card } from 'antd';
 import { 
   CalculatorOutlined, 
@@ -38,6 +40,9 @@ interface Shift {
 }
 
 interface VehicleConfig {
+  id?: number;
+  policyName?: string;
+  vehicleTypeId?: number;
   globalBaseGuardEnabled: boolean;
   globalBaseGuardTime: number;
   globalBaseGuardPrice: number;
@@ -46,99 +51,38 @@ interface VehicleConfig {
   shifts: Shift[];
 }
 
-const mockDataByVehicle: Record<string, VehicleConfig> = {
-  car4: {
-    globalBaseGuardEnabled: true,
-    globalBaseGuardTime: 60,
-    globalBaseGuardPrice: 15000,
-    globalMaxCapEnabled: false,
-    globalMaxCapPrice: null,
-    shifts: [
-      {
-        id: 'shift_1', name: 'Ca Ngày', startTime: '06:00', endTime: '22:00', color: 'bg-blue-100 border-blue-300 text-blue-800',
-        slices: [
-          { id: 'slice_1', duration: 120, price: 20000, isTail: false },
-          { id: 'slice_2', duration: 60, price: 10000, isTail: false },
-          { id: 'slice_3', duration: null, price: 10000, isTail: true }
-        ]
-      },
-      {
-        id: 'shift_2', name: 'Ca Đêm', startTime: '22:00', endTime: '06:00', color: 'bg-indigo-100 border-indigo-300 text-indigo-800',
-        slices: [
-          { id: 'slice_4', duration: null, price: 50000, isTail: true }
-        ]
-      }
-    ]
-  },
-  carBig: {
-    globalBaseGuardEnabled: true,
-    globalBaseGuardTime: 60,
-    globalBaseGuardPrice: 25000,
-    globalMaxCapEnabled: true,
-    globalMaxCapPrice: 200000,
-    shifts: [
-      {
-        id: 'shift_1', name: 'Ca Ngày', startTime: '06:00', endTime: '22:00', color: 'bg-orange-100 border-orange-300 text-orange-800',
-        slices: [
-          { id: 'slice_1', duration: 120, price: 30000, isTail: false },
-          { id: 'slice_2', duration: null, price: 20000, isTail: true }
-        ]
-      },
-      {
-        id: 'shift_2', name: 'Ca Đêm', startTime: '22:00', endTime: '06:00', color: 'bg-purple-100 border-purple-300 text-purple-800',
-        slices: [
-          { id: 'slice_3', duration: null, price: 80000, isTail: true }
-        ]
-      }
-    ]
-  },
-  moto: {
-    globalBaseGuardEnabled: false,
-    globalBaseGuardTime: 0,
-    globalBaseGuardPrice: 0,
-    globalMaxCapEnabled: false,
-    globalMaxCapPrice: null,
-    shifts: [
-      {
-        id: 'shift_1', name: 'Cả Ngày', startTime: '00:00', endTime: '23:59', color: 'bg-emerald-100 border-emerald-300 text-emerald-800',
-        slices: [
-          { id: 'slice_1', duration: 240, price: 5000, isTail: false },
-          { id: 'slice_2', duration: null, price: 3000, isTail: true }
-        ]
-      }
-    ]
-  },
-  bike: {
-    globalBaseGuardEnabled: false,
-    globalBaseGuardTime: 0,
-    globalBaseGuardPrice: 0,
-    globalMaxCapEnabled: true,
-    globalMaxCapPrice: 10000,
-    shifts: [
-      {
-        id: 'shift_1', name: 'Cả Ngày', startTime: '00:00', endTime: '23:59', color: 'bg-gray-100 border-gray-300 text-gray-800',
-        slices: [
-          { id: 'slice_1', duration: null, price: 2000, isTail: true }
-        ]
-      }
-    ]
-  }
-};
-
 export const PricingConfigScreen = () => {
-  const [activeTab, setActiveTab] = useState('car4');
   
-  // Current config state
-  const [config, setConfig] = useState<VehicleConfig>(mockDataByVehicle['car4']);
+  const queryClient = useQueryClient();
+  const [activeTabId, setActiveTabId] = useState<number | null>(null);
 
-  useEffect(() => {
-    setConfig(mockDataByVehicle[activeTab]);
-    setSelectedShiftId(mockDataByVehicle[activeTab].shifts[0]?.id || null);
-    setSelectedSliceId(null);
-    setCalcResult(null);
-  }, [activeTab]);
+  const { data: vehicleTypesData } = useQuery({
+    queryKey: ['vehicle-types'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/operation/vehicle-types');
+      return res.data.data;
+    }
+  });
 
-  const [selectedShiftId, setSelectedShiftId] = useState<string | null>('shift_1');
+  // Default Empty Config
+  const defaultEmptyConfig = (typeId: number | null): VehicleConfig => ({
+    globalBaseGuardEnabled: false,
+    globalBaseGuardTime: 0,
+    globalBaseGuardPrice: 0,
+    globalMaxCapEnabled: false,
+    globalMaxCapPrice: null,
+    shifts: [{
+      id: `shift_${Date.now()}`,
+      name: 'Ca Mặc Định',
+      startTime: '00:00',
+      endTime: '23:59',
+      color: 'bg-blue-100 border-blue-300 text-blue-800',
+      slices: [{ id: `slice_${Date.now()}`, duration: null, price: 10000, isTail: true }]
+    }]
+  });
+
+  const [config, setConfig] = useState<VehicleConfig>(defaultEmptyConfig(null));
+  const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
   const [selectedSliceId, setSelectedSliceId] = useState<string | null>(null);
   const [activeAccordion, setActiveAccordion] = useState<string | string[]>(['1', '2']);
 
@@ -146,9 +90,73 @@ export const PricingConfigScreen = () => {
   const [timeIn, setTimeIn] = useState<Dayjs | null>(dayjs('08:00', 'HH:mm'));
   const [timeOut, setTimeOut] = useState<Dayjs | null>(dayjs('10:30', 'HH:mm'));
   const [calcResult, setCalcResult] = useState<{ total: number, breakdown: string[], minutes: number } | null>(null);
-  
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
+
+  const { data: policiesData, isLoading } = useQuery({
+    queryKey: ['pricing-policies'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/manager/pricing');
+      return res.data.data; // List of PricingPolicyDTO
+    }
+  });
+
+  useEffect(() => {
+    if (vehicleTypesData && vehicleTypesData.length > 0 && !activeTabId) {
+       setActiveTabId(vehicleTypesData[0].id);
+    }
+  }, [vehicleTypesData]);
+
+  useEffect(() => {
+    if (policiesData && activeTabId) {
+      const policy = policiesData.find((p: any) => p.vehicleTypeId === activeTabId);
+      if (policy) {
+        // Map DTO back to VehicleConfig
+        const mappedConfig: VehicleConfig = {
+          id: policy.id,
+          policyName: policy.policyName,
+          vehicleTypeId: policy.vehicleTypeId,
+          globalBaseGuardEnabled: policy.globalBaseMins > 0,
+          globalBaseGuardTime: policy.globalBaseMins,
+          globalBaseGuardPrice: policy.globalBaseFee,
+          globalMaxCapEnabled: policy.maxParkingCap < 3000000,
+          globalMaxCapPrice: policy.maxParkingCap,
+          shifts: policy.shifts.map((s: any, idx: number) => {
+            const slices: Slice[] = s.blocks.map((b: any, bIdx: number) => {
+               return {
+                  id: b.id || `slice_${bIdx}_${Date.now()}`,
+                  duration: b.durationMins,
+                  price: b.fee,
+                  isTail: bIdx === s.blocks.length - 1
+               };
+            });
+            // If the last block is tail, set duration to null to match UI logic
+            if (slices.length > 0) {
+               slices[slices.length - 1].isTail = true;
+               slices[slices.length - 1].duration = null;
+            }
+            return {
+              id: s.id || `shift_${idx}_${Date.now()}`,
+              name: s.shiftName,
+              startTime: s.startTime.substring(0, 5),
+              endTime: s.endTime.substring(0, 5),
+              color: idx % 2 === 0 ? 'bg-blue-100 border-blue-300 text-blue-800' : 'bg-indigo-100 border-indigo-300 text-indigo-800',
+              slices
+            };
+          })
+        };
+        setConfig(mappedConfig);
+        setSelectedShiftId(mappedConfig.shifts[0]?.id || null);
+      } else {
+        const empty = defaultEmptyConfig(activeTabId);
+        setConfig(empty);
+        setSelectedShiftId(empty.shifts[0]?.id || null);
+      }
+      setSelectedSliceId(null);
+      setCalcResult(null);
+    }
+  }, [activeTabId, policiesData]);
+
 
   const selectedShift = config.shifts.find(s => s.id === selectedShiftId);
   const selectedSlice = selectedShift?.slices.find(s => s.id === selectedSliceId);
@@ -206,7 +214,7 @@ export const PricingConfigScreen = () => {
     if (globalBaseGuardEnabled && minutes <= globalBaseGuardTime) {
       total = globalBaseGuardPrice;
       breakdown.push(`[Lớp Tiền Xử Lý] Đỗ ngắn (${minutes}p <= ${globalBaseGuardTime}p)`);
-      breakdown.push(`-> Kết thúc thuật toán: Tính giá nền ${globalBaseGuardPrice.toLocaleString()}đ`);
+      breakdown.push(`-> Kết thúc thuật toán: Tính giá nền ${(globalBaseGuardPrice || 0).toLocaleString()}đ`);
     } else {
       if (globalBaseGuardEnabled) {
          breakdown.push(`[Lớp Tiền Xử Lý] Vượt giá nền (${minutes}p > ${globalBaseGuardTime}p) -> Bỏ qua giá nền, chuyển xuống Máy Cắt Ca.`);
@@ -269,11 +277,11 @@ export const PricingConfigScreen = () => {
             if (remainingChunkTime > 0) {
                total += slice.price;
                if (remainingChunkTime <= blockDuration) {
-                  breakdown.push(`[Trượt] ${blockName}: +${slice.price.toLocaleString()}đ (Tiêu hao ${remainingChunkTime}p, Hết Lát cắt)`);
+                  breakdown.push(`[Trượt] ${blockName}: +${(slice.price || 0).toLocaleString()}đ (Tiêu hao ${remainingChunkTime}p, Hết Lát cắt)`);
                   remainingChunkTime -= blockDuration;
                   break;
                } else {
-                  breakdown.push(`[Trượt] ${blockName}: +${slice.price.toLocaleString()}đ (Tiêu hao hết ${blockDuration}p)`);
+                  breakdown.push(`[Trượt] ${blockName}: +${(slice.price || 0).toLocaleString()}đ (Tiêu hao hết ${blockDuration}p)`);
                   remainingChunkTime -= blockDuration;
                }
             }
@@ -289,7 +297,7 @@ export const PricingConfigScreen = () => {
     breakdown.push(`======================`);
     if (globalMaxCapEnabled && globalMaxCapPrice && total > globalMaxCapPrice) {
       total = globalMaxCapPrice;
-      breakdown.push(`-> Chạm Giá Trần Lưu Bãi. Áp dụng trần: ${globalMaxCapPrice.toLocaleString()}đ`);
+      breakdown.push(`-> Chạm Giá Trần Lưu Bãi. Áp dụng trần: ${(globalMaxCapPrice || 0).toLocaleString()}đ`);
     } else {
       breakdown.push(`-> Tổng hóa đơn tạm tính: ${total.toLocaleString()}đ`);
     }
@@ -297,15 +305,63 @@ export const PricingConfigScreen = () => {
     setCalcResult({ total, breakdown, minutes });
   };
 
-  const handleSave = () => {
-    if (confirmInput === 'XACNHAN') {
+  
+  const saveMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      return await axiosClient.post('/manager/pricing', payload);
+    },
+    onSuccess: () => {
       message.success('Đã lưu cấu hình bảng giá thành công!');
       setIsConfirmModalOpen(false);
       setConfirmInput('');
+      queryClient.invalidateQueries({ queryKey: ['pricing-policies'] });
+    },
+    onError: (error: any) => {
+      message.error('Lỗi khi lưu bảng giá: ' + (error.response?.data?.message || error.message));
+    }
+  });
+
+  const handleSave = () => {
+    if (confirmInput === 'XACNHAN') {
+      const payload = {
+        id: (config as any).id,
+        policyName: config.policyName || `Bảng giá ${vehicleTypesData?.find((v:any) => v.id === activeTabId)?.typeName || 'Mặc định'}`,
+        vehicleTypeId: activeTabId,
+        globalBaseMins: config.globalBaseGuardEnabled ? config.globalBaseGuardTime : 0,
+        globalBaseFee: config.globalBaseGuardEnabled ? config.globalBaseGuardPrice : 0,
+        maxParkingCap: config.globalMaxCapEnabled && config.globalMaxCapPrice ? config.globalMaxCapPrice : 3000000,
+        status: 'ACTIVE',
+        shifts: config.shifts.map(s => {
+          
+          let totalDurationMins = getShiftDuration(s);
+          
+          const blocks = s.slices.map((sl, idx) => {
+             const isTail = sl.isTail;
+             return {
+                id: typeof sl.id === 'number' ? sl.id : null,
+                blockOrder: idx + 1,
+                durationMins: isTail ? getTailDuration(s) : sl.duration,
+                fee: sl.price
+             };
+          });
+
+          return {
+             id: typeof s.id === 'number' ? s.id : null,
+             shiftName: s.name,
+             startTime: s.startTime,
+             endTime: s.endTime,
+             totalDurationMins: totalDurationMins,
+             blocks: blocks
+          };
+        })
+      };
+
+      saveMutation.mutate(payload);
     } else {
       message.error('Mã xác nhận không hợp lệ!');
     }
   };
+
 
   const updateConfig = (field: keyof VehicleConfig, value: any) => {
     setConfig(prev => ({ ...prev, [field]: value }));
@@ -433,13 +489,6 @@ export const PricingConfigScreen = () => {
   };
   const is24HCovered = checkTimelineCoverage();
 
-  const tabs = [
-    { key: 'car4', label: '🚗 Ô tô 4-7 chỗ' },
-    { key: 'carBig', label: '🚙 Ô tô Khách/Tải' },
-    { key: 'moto', label: '🛵 Xe máy' },
-    { key: 'bike', label: '🚲 Xe đạp/Điện' }
-  ];
-
   return (
     <div className="flex h-[calc(100vh-64px)] bg-gray-50 text-gray-800 overflow-hidden font-sans">
       
@@ -458,17 +507,18 @@ export const PricingConfigScreen = () => {
              </div>
           </div>
           
-          <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
-            {tabs.map(tab => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 cursor-pointer border-none outline-none ${activeTab === tab.key ? 'bg-white text-blue-600 shadow-sm' : 'bg-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-200/50'}`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+            <div className="flex bg-gray-100/80 p-1.5 rounded-xl border border-gray-200 shadow-inner gap-1">
+              {vehicleTypesData?.map((vt: any) => (
+                <button
+                  key={vt.id}
+                  onClick={() => setActiveTabId(vt.id)}
+                  className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-bold transition-all duration-300 cursor-pointer border-none outline-none ${activeTabId === vt.id ? 'bg-white text-blue-600 shadow ring-1 ring-black/5 scale-[1.02]' : 'bg-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-200/70'}`}
+                >
+                  <span className="text-lg">{vt.category === 'FOUR_WHEEL' ? '🚗' : '🛵'}</span>
+                  {vt.typeName}
+                </button>
+              ))}
+            </div>
         </div>
 
         {/* Canvas Body */}
@@ -594,7 +644,7 @@ export const PricingConfigScreen = () => {
                                 {isTail ? `${displayDuration} Phút` : `${slice.duration} Phút`}
                               </div>
                               <div className="bg-green-100 text-green-700 px-3 py-1 rounded-md text-sm font-bold border border-green-200">
-                                {slice.price.toLocaleString()} đ
+                                {(slice.price || 0).toLocaleString()} đ
                               </div>
                               
                               {/* Connection arrow between blocks */}
@@ -869,7 +919,7 @@ export const PricingConfigScreen = () => {
         width={400}
       >
         <div className="py-4 text-gray-700">
-          <p className="mb-4 text-sm">Hành động này sẽ cập nhật thuật toán tính tiền cho <strong>{tabs.find(t => t.key === activeTab)?.label}</strong>. Vui lòng gõ chữ xác nhận:</p>
+          <p className="mb-4 text-sm">Hành động này sẽ cập nhật thuật toán tính tiền cho <strong>{vehicleTypesData?.find((v:any) => v.id === activeTabId)?.typeName}</strong>. Vui lòng gõ chữ xác nhận:</p>
           <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-4">
             <p className="mb-2 text-xs text-gray-500 flex justify-between">
               <span>Mã xác nhận:</span>

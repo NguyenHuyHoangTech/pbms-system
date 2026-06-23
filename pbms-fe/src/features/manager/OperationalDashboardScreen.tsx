@@ -3,6 +3,8 @@ import { Typography, Card, Row, Col, DatePicker, Button, Table, Statistic, Radio
 import { DownloadOutlined, FilterOutlined, NodeIndexOutlined } from '@ant-design/icons';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ReferenceLine } from 'recharts';
 import dayjs from 'dayjs';
+import { useQuery } from '@tanstack/react-query';
+import axiosClient from '../../core/api/axiosClient';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
@@ -13,69 +15,32 @@ export const OperationalDashboardScreen = () => {
   const [chartVehicleType, setChartVehicleType] = useState('ALL');
   const [rangeVehicleType, setRangeVehicleType] = useState('ALL');
 
-  const dailyData = useMemo(() => {
-    if (!dateRange || !dateRange[0] || !dateRange[1]) return [];
-    const start = dateRange[0];
-    const end = dateRange[1];
-    const diff = end.diff(start, 'day');
-    const days = Math.min(diff, 30); // Giới hạn 30 ngày cho mock
-    
-    return Array.from({ length: days + 1 }).map((_, i) => {
-      const date = start.add(i, 'day');
-      const seed = date.date();
-      return {
-        dateStr: date.format('DD/MM'),
-        carIn: (seed * 113 % 500) + 100,
-        carOut: (seed * 117 % 450) + 90,
-        motoIn: (seed * 123 % 1000) + 200,
-        motoOut: (seed * 129 % 900) + 150,
-      };
-    });
-  }, [dateRange]);
-
-  const hourlyData = useMemo(() => {
-    let maxHour = 24;
-    if (chartDate && chartDate.isSame(dayjs(), 'day')) {
-      maxHour = dayjs().hour() + 1; // Only show up to current hour if today
-    }
-    
-    return Array.from({ length: maxHour }).map((_, i) => {
-      const seed = i + (chartDate ? chartDate.date() : 0);
-      return {
-        hour: `${i}:00`,
-        carIn: (seed * 13 % 50) + 10,
-        carOut: (seed * 17 % 45) + 5,
-        motoIn: (seed * 23 % 100) + 20,
-        motoOut: (seed * 29 % 90) + 15,
-        zoneOccupancy: (seed * 7 % 30) + 65
-      };
-    });
-  }, [chartDate, chartDate?.date()]);
-
-  const [liveData, setLiveData] = useState({
-    car: { capacity: 200, occupied: 185 },
-    moto: { capacity: 500, occupied: 300 },
-    checkIns: 450,
-    checkOuts: 380
+  const { data: dashboardData } = useQuery({
+    queryKey: ['operational-dashboard', chartDate],
+    queryFn: async () => {
+      const res = await axiosClient.get('/dashboard/operational');
+      return res.data.data;
+    },
+    refetchInterval: 5000 // Real-time polling as fallback to WebSocket
   });
 
-  // Simulate WebSocket Live Updates
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setLiveData(prev => {
-        const carOcc = Math.min(prev.car.capacity, Math.max(0, prev.car.occupied + (Math.random() > 0.5 ? 1 : -1)));
-        const motoOcc = Math.min(prev.moto.capacity, Math.max(0, prev.moto.occupied + (Math.random() > 0.5 ? 2 : -2)));
-        return {
-          ...prev,
-          car: { ...prev.car, occupied: carOcc },
-          moto: { ...prev.moto, occupied: motoOcc },
-          checkIns: prev.checkIns + (Math.random() > 0.7 ? 1 : 0),
-          checkOuts: prev.checkOuts + (Math.random() > 0.7 ? 1 : 0)
-        };
-      });
-    }, 2000);
-    return () => clearInterval(timer);
-  }, []);
+  const dailyData = useMemo(() => {
+    return dashboardData?.dailyData || [];
+  }, [dashboardData]);
+
+  const hourlyData = useMemo(() => {
+    return dashboardData?.hourlyData || [];
+  }, [dashboardData]);
+
+  const liveData = useMemo(() => {
+    if (dashboardData?.liveData) return dashboardData.liveData;
+    return {
+      car: { capacity: 200, occupied: 0 },
+      moto: { capacity: 500, occupied: 0 },
+      checkIns: 0,
+      checkOuts: 0
+    };
+  }, [dashboardData]);
 
   const handleApply = () => {
     // Fetch data based on date range

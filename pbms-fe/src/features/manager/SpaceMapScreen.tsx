@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Typography, Button, message, Spin, Input, Select, InputNumber, Collapse, Slider, Switch, Radio, notification, Badge, Tooltip } from 'antd';
+import { Typography, Button, message, Spin, Input, Select, InputNumber, Collapse, Slider, Switch, Radio, notification, Badge, Tooltip, Modal } from 'antd';
 import { 
   SaveOutlined, SyncOutlined, AimOutlined, PlusOutlined, 
   SettingOutlined, CompassOutlined, GatewayOutlined, 
@@ -9,6 +9,7 @@ import {
 import { Stage, Layer, Line, Group, Rect, Text as KonvaText } from 'react-konva';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
+import { useWebSocket } from '../../core/websocket/useWebSocket';
 import Konva from 'konva';
 
 const { Title, Text } = Typography;
@@ -20,7 +21,7 @@ const GRID_SIZE = 50;
 interface Floor {
   id: number;
   name: string;
-  type: 'CAR' | 'MOTORBIKE';
+  type: 'FOUR_WHEEL' | 'TWO_WHEEL';
   mapCols: number;
   mapRows: number;
 }
@@ -37,7 +38,9 @@ interface Zone {
   floorId: number;
   name: string;
   capacity: number;
-  vehicleType: 'CAR' | 'MOTORBIKE';
+  vehicleTypeId: number;
+  vehicleTypeName?: string;
+  vehicleCategory?: string;
   functionType: 'WALK_IN' | 'IMPOUNDED' | 'MONTHLY';
   layoutX: number;
   layoutY: number;
@@ -47,16 +50,25 @@ interface Zone {
 }
 
 interface Gate {
-  id: string;
+  id: string | number;
   floorId: number;
   name: string;
   type: 'IN' | 'OUT';
-  status: 'IDLE' | 'OCCUPIED';
+  status: 'IDLE' | 'OCCUPIED' | 'MAINTENANCE' | string;
   staffName?: string;
   layoutX: number;
   layoutY: number;
   rotation: number;
+  vehicleTypeId?: number;
   pendingCommand?: string | null;
+}
+
+interface VehicleType {
+  id: number;
+  typeName: string;
+  category: 'FOUR_WHEEL' | 'TWO_WHEEL';
+  matrixWidth: number;
+  matrixHeight: number;
 }
 
 type SelectedEntity = 
@@ -65,11 +77,13 @@ type SelectedEntity =
   | { type: 'GATE'; id: string } 
   | null;
 
-const getVehicleDimensions = (type: string) => {
-  if (type === 'CAR') return { width: 3 * GRID_SIZE, height: 5 * GRID_SIZE }; 
-  if (type === 'MOTORBIKE') return { width: 1 * GRID_SIZE, height: 2 * GRID_SIZE }; 
-  return { width: 2 * GRID_SIZE, height: 4 * GRID_SIZE };
-};
+  const getVehicleDimensions = (typeId: number, vehicleTypes: VehicleType[]) => {
+    const type = vehicleTypes.find(v => v.id === typeId);
+    if (type) {
+        return { width: type.matrixWidth * GRID_SIZE, height: type.matrixHeight * GRID_SIZE };
+    }
+    return { width: 3 * GRID_SIZE, height: 6 * GRID_SIZE };
+  };
 
 export const SpaceMapScreen = () => {
   const queryClient = useQueryClient();
@@ -77,15 +91,13 @@ export const SpaceMapScreen = () => {
   // State
   const [zones, setZones] = useState<Zone[]>([]);
   const [gates, setGates] = useState<Gate[]>([]);
+  const [floors, setFloors] = useState<Floor[]>([]);
+  const [vehicleTypes, setVehicleTypes] = useState<VehicleType[]>([]);
   const [selectedEntity, setSelectedEntity] = useState<SelectedEntity>(null);
   const [expandedKeys, setExpandedKeys] = useState<string[]>(['0', '1', '2', '4']);
   const [collidingNodeId, setCollidingNodeId] = useState<string | null>(null);
   
   // Floors State
-  const [floors, setFloors] = useState<Floor[]>([
-    { id: 1, name: 'Tầng 1 (Trệt)', type: 'CAR', mapCols: 60, mapRows: 40 },
-    { id: 2, name: 'Hầm B1', type: 'MOTORBIKE', mapCols: 40, mapRows: 30 }
-  ]);
   const [selectedFloorId, setSelectedFloorId] = useState<number>(1);
   
   const activeFloor = floors.find(f => f.id === selectedFloorId);
@@ -104,29 +116,52 @@ export const SpaceMapScreen = () => {
   const [stageScale, setStageScale] = useState(1);
   const [defaultScale, setDefaultScale] = useState(1);
 
-  // Fetch initial data (Mocking for now to match UI specs)
+  const { stompClient, connected } = useWebSocket();
+
+  // Fetch initial data via API
+  const { data: mapConfigData, refetch } = useQuery({
+    queryKey: ['mapConfig'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/infrastructure/map/config');
+      return res.data.data;
+    }
+  });
+
   useEffect(() => {
-    // Initial Zones
-    setZones([
-      { 
-        id: 1, floorId: 1, name: 'Khu A (Vãng lai)', capacity: 5, vehicleType: 'CAR', functionType: 'WALK_IN', 
-        layoutX: 100, layoutY: 100, rotation: 0, overflowThreshold: 80,
-        slots: Array.from({length: 5}).map((_, i) => ({ id: `A${i+1}`, name: `A0${i+1}`, status: i === 1 ? 'OCCUPIED' : 'EMPTY', plate: i === 1 ? '51G-123.45' : undefined })) 
-      },
-      { 
-        id: 2, floorId: 2, name: 'Khu B (Vé tháng)', capacity: 10, vehicleType: 'MOTORBIKE', functionType: 'MONTHLY', 
-        layoutX: 100, layoutY: 100, rotation: 0, overflowThreshold: 90,
-        slots: Array.from({length: 10}).map((_, i) => ({ id: `B${i+1}`, name: `B${i < 9 ? '0'+(i+1) : i+1}`, status: i === 3 ? 'DISABLED' : (i === 1 ? 'OCCUPIED' : 'EMPTY'), plate: i === 1 ? '59X-999.99' : undefined })) 
-      },
-    ]);
-    
-    // Initial Gates
-    setGates([
-      { id: 'G1', floorId: 1, name: 'Cổng IN - Tầng 1', type: 'IN', status: 'IDLE', layoutX: 50, layoutY: 800, rotation: 0 },
-      { id: 'G2', floorId: 1, name: 'Cổng OUT - Tầng 1', type: 'OUT', status: 'OCCUPIED', staffName: 'Nguyễn Văn A', layoutX: 800, layoutY: 800, rotation: 0, pendingCommand: null },
-      { id: 'G3', floorId: 2, name: 'Cổng IN - Hầm B1', type: 'IN', status: 'IDLE', layoutX: 50, layoutY: 500, rotation: 0 },
-    ]);
-  }, []);
+    if (mapConfigData) {
+      if (mapConfigData.floors && mapConfigData.floors.length > 0) {
+        setFloors(mapConfigData.floors);
+        if (!selectedFloorId || !mapConfigData.floors.find((f: any) => f.id === selectedFloorId)) {
+          setSelectedFloorId(mapConfigData.floors[0].id);
+        }
+      }
+      if (mapConfigData.zones) setZones(mapConfigData.zones);
+      if (mapConfigData.gates) setGates(mapConfigData.gates);
+      if (mapConfigData.vehicleTypes) setVehicleTypes(mapConfigData.vehicleTypes);
+    }
+  }, [mapConfigData]);
+
+  // WebSocket for real-time slot updates
+  useEffect(() => {
+    if (stompClient && connected) {
+      const subscription = stompClient.subscribe('/topic/slots/status', (message) => {
+        const payload = JSON.parse(message.body); // e.g., { "slotId": 1, "status": "OCCUPIED" }
+        setZones(prevZones => prevZones.map(z => ({
+          ...z,
+          slots: z.slots.map(s => {
+            if (s.id === String(payload.slotId)) {
+              return { ...s, status: payload.status === 'AVAILABLE' ? 'EMPTY' : payload.status };
+            }
+            return s;
+          })
+        })));
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
+  }, [stompClient, connected]);
 
   // Handle floor switch selection clear
   useEffect(() => {
@@ -223,7 +258,7 @@ export const SpaceMapScreen = () => {
     if (!zone) return;
     setSelectedEntity({ type: 'ZONE', id: zone.id });
     
-    const { width: slotW, height: slotH } = getVehicleDimensions(zone.vehicleType);
+    const { width: slotW, height: slotH } = getVehicleDimensions(zone.vehicleTypeId, vehicleTypes);
     let zoneW = zone.capacity * slotW;
     let zoneH = slotH;
     if (zone.rotation === 90 || zone.rotation === 270) {
@@ -329,7 +364,7 @@ export const SpaceMapScreen = () => {
     
     const rects = [];
     for (const z of visibleZones) {
-       const { width: slotW, height: slotH } = getVehicleDimensions(z.vehicleType);
+       const { width: slotW, height: slotH } = getVehicleDimensions(z.vehicleTypeId, vehicleTypes);
        let zw = z.capacity * slotW;
        let zh = slotH;
        if (z.rotation === 90 || z.rotation === 270) { zw = slotH; zh = z.capacity * slotW; }
@@ -342,8 +377,15 @@ export const SpaceMapScreen = () => {
        rects.push({ x: zx, y: zy, width: zw, height: zh });
     }
     for (const g of visibleGates) {
-       let gw = 3 * GRID_SIZE; let gh = GRID_SIZE;
-       if (g.rotation === 90 || g.rotation === 270) { gw = GRID_SIZE; gh = 3 * GRID_SIZE; }
+       let gw = 3 * GRID_SIZE; 
+       let gh = GRID_SIZE;
+       if (g.vehicleTypeId) {
+           const vt = vehicleTypes.find(v => v.id === g.vehicleTypeId);
+           if (vt) gw = vt.matrixWidth * GRID_SIZE;
+       }
+       if (g.rotation === 90 || g.rotation === 270) { 
+           let temp = gw; gw = gh; gh = temp; 
+       }
        let gx = g.layoutX; let gy = g.layoutY;
        if (g.rotation === 90) gx -= gw;
        else if (g.rotation === 180) { gx -= gw; gy -= gh; }
@@ -370,8 +412,13 @@ export const SpaceMapScreen = () => {
 
   const handleAddZone = () => {
     const activeFloor = floors.find(f => f.id === selectedFloorId);
-    const vehicleType = activeFloor?.type === 'MOTORBIKE' ? 'MOTORBIKE' : 'CAR';
-    const { width: slotW, height: slotH } = getVehicleDimensions(vehicleType);
+    const validVehicleTypes = vehicleTypes.filter(v => v.category === activeFloor?.type);
+    if (validVehicleTypes.length === 0) {
+      message.error("Không có loại xe nào phù hợp với tầng này! Vui lòng tạo loại xe trước.");
+      return;
+    }
+    const defaultVehicleType = validVehicleTypes[0];
+    const { width: slotW, height: slotH } = getVehicleDimensions(defaultVehicleType.id, vehicleTypes);
     const capacity = 5;
     const w = capacity * slotW;
     const h = slotH;
@@ -388,13 +435,13 @@ export const SpaceMapScreen = () => {
       floorId: selectedFloorId,
       name: `Khu vực Mới`,
       capacity: capacity,
-      vehicleType: vehicleType,
+      vehicleTypeId: defaultVehicleType.id,
       functionType: 'WALK_IN',
       layoutX: pos.x,
       layoutY: pos.y,
       rotation: 0,
       overflowThreshold: 80,
-      slots: Array.from({length: capacity}).map((_, i) => ({ id: `NEW-${newId}-${i}`, name: `N${i+1}`, status: 'EMPTY' }))
+      slots: Array.from({length: capacity}).map((_, i) => ({ id: `${Date.now()}${i}`, name: `N${i+1}`, status: 'EMPTY' }))
     };
     
     setZones(prev => [...prev, newZone]);
@@ -409,16 +456,17 @@ export const SpaceMapScreen = () => {
       return;
     }
 
-    const newId = `G-${Date.now()}`;
+    const newId = Date.now();
     const newGate: Gate = {
       id: newId,
       floorId: selectedFloorId,
-      name: `Cổng Mới`,
-      type: 'IN',
+      name: `Cổng ${gates.length + 1}`,
+      type: 'IN_OUT',
       status: 'IDLE',
       layoutX: pos.x,
       layoutY: pos.y,
       rotation: 0,
+      vehicleTypeId: validVehicleTypes.length > 0 ? validVehicleTypes[0].id : undefined
     };
     setGates(prev => [...prev, newGate]);
     setSelectedEntity({ type: 'GATE', id: newId });
@@ -432,9 +480,8 @@ export const SpaceMapScreen = () => {
       
       let newSlots = [...z.slots];
       if (newCapacity > z.capacity) {
-        // Add slots
         for (let i = z.capacity; i < newCapacity; i++) {
-          newSlots.push({ id: `S-${z.id}-${Date.now()}-${i}`, name: `S${i+1}`, status: 'EMPTY' });
+          newSlots.push({ id: `${Date.now()}${i}`, name: `S${i+1}`, status: 'EMPTY' });
         }
       } else {
         // Reduce slots (LIFO)
@@ -468,35 +515,53 @@ export const SpaceMapScreen = () => {
     }));
   };
 
-  const handleGateCommand = (gateId: string, cmd: string) => {
+  const handleGateCommand = async (gateId: string | number, cmd: string) => {
     const gate = gates.find(g => g.id === gateId);
     if (!gate) return;
 
-    if (gate.status === 'IDLE') {
-      // Real-time update
-      message.success(`Đã áp dụng lệnh ${cmd} ngay lập tức cho ${gate.name}`);
-      // Typically API call here
-    } else {
-      // OCCUPIED -> Pending Command via WebSocket mock
-      setGates(prev => prev.map(g => g.id === gateId ? { ...g, pendingCommand: cmd } : g));
-      notification.error({
-        message: 'LỆNH CHỜ ĐÃ GỬI (CRITICAL)',
-        description: `Đã gửi thông báo đẩy đến màn hình POS của ${gate.staffName}. Lệnh sẽ được kích hoạt khi nhân viên chốt ca.`,
-        duration: 8,
-        placement: 'bottomRight'
-      });
+    try {
+      await axiosClient.post(`/infrastructure/gates/${gateId}/command`, { command: cmd });
+      
+      if (gate.status === 'IDLE') {
+        message.success(`Đã áp dụng lệnh ${cmd} ngay lập tức cho ${gate.name}`);
+      } else {
+        setGates(prev => prev.map(g => g.id === gateId ? { ...g, pendingCommand: cmd } : g));
+        notification.error({
+          message: 'LỆNH CHỜ ĐÃ GỬI (CRITICAL)',
+          description: `Đã gửi lệnh ${cmd} đến thiết bị/nhân viên tại cổng.`,
+          duration: 8,
+          placement: 'bottomRight'
+        });
+      }
+    } catch (error) {
+      message.error('Lỗi khi gửi lệnh điều khiển cổng');
     }
   };
 
-  const handleCancelGateCommand = (gateId: string) => {
+  const handleCancelGateCommand = (gateId: string | number) => {
     setGates(prev => prev.map(g => g.id === gateId ? { ...g, pendingCommand: null } : g));
     message.info('Đã hủy lệnh chờ.');
   };
 
   const handleSave = () => {
-    const payload = { mapCols, mapRows, zones, gates };
+    const payload = { floors, zones, gates, vehicleTypes: undefined }; // don't send vehicleTypes back
     console.log("Saving Configuration:", payload);
-    message.success('Đã lưu cấu hình sơ đồ và trung tâm điều khiển thành công!');
+    axiosClient.post('/infrastructure/map/save', payload)
+      .then(res => {
+        message.success('Đã lưu cấu hình sơ đồ và trung tâm điều khiển thành công!');
+        refetch().then((result) => {
+          const fetchedData = result.data;
+          if (fetchedData && fetchedData.floors && fetchedData.floors.length > 0) {
+            const stillExists = fetchedData.floors.find((f: any) => f.id === selectedFloorId);
+            if (!stillExists) {
+               setSelectedFloorId(fetchedData.floors[fetchedData.floors.length - 1].id);
+            }
+          }
+        });
+      })
+      .catch(err => {
+        message.error(err.response?.data?.message || 'Có lỗi xảy ra khi lưu cấu hình.');
+      });
   };
 
   // -- Render Helpers --
@@ -522,6 +587,7 @@ export const SpaceMapScreen = () => {
   const activeZone = selectedEntity?.type === 'ZONE' || selectedEntity?.type === 'SLOT' ? zones.find(z => z.id === (selectedEntity as any).zoneId || z.id === selectedEntity.id) : null;
   const activeSlot = selectedEntity?.type === 'SLOT' ? activeZone?.slots.find(s => s.id === selectedEntity.slotId) : null;
   const activeGate = selectedEntity?.type === 'GATE' ? gates.find(g => g.id === selectedEntity.id) : null;
+  const validVehicleTypes = vehicleTypes.filter(v => v.category === activeFloor?.type);
 
   return (
     <div className="flex h-full w-full bg-slate-50 overflow-hidden font-sans">
@@ -574,7 +640,7 @@ export const SpaceMapScreen = () => {
             <Layer>
               {/* Draw Zones & Slots */}
               {visibleZones.map((zone) => {
-                const { width: slotW, height: slotH } = getVehicleDimensions(zone.vehicleType);
+                const { width: slotW, height: slotH } = getVehicleDimensions(zone.vehicleTypeId, vehicleTypes);
                 const isZoneSelected = selectedEntity?.type === 'ZONE' && selectedEntity.id === zone.id;
                 const isSlotSelectedInZone = selectedEntity?.type === 'SLOT' && selectedEntity.zoneId === zone.id;
                 const isSelected = isZoneSelected || isSlotSelectedInZone;
@@ -684,8 +750,14 @@ export const SpaceMapScreen = () => {
 
               {/* Draw Gates */}
               {visibleGates.map((gate) => {
+                let gateW = 3 * GRID_SIZE;
+                let gateH = GRID_SIZE;
+                if (gate.vehicleTypeId) {
+                  const vt = vehicleTypes.find(v => v.id === gate.vehicleTypeId);
+                  if (vt) gateW = vt.matrixWidth * GRID_SIZE;
+                }
                 const isSelected = selectedEntity?.type === 'GATE' && selectedEntity.id === gate.id;
-                const gateColor = gate.status === 'OCCUPIED' ? '#f59e0b' : '#10b981'; // Amber if staffed, Green if idle
+                const gateColor = gate.status === 'OCCUPIED' ? '#d97706' : '#059669'; // amber vs emerald, Green if idle
                 
                 return (
                   <Group
@@ -704,7 +776,7 @@ export const SpaceMapScreen = () => {
                     }}
                   >
                     <Rect
-                      width={3 * GRID_SIZE} height={GRID_SIZE}
+                      width={gateW} height={gateH}
                       fill={isSelected ? '#e0f2fe' : '#ffffff'}
                       stroke={collidingNodeId === gate.id ? '#ef4444' : (isSelected ? '#2563eb' : gateColor)}
                       dash={collidingNodeId === gate.id ? [10, 5] : []}
@@ -712,8 +784,8 @@ export const SpaceMapScreen = () => {
                       cornerRadius={4}
                     />
                     <KonvaText
-                      x={0} y={GRID_SIZE / 2 - 6}
-                      width={3 * GRID_SIZE}
+                      x={0} y={gateH / 2 - 6}
+                      width={gateW}
                       align="center"
                       text={gate.name}
                       fontSize={12}
@@ -780,26 +852,41 @@ export const SpaceMapScreen = () => {
                   >
                     {floors.map(f => <Select.Option key={f.id} value={f.id}>{f.name}</Select.Option>)}
                   </Select>
-                  <Button size="small" icon={<PlusOutlined />} onClick={() => {
-                    const newId = Date.now();
-                    setFloors(prev => [...prev, { id: newId, name: `Tầng Mới`, type: 'CAR', mapCols: 60, mapRows: 40 }]);
-                    setSelectedFloorId(newId);
-                  }}>Thêm</Button>
+                  <div className="flex space-x-2">
+                    <Button size="small" icon={<PlusOutlined />} onClick={() => {
+                      const newId = Date.now();
+                      setFloors(prev => [...prev, { id: newId, name: `Tầng Mới`, type: 'FOUR_WHEEL', mapCols: 60, mapRows: 40 }]);
+                      setSelectedFloorId(newId);
+                    }}>Thêm</Button>
+                    <Button size="small" type="primary" icon={<SaveOutlined />} onClick={handleSave}>
+                      Lưu Tầng
+                    </Button>
+                  </div>
                 </div>
                 {floors.find(f => f.id === selectedFloorId) && (
-                  <div>
+                  <div className="space-y-3">
+                    <div>
+                      <Text className="text-xs text-gray-500 block mb-1">Tên Tầng:</Text>
+                      <Input 
+                        size="small"
+                        value={floors.find(f => f.id === selectedFloorId)?.name} 
+                        onChange={(e) => setFloors(prev => prev.map(f => f.id === selectedFloorId ? { ...f, name: e.target.value } : f))}
+                      />
+                    </div>
+                    <div>
                     <Text className="text-xs text-gray-500 block mb-1">Đặc tính Tầng (Giới hạn loại xe):</Text>
                     <Select 
                       size="small" 
                       value={floors.find(f => f.id === selectedFloorId)?.type} 
                       className="w-full"
                       onChange={(v) => {
-                         setFloors(prev => prev.map(f => f.id === selectedFloorId ? { ...f, type: v as 'CAR' | 'MOTORBIKE' } : f));
+                         setFloors(prev => prev.map(f => f.id === selectedFloorId ? { ...f, type: v as 'FOUR_WHEEL' | 'TWO_WHEEL' } : f));
                       }}
                     >
-                      <Select.Option value="CAR">Tầng Ô tô</Select.Option>
-                      <Select.Option value="MOTORBIKE">Tầng Xe máy</Select.Option>
+                      <Select.Option value="FOUR_WHEEL">Tầng Ô tô (4 bánh)</Select.Option>
+                      <Select.Option value="TWO_WHEEL">Tầng Xe máy (2 bánh)</Select.Option>
                     </Select>
+                  </div>
                   </div>
                 )}
                 <div>
@@ -851,23 +938,35 @@ export const SpaceMapScreen = () => {
                   <div>
                     <Text className="text-xs text-gray-500 block mb-1">Loại phương tiện:</Text>
                     <Select 
-                      size="small" className="w-full" value={activeZone.vehicleType}
-                      onChange={v => setZones(prev => prev.map(z => z.id === activeZone.id ? {...z, vehicleType: v} : z))}
+                      size="small" className="w-full" value={activeZone.vehicleTypeId}
+                      onChange={v => setZones(prev => prev.map(z => z.id === activeZone.id ? {...z, vehicleTypeId: v} : z))}
                     >
-                      {floors.find(f => f.id === selectedFloorId)?.type !== 'MOTORBIKE' && (
-                        <Select.Option value="CAR">Ô tô (150x250)</Select.Option>
-                      )}
-                      {floors.find(f => f.id === selectedFloorId)?.type !== 'CAR' && (
-                        <Select.Option value="MOTORBIKE">Xe máy (50x100)</Select.Option>
-                      )}
+                      {validVehicleTypes.map(vt => (
+                          <Select.Option key={vt.id} value={vt.id}>{vt.typeName}</Select.Option>
+                      ))}
                     </Select>
                   </div>
 
                   <div>
-                    <Text className="text-xs text-gray-500 block mb-1">Số lượng Slot (LIFO):</Text>
+                    <Text className="text-xs text-gray-500 block mb-1">Số lượng chỗ đỗ (giảm về 0 để xóa):</Text>
                     <InputNumber 
-                      size="small" min={1} max={100} value={activeZone.capacity} className="w-full"
-                      onChange={v => v && handleUpdateZoneCapacity(activeZone.id, v)}
+                      size="small" min={0} max={100} value={activeZone.capacity} className="w-full"
+                      onChange={v => {
+                        if (v === 0) {
+                          Modal.confirm({
+                            title: 'Xác nhận xóa Khu vực',
+                            content: 'Bạn có chắc chắn muốn xóa khu vực này?',
+                            okText: 'Xóa',
+                            cancelText: 'Hủy',
+                            onOk: () => {
+                              setZones(prev => prev.filter(z => z.id !== activeZone.id));
+                              setSelectedEntity(null);
+                            }
+                          });
+                        } else if (v !== null && v !== undefined) {
+                          handleUpdateZoneCapacity(activeZone.id, v);
+                        }
+                      }}
                     />
                   </div>
 
@@ -944,10 +1043,24 @@ export const SpaceMapScreen = () => {
                         size="small" 
                         value={activeGate.type} 
                         className="w-full"
-                        onChange={(v) => setGates(prev => prev.map(g => g.id === activeGate.id ? {...g, type: v as 'IN' | 'OUT'} : g))}
+                        onChange={(v) => setGates(prev => prev.map(g => g.id === activeGate.id ? {...g, type: v as 'IN' | 'OUT' | 'IN_OUT'} : g))}
                       >
                         <Select.Option value="IN">Cổng Vào (IN)</Select.Option>
                         <Select.Option value="OUT">Cổng Ra (OUT)</Select.Option>
+                        <Select.Option value="IN_OUT">Vào & Ra</Select.Option>
+                      </Select>
+                    </div>
+                    <div className="mb-2">
+                      <Text className="text-xs text-gray-500 block mb-1">Loại xe:</Text>
+                      <Select 
+                        size="small"
+                        value={activeGate.vehicleTypeId} 
+                        className="w-full"
+                        onChange={(v) => setGates(prev => prev.map(g => g.id === activeGate.id ? {...g, vehicleTypeId: v} : g))}
+                      >
+                        {validVehicleTypes.map(vt => (
+                          <Select.Option key={vt.id} value={vt.id}>{vt.typeName}</Select.Option>
+                        ))}
                       </Select>
                     </div>
                     <Text className="text-xs block">Trạng thái: <Text strong>{activeGate.status}</Text></Text>

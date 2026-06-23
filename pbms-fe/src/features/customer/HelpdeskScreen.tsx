@@ -18,16 +18,14 @@ import {
 const { Title, Text } = Typography;
 const { TextArea } = Input;
 
-const MOCK_TICKETS = [
-  { id: 'TCK_001', status: 'OPEN', category: 'Sai lệch cước phí', date: '2026-06-18 10:30' },
-  { id: 'TCK_002', status: 'CLOSED', category: 'Mất thẻ', date: '2026-06-15 08:15' },
-  { id: 'TCK_003', status: 'REJECTED', category: 'Sai lệch cước phí', date: '2026-06-19 14:20', reason: 'Không có minh chứng hợp lệ, hệ thống không ghi nhận kẹt xe trong khung giờ này.' }
-];
+
 
 const columns = [
-  { title: 'Mã Ticket', dataIndex: 'id', key: 'id', render: (text: string) => <Text strong>{text}</Text> },
+  { title: 'Mã Ticket', dataIndex: 'id', key: 'id', render: (text: string) => <Text strong>{text || 'NEW'}</Text> },
   { title: 'Phân loại', dataIndex: 'category', key: 'category' },
-  { title: 'Thời gian tạo', dataIndex: 'date', key: 'date' },
+  { title: 'Biển số', dataIndex: 'plateNumber', key: 'plateNumber' },
+  { title: 'Mô tả', dataIndex: 'description', key: 'description' },
+  { title: 'Thời gian tạo', dataIndex: 'reportedAt', key: 'reportedAt' },
   { 
     title: 'Trạng thái', 
     dataIndex: 'status', 
@@ -43,18 +41,43 @@ const columns = [
 export const HelpdeskScreen = () => {
   const [form] = Form.useForm();
   
+  const queryClient = useQueryClient();
   const [selectedCategory, setSelectedCategory] = useState<string>('');
-  const [submitting, setSubmitting] = useState(false);
   const [systemMessage, setSystemMessage] = useState<{ type: 'success' | 'warning' | 'info'; title: string; desc: string } | null>(null);
 
-  const handleIncidentSubmit = (values: any) => {
-    setSubmitting(true);
+  const { data: tickets = [] } = useQuery({
+    queryKey: ['incidents'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/incidents');
+        return res.data.data || [];
+      } catch (err) {
+        return [];
+      }
+    }
+  });
+
+  const createIncidentMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await axiosClient.post('/incidents', payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] });
+    }
+  });
+
+  const handleIncidentSubmit = async (values: any) => {
     setSystemMessage(null);
     
-    // Mock API Call & Backend Automation Logic
-    setTimeout(() => {
-      setSubmitting(false);
-      
+    try {
+      await createIncidentMutation.mutateAsync({
+        category: values.category,
+        plateNumber: values.plate,
+        description: values.description,
+        status: 'OPEN'
+      });
+
       switch (values.category) {
         case 'SLOT_OCCUPIED':
           setSystemMessage({
@@ -105,7 +128,9 @@ export const HelpdeskScreen = () => {
       }
       
       form.resetFields(['description', 'plate', 'code']);
-    }, 1500);
+    } catch (error) {
+      message.error('Lỗi khi gửi yêu cầu hỗ trợ.');
+    }
   };
 
   return (
@@ -230,7 +255,7 @@ export const HelpdeskScreen = () => {
               <Button 
                 type="primary" 
                 htmlType="submit" 
-                loading={submitting}
+                loading={createIncidentMutation.isPending}
                 disabled={!selectedCategory}
                 className={`w-full h-14 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center ${
                   selectedCategory === 'LOST_CARD' ? 'bg-red-600 hover:bg-red-700' :
@@ -252,7 +277,7 @@ export const HelpdeskScreen = () => {
           <Title level={5} className="mb-4 text-gray-600 uppercase text-xs tracking-wider font-bold">Lịch sử Yêu cầu Gần đây</Title>
           <div className="overflow-x-auto">
             <Table 
-              dataSource={MOCK_TICKETS} 
+              dataSource={tickets} 
               columns={columns} 
               rowKey="id" 
               pagination={false} 

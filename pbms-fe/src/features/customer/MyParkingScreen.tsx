@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Tabs, Card, Typography, List, Divider, Button, Tag, Spin, message, Input, Space, Popconfirm, Empty, Timeline, Drawer, Alert, Form, Select, Radio, Modal } from 'antd';
-import { QrcodeOutlined, ClockCircleOutlined, CarOutlined, CreditCardOutlined, SearchOutlined, IdcardOutlined, CloseCircleOutlined, HistoryOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Tabs, Card, Typography, List, Divider, Button, Tag, Spin, message, Input, Space, Popconfirm, Empty, Timeline, Drawer, Alert, Form, Select, Radio, Modal, QRCode } from 'antd';
+import { ClockCircleOutlined, CarOutlined, CreditCardOutlined, SearchOutlined, IdcardOutlined, CloseCircleOutlined, HistoryOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
@@ -34,7 +34,7 @@ export const MyParkingScreen = () => {
     { id: 'MOTORBIKE', name: 'Xe máy', pricePerMonth: 150000 }
   ];
   const GATEWAYS = [
-    { id: 'VNPAY', name: 'VNPay', icon: 'https://vnpay.vn/s1/statics.vnpay.vn/2023/6/0oxhzjmxbksr1686814746087.png' },
+    { id: 'PAYPAL', name: 'PayPal Sandbox', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' },
     { id: 'PAYOS', name: 'PayOS', icon: 'https://payos.vn/wp-content/uploads/sites/13/2023/07/payos-logo.svg' }
   ];
 
@@ -43,52 +43,103 @@ export const MyParkingScreen = () => {
   const [rfidInput, setRfidInput] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
 
-  // MOCK DATA for Management
-  const [bookings, setBookings] = useState([
-    { id: 'BK-98765', plateNumber: '29B-987.65', type: 'Ô TÔ', slot: 'A-05', arrivalTime: dayjs().add(1, 'hour').format('HH:mm DD/MM/YYYY'), amount: 50000, status: 'ACTIVE' },
-    { id: 'BK-98766', plateNumber: '30A-123.45', type: 'Ô TÔ', slot: 'B-12', arrivalTime: dayjs().add(15, 'minute').format('HH:mm DD/MM/YYYY'), amount: 50000, status: 'ACTIVE' },
-    { id: 'BK-98767', plateNumber: '51H-555.22', type: 'Ô TÔ', slot: 'C-01', arrivalTime: dayjs().subtract(5, 'minute').format('HH:mm DD/MM/YYYY'), amount: 50000, status: 'ACTIVE' },
-    { id: 'BK-98768', plateNumber: '59P-999.99', type: 'Ô TÔ', slot: 'A-10', arrivalTime: dayjs().subtract(1, 'day').format('HH:mm DD/MM/YYYY'), amount: 50000, status: 'PENDING_REFUND' },
-    { id: 'BK-98769', plateNumber: '60C-333.11', type: 'Ô TÔ', slot: 'D-02', arrivalTime: dayjs().subtract(2, 'day').format('HH:mm DD/MM/YYYY'), amount: 50000, status: 'CANCELLED_REFUNDED' }
-  ]);
-  const [monthlyPasses, setMonthlyPasses] = useState([
-    { id: 'MP-12345', plateNumber: '30A-123.45', type: 'Ô TÔ', expiryDate: '31/12/2026', status: 'ACTIVE' }
-  ]);
-  const [historyRecords, setHistoryRecords] = useState([
-    { id: 'H-001', plateNumber: '30A-123.45', type: 'VÉ THÁNG', timeIn: '08:15 18/06/2026', timeOut: '17:30 18/06/2026', fee: 0 },
-    { id: 'H-002', plateNumber: '29B-987.65', type: 'ĐẶT TRƯỚC', timeIn: '09:00 17/06/2026', timeOut: '11:45 17/06/2026', fee: 50000 },
-    { id: 'H-003', plateNumber: '30A-123.45', type: 'VÉ THÁNG', timeIn: '08:20 16/06/2026', timeOut: '18:00 16/06/2026', fee: 0 },
-  ]);
+  const { data: bookings = [], isLoading: isBookingsLoading } = useQuery({
+    queryKey: ['my-bookings'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/operation/reservations');
+        return res.data.data;
+      } catch (err) {
+        return [];
+      }
+    }
+  });
+
+  const { data: monthlyPasses = [], isLoading: isPassesLoading } = useQuery({
+    queryKey: ['my-passes'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/operation/monthly-tickets');
+        return res.data.data;
+      } catch (err) {
+        return [];
+      }
+    }
+  });
+
+  const { data: historyRecords = [], isLoading: isHistoryLoading } = useQuery({
+    queryKey: ['my-history', plateNumberInput],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get(`/operation/parking-sessions/history?plate=${plateNumberInput || '30A-123.45'}`);
+        return res.data.data || [];
+      } catch (err) {
+        return [];
+      }
+    }
+  });
 
   // We only fetch active session if we have searched in the Walk-in tab
   const { data: session, isLoading, isFetching } = useQuery({
     queryKey: ['my-active-session', plateNumberInput, rfidInput],
     queryFn: async () => {
-      const res = await axiosClient.get('/api/v1/parking-sessions/my-active');
+      const res = await axiosClient.get('/parking-sessions/my-active');
       return res.data;
     },
     enabled: hasSearched
   });
 
+  const [sessionPaymentUrl, setSessionPaymentUrl] = useState('');
+  const [sessionPaymentToken, setSessionPaymentToken] = useState('');
+  const [isSessionQRVisible, setIsSessionQRVisible] = useState(false);
+  const [sessionCountdown, setSessionCountdown] = useState(60);
+
   const paymentMutation = useMutation({
     mutationFn: async (sessionId: number) => {
-      const res = await axiosClient.post('/api/v1/payments/generate-link', {
+      const res = await axiosClient.post('/payments/generate-link', {
         sessionId,
-        gateway: 'VNPAY'
+        gateway: 'PAYPAL'
       });
       return res.data;
     },
-    onSuccess: (url) => {
-      message.success('Chuyển hướng đến cổng thanh toán...');
-      setTimeout(() => {
-        window.open(url, '_blank');
-        queryClient.invalidateQueries({ queryKey: ['my-active-session'] });
-      }, 1000);
+    onSuccess: (data) => {
+      setSessionPaymentUrl(data.data.paymentUrl);
+      const urlParams = new URL(data.data.paymentUrl).searchParams;
+      setSessionPaymentToken(urlParams.get('token') || '');
+      setIsSessionQRVisible(true);
+      setSessionCountdown(60);
     },
     onError: () => {
       message.error('Lỗi khi tạo giao dịch thanh toán.');
     }
   });
+
+  useEffect(() => {
+    let timer: any;
+    if (isSessionQRVisible && sessionPaymentToken) {
+      if (sessionCountdown > 0) {
+        timer = setTimeout(() => {
+          setSessionCountdown(c => c - 1);
+          if (sessionCountdown % 3 === 0) {
+            axiosClient.post('/payments/paypal/capture', { token: sessionPaymentToken })
+              .then(res => {
+                if (res.data?.data?.status === 'COMPLETED') {
+                  message.success('Thanh toán thành công!');
+                  setIsSessionQRVisible(false);
+                  queryClient.invalidateQueries({ queryKey: ['my-active-session'] });
+                  queryClient.invalidateQueries({ queryKey: ['my-history'] });
+                }
+              })
+              .catch(() => {});
+          }
+        }, 1000);
+      } else {
+        setIsSessionQRVisible(false);
+        message.warning('Hết thời gian chờ thanh toán.');
+      }
+    }
+    return () => clearTimeout(timer);
+  }, [isSessionQRVisible, sessionPaymentToken, sessionCountdown]);
 
   useEffect(() => {
     if (!session || !session.timeIn) return;
@@ -108,12 +159,21 @@ export const MyParkingScreen = () => {
     setHasSearched(true);
   };
 
-  const handleCancelBooking = () => {
-    if (selectedBookingToCancel) {
-      setBookings(bookings.map(b => b.id === selectedBookingToCancel.id ? { ...b, status: 'PENDING_REFUND' } : b));
+  const cancelBookingMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await axiosClient.put(`/operation/reservations/${id}/cancel`);
+    },
+    onSuccess: () => {
       message.success('Đã gửi yêu cầu hủy đặt chỗ và hoàn tiền thành công.');
+      queryClient.invalidateQueries({ queryKey: ['my-bookings'] });
       setCancelDrawerVisible(false);
       setSelectedBookingToCancel(null);
+    }
+  });
+
+  const handleCancelBooking = () => {
+    if (selectedBookingToCancel) {
+      cancelBookingMutation.mutate(selectedBookingToCancel.id);
     }
   };
 
@@ -149,51 +209,97 @@ export const MyParkingScreen = () => {
   const [renewDrawerVisible, setRenewDrawerVisible] = useState(false);
   const [selectedPassToRenew, setSelectedPassToRenew] = useState<any>(null);
   const [renewDuration, setRenewDuration] = useState(1);
-  const [renewGateway, setRenewGateway] = useState('VNPAY');
+  const [renewGateway, setRenewGateway] = useState('PAYPAL');
   
   const [isRenewQRModalVisible, setIsRenewQRModalVisible] = useState(false);
-  const [renewCountdown, setRenewCountdown] = useState(5);
+  const [renewCountdown, setRenewCountdown] = useState(60);
   const [isRenewSuccess, setIsRenewSuccess] = useState(false);
+  const [renewPaymentUrl, setRenewPaymentUrl] = useState('');
+  const [renewPaymentToken, setRenewPaymentToken] = useState('');
 
-  useEffect(() => {
-    let timer: any;
-    if (isRenewQRModalVisible && !isRenewSuccess) {
-      if (renewCountdown > 0) {
-        timer = setTimeout(() => setRenewCountdown(c => c - 1), 1000);
-      } else {
-        setIsRenewSuccess(true);
-        message.success('Gia hạn vé tháng thành công!');
-        
-        // Update pass expiry date in mock data
-        if (selectedPassToRenew) {
-           setMonthlyPasses(passes => passes.map(p => 
-             p.id === selectedPassToRenew.id 
-               ? { ...p, expiryDate: dayjs(p.expiryDate, 'DD/MM/YYYY').add(renewDuration, 'month').format('DD/MM/YYYY') }
-               : p
-           ));
-        }
+  const renewPassMutation = useMutation({
+    mutationFn: async () => {
+      const res = await axiosClient.put(`/operation/monthly-tickets/${selectedPassToRenew.id.replace('MP-','')}/renew`, {
+        duration: renewDuration
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      setRenewCountdown(5);
+      setIsRenewSuccess(true);
+      message.success('Gia hạn vé tháng thành công!');
+      
+      queryClient.invalidateQueries({ queryKey: ['my-passes'] });
 
-        setTimeout(() => {
-          setIsRenewQRModalVisible(false);
-          setRenewDrawerVisible(false);
-        }, 2000);
-      }
+      setTimeout(() => {
+        setIsRenewQRModalVisible(false);
+        setRenewDrawerVisible(false);
+      }, 2000);
+    },
+    onError: () => {
+      message.error('Có lỗi xảy ra khi gia hạn vé tháng');
+      setIsRenewQRModalVisible(false);
     }
-    return () => clearTimeout(timer);
-  }, [isRenewQRModalVisible, renewCountdown, isRenewSuccess, selectedPassToRenew, renewDuration]);
+  });
+
+  const generateRenewLinkMutation = useMutation({
+    mutationFn: async (totalFee: number) => {
+      const res = await axiosClient.post('/payments/generate-link', {
+        amount: totalFee,
+        gateway: renewGateway
+      });
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setRenewPaymentUrl(data.data.paymentUrl);
+      const urlParams = new URL(data.data.paymentUrl).searchParams;
+      setRenewPaymentToken(urlParams.get('token') || '');
+    },
+    onError: () => {
+      message.error('Lỗi khi tạo link thanh toán gia hạn.');
+      setIsRenewQRModalVisible(false);
+    }
+  });
 
   const handleOpenRenew = (pass: any) => {
     setSelectedPassToRenew(pass);
     setRenewDuration(1);
-    setRenewGateway('VNPAY');
+    setRenewGateway('PAYPAL');
     setRenewDrawerVisible(true);
   };
 
-  const handleConfirmRenew = () => {
+  const handleConfirmRenew = (totalFee: number) => {
     setIsRenewQRModalVisible(true);
-    setRenewCountdown(5);
     setIsRenewSuccess(false);
+    setRenewCountdown(60);
+    setRenewPaymentUrl('');
+    setRenewPaymentToken('');
+    generateRenewLinkMutation.mutate(totalFee);
   };
+
+  useEffect(() => {
+    let timer: any;
+    if (isRenewQRModalVisible && !isRenewSuccess && renewPaymentToken) {
+      if (renewCountdown > 0) {
+        timer = setTimeout(() => {
+          setRenewCountdown(c => c - 1);
+          if (renewCountdown % 3 === 0) {
+            axiosClient.post('/payments/paypal/capture', { token: renewPaymentToken })
+              .then(res => {
+                if (res.data?.data?.status === 'COMPLETED') {
+                  renewPassMutation.mutate();
+                }
+              })
+              .catch(() => {});
+          }
+        }, 1000);
+      } else {
+        setIsRenewQRModalVisible(false);
+        message.warning('Hết thời gian chờ thanh toán.');
+      }
+    }
+    return () => clearTimeout(timer);
+  }, [isRenewQRModalVisible, isRenewSuccess, renewPaymentToken, renewCountdown]);
 
   const renderActiveSession = () => {
     if (isLoading || isFetching) return <div className="p-12 text-center"><Spin size="large" /></div>;
@@ -273,8 +379,8 @@ export const MyParkingScreen = () => {
               </>
             ) : (
               <>
-                <QrcodeOutlined className="text-8xl mb-2 opacity-90" />
-                <Text className="text-white/80 text-sm text-center">Đưa mã QR này vào máy quét tại Cổng ra để Check-out.</Text>
+                <QRCode value={sessionPaymentUrl || '...'} size={120} className="mb-4" />
+                <Text className="text-white/80 text-sm text-center">Đưa mã QR này vào máy quét hoặc thanh toán online.</Text>
                 <Button 
                   type="primary" 
                   className="mt-4 bg-green-600 w-full"
@@ -761,7 +867,7 @@ export const MyParkingScreen = () => {
                  type="primary" 
                  size="large" 
                  className="w-full h-14 text-lg font-bold rounded-xl shadow-lg bg-blue-600 hover:bg-blue-500 animate-pulse mt-4"
-                 onClick={handleConfirmRenew}
+                 onClick={() => handleConfirmRenew(totalFee)}
                >
                  THANH TOÁN GIA HẠN
                </Button>
@@ -786,8 +892,8 @@ export const MyParkingScreen = () => {
               <Text className="block mb-6 text-slate-500">Mở ứng dụng Ngân hàng hoặc Ví điện tử</Text>
               
               <div className="relative inline-block mb-6">
-                <div className="bg-white p-4 border-2 border-dashed border-slate-300 rounded-2xl shadow-sm relative z-10">
-                  <QrcodeOutlined className="text-[200px] text-slate-800" />
+                <div className="bg-white p-4 border-2 border-dashed border-slate-300 rounded-2xl shadow-sm relative z-10 flex justify-center items-center h-[240px] w-[240px]">
+                  {renewPaymentUrl ? <QRCode value={renewPaymentUrl} size={200} /> : <Spin size="large" />}
                 </div>
                 <style>
                   {`
@@ -798,10 +904,16 @@ export const MyParkingScreen = () => {
                     }
                   `}
                 </style>
-                <div className="absolute top-2 left-2 w-[calc(100%-16px)] h-1 bg-blue-500 shadow-[0_0_15px_#3b82f6] z-20" style={{ animation: 'scan 2s ease-in-out infinite' }}></div>
+                {renewPaymentUrl && <div className="absolute top-2 left-2 w-[calc(100%-16px)] h-1 bg-blue-500 shadow-[0_0_15px_#3b82f6] z-20" style={{ animation: 'scan 2s ease-in-out infinite' }}></div>}
               </div>
               
-              <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg">Mã GD: GHVT-{Math.floor(1000 + Math.random() * 9000)}</Text>
+              <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg break-all px-2 text-xs">
+                {renewGateway === 'PAYPAL' ? (
+                  <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Mở PayPal Checkout</a>
+                ) : (
+                  <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Mở PayOS Checkout</a>
+                )}
+              </Text>
               
               <div className="flex items-center justify-center space-x-2 text-slate-600">
                 <Spin size="small" />

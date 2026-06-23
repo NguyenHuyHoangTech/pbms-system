@@ -16,9 +16,14 @@ public class UserDTO {
         @Email(message = "Invalid email format")
         private String email;
 
-        @NotBlank(message = "Phone is required")
-        @Pattern(regexp = "^\\d{10}$", message = "Phone must be exactly 10 digits")
-        private String phone;
+        @NotBlank(message = "Role is required")
+        private String role;
+    }
+
+    @Data
+    public static class UpdateUserRequest {
+        @NotBlank(message = "Name is required")
+        private String name;
 
         @NotBlank(message = "Role is required")
         private String role;
@@ -29,7 +34,6 @@ public class UserDTO {
         private Long id;
         private String name;
         private String email;
-        private String phone;
         private String role;
         private Boolean isVerified;
         private Boolean isActive;

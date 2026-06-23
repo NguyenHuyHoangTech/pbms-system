@@ -1,5 +1,7 @@
 package com.pbms.common.security;
 
+import com.pbms.modules.identity.domain.User;
+import com.pbms.modules.identity.repository.UserRepository;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -14,14 +16,17 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Collections;
+import java.util.Optional;
 
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtProvider jwtProvider;
+    private final UserRepository userRepository;
 
-    public JwtAuthFilter(JwtProvider jwtProvider) {
+    public JwtAuthFilter(JwtProvider jwtProvider, UserRepository userRepository) {
         this.jwtProvider = jwtProvider;
+        this.userRepository = userRepository;
     }
 
     @Override
@@ -32,17 +37,21 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             String jwt = parseJwt(request);
             if (jwt != null && jwtProvider.validateToken(jwt)) {
                 String email = jwtProvider.getEmailFromToken(jwt);
-                String role = jwtProvider.getRoleFromToken(jwt);
-
-                // Add ROLE_ prefix if missing for Spring Security standard role processing
-                String authority = role.startsWith("ROLE_") ? role : "ROLE_" + role;
-
-                UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                        email, null, Collections.singletonList(new SimpleGrantedAuthority(authority)));
                 
-                authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                // Verify user still exists and is ACTIVE
+                Optional<User> userOpt = userRepository.findByEmail(email);
+                if (userOpt.isPresent() && "ACTIVE".equals(userOpt.get().getStatus())) {
+                    String role = jwtProvider.getRoleFromToken(jwt);
+                    String authority = role.startsWith("ROLE_") ? role : "ROLE_" + role;
 
-                SecurityContextHolder.getContext().setAuthentication(authentication);
+                    UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                            email, null, Collections.singletonList(new SimpleGrantedAuthority(authority)));
+                    
+                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                } else {
+                    logger.warn("User " + email + " is locked or deleted. Rejecting token.");
+                }
             }
         } catch (Exception e) {
             logger.error("Cannot set user authentication: {}", e);
