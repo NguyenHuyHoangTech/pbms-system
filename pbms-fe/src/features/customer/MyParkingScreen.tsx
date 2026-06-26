@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Tabs, Card, Typography, List, Divider, Button, Tag, Spin, message, Input, Space, Popconfirm, Empty, Timeline, Drawer, Alert, Form, Select, Radio, Modal, QRCode } from 'antd';
-import { ClockCircleOutlined, CarOutlined, CreditCardOutlined, SearchOutlined, IdcardOutlined, CloseCircleOutlined, HistoryOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Tabs, Card, Typography, List, Divider, Button, Tag, Spin, message, Input, Space, Popconfirm, Empty, Timeline, Drawer, Alert, Form, Select, Radio, Modal, QRCode, DatePicker } from 'antd';
+import { ClockCircleOutlined, CarOutlined, CreditCardOutlined, SearchOutlined, IdcardOutlined, CloseCircleOutlined, HistoryOutlined, CheckCircleOutlined, PlusOutlined, UserOutlined, CalendarOutlined, NumberOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
@@ -204,6 +204,103 @@ export const MyParkingScreen = () => {
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
+
+  // Register Pass States (UC-404 popup)
+  const [registerDrawerVisible, setRegisterDrawerVisible] = useState(false);
+  const [newFullName, setNewFullName] = useState('');
+  const [newSelectedVehicle, setNewSelectedVehicle] = useState<string | null>('CAR');
+  const [newPlateNumber, setNewPlateNumber] = useState('');
+  const [newSelectedDuration, setNewSelectedDuration] = useState<number>(1);
+  const [newStartDate, setNewStartDate] = useState<dayjs.Dayjs>(dayjs());
+  const [newGateway, setNewGateway] = useState('PAYPAL');
+
+  const [isRegQRModalVisible, setIsRegQRModalVisible] = useState(false);
+  const [regCountdown, setRegCountdown] = useState(60);
+  const [isRegSuccess, setIsRegSuccess] = useState(false);
+  const [regPaymentUrl, setRegPaymentUrl] = useState('');
+  const [regPaymentToken, setRegPaymentToken] = useState('');
+
+  const createPassMutation = useMutation({
+    mutationFn: async () => {
+      const res = await axiosClient.post('/operation/monthly-tickets', {
+        vehicleTypeId: newSelectedVehicle,
+        plateNumber: newPlateNumber,
+        duration: newSelectedDuration
+      });
+      return res.data;
+    },
+    onSuccess: () => {
+      setRegCountdown(5);
+      setIsRegSuccess(true);
+      message.success('Đăng ký vé tháng thành công! Vé tháng của bạn đã được kích hoạt.');
+      queryClient.invalidateQueries({ queryKey: ['my-passes'] });
+      setTimeout(() => {
+        setIsRegQRModalVisible(false);
+        setRegisterDrawerVisible(false);
+      }, 2000);
+    },
+    onError: () => {
+      message.error('Có lỗi xảy ra khi đăng ký vé tháng');
+      setIsRegQRModalVisible(false);
+    }
+  });
+
+  const generateRegLinkMutation = useMutation({
+    mutationFn: async (totalFee: number) => {
+      const res = await axiosClient.post('/payments/generate-link', {
+        amount: totalFee,
+        gateway: newGateway
+      });
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setRegPaymentUrl(data.data.paymentUrl);
+      const urlParams = new URL(data.data.paymentUrl).searchParams;
+      setRegPaymentToken(urlParams.get('token') || '');
+    },
+    onError: () => {
+      message.error('Lỗi khi tạo link thanh toán đăng ký.');
+      setIsRegQRModalVisible(false);
+    }
+  });
+
+  const handleConfirmRegister = (totalFee: number) => {
+    if (!newFullName.trim()) return message.error('Vui lòng nhập Họ và Tên');
+    if (!newSelectedVehicle) return message.error('Vui lòng chọn loại phương tiện');
+    if (!newPlateNumber.trim()) return message.error('Vui lòng nhập biển số xe');
+    if (!newStartDate) return message.error('Vui lòng chọn ngày bắt đầu hiệu lực');
+
+    setIsRegQRModalVisible(true);
+    setIsRegSuccess(false);
+    setRegCountdown(60);
+    setRegPaymentUrl('');
+    setRegPaymentToken('');
+    generateRegLinkMutation.mutate(totalFee);
+  };
+
+  useEffect(() => {
+    let timer: any;
+    if (isRegQRModalVisible && !isRegSuccess && regPaymentToken) {
+      if (regCountdown > 0) {
+        timer = setTimeout(() => {
+          setRegCountdown(c => c - 1);
+          if (regCountdown % 3 === 0) {
+            axiosClient.post('/payments/paypal/capture', { token: regPaymentToken })
+              .then(res => {
+                if (res.data?.data?.status === 'COMPLETED') {
+                  createPassMutation.mutate();
+                }
+              })
+              .catch(() => {});
+          }
+        }, 1000);
+      } else {
+        setIsRegQRModalVisible(false);
+        message.warning('Hết thời gian chờ thanh toán.');
+      }
+    }
+    return () => clearTimeout(timer);
+  }, [isRegQRModalVisible, isRegSuccess, regPaymentToken, regCountdown]);
 
   // Renew Pass States
   const [renewDrawerVisible, setRenewDrawerVisible] = useState(false);
@@ -499,41 +596,79 @@ export const MyParkingScreen = () => {
   );
 
   const renderMonthlyPassTab = () => (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in space-y-6">
+      <div className="flex justify-between items-center bg-blue-50/50 p-4 rounded-xl border border-blue-100 shadow-sm">
+        <div>
+          <Title level={5} className="m-0 text-blue-800">Danh sách Vé Tháng của bạn</Title>
+          <Text type="secondary" className="text-xs md:text-sm">Quản lý các phương tiện gửi dài hạn tại tòa nhà</Text>
+        </div>
+        <Button 
+          type="primary" 
+          icon={<PlusOutlined />} 
+          size="large" 
+          className="bg-blue-600 font-bold rounded-lg shadow-md hover:bg-blue-500" 
+          onClick={() => setRegisterDrawerVisible(true)}
+        >
+          Đăng Ký Vé Mới
+        </Button>
+      </div>
+
       {monthlyPasses.length > 0 ? (
         <List
           grid={{ gutter: 16, column: 1 }}
           dataSource={monthlyPasses}
-          renderItem={item => (
-            <List.Item>
-              <Card className="shadow-sm border border-green-200 bg-green-50/30 rounded-xl">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <div className="flex items-center space-x-4 w-full">
-                    <div className="bg-green-100 p-3 md:p-4 rounded-full shrink-0">
-                      <IdcardOutlined className="text-2xl md:text-3xl text-green-600" />
+          renderItem={item => {
+            const isExpired = dayjs(item.expiryDate, 'DD/MM/YYYY').isBefore(dayjs(), 'day');
+            const isExpiringSoon = dayjs(item.expiryDate, 'DD/MM/YYYY').isBefore(dayjs().add(7, 'day'));
+            return (
+              <List.Item>
+                <Card className={`shadow-sm border ${isExpired ? 'border-red-200 bg-red-50/20' : 'border-green-200 bg-green-50/30'} rounded-xl`}>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                    <div className="flex items-center space-x-4 w-full">
+                      <div className={`${isExpired ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'} p-3 md:p-4 rounded-full shrink-0`}>
+                        <IdcardOutlined className="text-2xl md:text-3xl" />
+                      </div>
+                      <div>
+                        <div className="flex items-center space-x-2 mb-1">
+                          <Title level={4} className="m-0 tracking-widest">{item.plateNumber}</Title>
+                          <Tag color={isExpired ? 'red' : 'green'} className="m-0 font-bold">
+                            {isExpired ? 'ĐÃ HẾT HẠN' : item.status}
+                          </Tag>
+                        </div>
+                        <Text type="secondary">Mã thẻ: {item.id} • {item.type}</Text>
+                        <div className="mt-1">
+                          <Text className="text-gray-600">
+                            Ngày hết hạn: <Text strong className={isExpired || isExpiringSoon ? 'text-red-500' : 'text-gray-800'}>{item.expiryDate}</Text>
+                          </Text>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="flex items-center space-x-2 mb-1">
-                        <Title level={4} className="m-0 tracking-widest">{item.plateNumber}</Title>
-                        <Tag color="green" className="m-0 font-bold">{item.status}</Tag>
-                      </div>
-                      <Text type="secondary">Mã thẻ: {item.id} • {item.type}</Text>
-                      <div className="mt-1">
-                        <Text className="text-gray-600">Ngày hết hạn: <Text strong className={dayjs(item.expiryDate, 'DD/MM/YYYY').isBefore(dayjs().add(7, 'day')) ? 'text-red-500' : 'text-gray-800'}>{item.expiryDate}</Text></Text>
-                      </div>
+                    <div className="w-full sm:w-auto flex flex-col items-end">
+                      <Button 
+                        type="primary" 
+                        className={`w-full sm:w-auto font-bold ${isExpired ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500 shadow-md'}`} 
+                        onClick={() => !isExpired && handleOpenRenew(item)}
+                        disabled={isExpired}
+                      >
+                        Gia Hạn
+                      </Button>
+                      {isExpired && (
+                        <Text className="text-xs text-red-500 mt-1 italic text-right block">
+                          *Vé đã hết hiệu lực, không thể gia hạn. Vui lòng đăng ký mới.
+                        </Text>
+                      )}
                     </div>
                   </div>
-                  <Button type="primary" className="bg-green-600 w-full sm:w-auto" onClick={() => handleOpenRenew(item)}>Gia Hạn</Button>
-                </div>
-              </Card>
-            </List.Item>
-          )}
+                </Card>
+              </List.Item>
+            );
+          }}
         />
       ) : (
         <div className="py-16 text-center">
           <Empty description={<span className="text-gray-500 font-medium text-lg">Bạn chưa đăng ký vé tháng nào</span>} />
-          <Button type="primary" className="mt-4 bg-blue-600" onClick={() => navigate('/customer/monthly-pass')}>
-            Đăng Ký Vé Tháng Mới
+          <Button type="primary" size="large" className="mt-4 bg-blue-600 font-bold" onClick={() => setRegisterDrawerVisible(true)}>
+            Đăng Ký Vé Tháng Mới Ngay
           </Button>
         </div>
       )}
@@ -925,6 +1060,207 @@ export const MyParkingScreen = () => {
               <CheckCircleOutlined className="text-[80px] text-green-500 mb-6" />
               <Title level={3} className="text-slate-800">Gia hạn thành công!</Title>
               <Text className="block text-slate-500 mb-2">Ngày hết hạn vé tháng đã được cập nhật.</Text>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      <Drawer
+        title={<span className="text-blue-600 font-bold"><IdcardOutlined className="mr-2"/>ĐĂNG KÝ VÉ THÁNG MỚI</span>}
+        width={500}
+        onClose={() => setRegisterDrawerVisible(false)}
+        open={registerDrawerVisible}
+        className="bg-slate-50"
+      >
+        {(() => {
+           const isCar = newSelectedVehicle === 'CAR';
+           const pricePerMonth = isCar ? 1000000 : 150000;
+           const packageConfig = PACKAGES.find(p => p.id === newSelectedDuration);
+           const baseFee = pricePerMonth * newSelectedDuration;
+           const discountAmount = baseFee * (packageConfig?.discount || 0);
+           const totalFee = baseFee - discountAmount;
+           const newExpiry = newStartDate.add(newSelectedDuration, 'month').format('DD/MM/YYYY');
+
+           return (
+             <div className="space-y-6">
+               <Card size="small" title={<><UserOutlined className="mr-2 text-blue-500"/>1. Thông tin đăng ký</>} className="shadow-sm border-slate-200">
+                 <div className="space-y-4">
+                   <div>
+                     <Text className="block font-bold mb-1 text-slate-700">Họ và tên:</Text>
+                     <Input 
+                       placeholder="Nhập họ và tên" 
+                       value={newFullName}
+                       onChange={e => setNewFullName(e.target.value)}
+                       className="rounded-lg h-10"
+                     />
+                   </div>
+                   <div>
+                     <Text className="block font-bold mb-1 text-slate-700">Biển số xe:</Text>
+                     <Input 
+                       placeholder="Ví dụ: 51H-123.45" 
+                       value={newPlateNumber}
+                       onChange={e => setNewPlateNumber(e.target.value.toUpperCase())}
+                       className="rounded-lg h-10 font-mono font-bold uppercase"
+                     />
+                   </div>
+                 </div>
+               </Card>
+
+               <div>
+                 <Text className="block font-bold mb-3 text-slate-700">2. Loại phương tiện:</Text>
+                 <div className="grid grid-cols-2 gap-3">
+                   {VEHICLES.map(v => (
+                     <div
+                       key={v.id}
+                       onClick={() => setNewSelectedVehicle(v.id)}
+                       className={`cursor-pointer p-3 rounded-xl border-2 transition-all flex flex-col items-center justify-center ${newSelectedVehicle === v.id ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 bg-white hover:border-green-300'}`}
+                     >
+                       <CarOutlined className="text-2xl mb-1" />
+                       <span className="font-bold">{v.name}</span>
+                       <span className="text-xs text-slate-500">{v.pricePerMonth.toLocaleString()} ₫/th</span>
+                     </div>
+                   ))}
+                 </div>
+               </div>
+
+               <div>
+                 <Text className="block font-bold mb-3 text-slate-700">3. Chọn gói thời gian & Hiệu lực:</Text>
+                 <div className="grid grid-cols-2 gap-3 mb-4">
+                   {PACKAGES.map(p => (
+                     <div
+                       key={p.id}
+                       onClick={() => setNewSelectedDuration(p.id)}
+                       className={`relative cursor-pointer p-3 rounded-xl border-2 transition-all flex flex-col items-center justify-center ${newSelectedDuration === p.id ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-slate-200 bg-white hover:border-orange-300'}`}
+                     >
+                       {p.discount > 0 && (
+                         <div className="absolute -top-3 -right-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                           -{p.discount * 100}%
+                         </div>
+                       )}
+                       <span className="font-bold">{p.name}</span>
+                     </div>
+                   ))}
+                 </div>
+                 <div>
+                   <Text className="block font-bold mb-1 text-slate-700">Ngày bắt đầu hiệu lực:</Text>
+                   <DatePicker 
+                     format="DD/MM/YYYY" 
+                     value={newStartDate}
+                     onChange={(val) => val && setNewStartDate(val)} 
+                     className="w-full h-10 rounded-lg" 
+                     minDate={dayjs()}
+                   />
+                 </div>
+               </div>
+
+               <Card className="shadow-sm border-slate-200 bg-white">
+                 <Space direction="vertical" className="w-full">
+                   <div className="flex justify-between">
+                     <Text className="text-slate-500">Ngày hết hạn dự kiến:</Text>
+                     <Text strong className="text-green-600">{newExpiry}</Text>
+                   </div>
+                   <Divider className="my-2" />
+                   <div className="flex justify-between">
+                     <Text className="text-slate-500">Phí cơ bản:</Text>
+                     <Text strong>{baseFee.toLocaleString()} ₫</Text>
+                   </div>
+                   {discountAmount > 0 && (
+                     <div className="flex justify-between">
+                       <Text className="text-green-500">Chiết khấu ưu đãi:</Text>
+                       <Text strong className="text-green-600">- {discountAmount.toLocaleString()} ₫</Text>
+                     </div>
+                   )}
+                   <div className="bg-slate-50 p-3 rounded-lg mt-2 flex justify-between items-center border border-slate-200">
+                     <Text strong className="text-slate-600">TỔNG THANH TOÁN:</Text>
+                     <Text className="text-xl font-black text-blue-600">{totalFee.toLocaleString()} ₫</Text>
+                   </div>
+                 </Space>
+               </Card>
+
+               <div>
+                 <Text className="block font-bold mb-3 text-slate-700">Phương thức thanh toán:</Text>
+                 <Radio.Group 
+                   onChange={e => setNewGateway(e.target.value)} 
+                   value={newGateway}
+                   className="w-full flex flex-col space-y-3"
+                 >
+                   {GATEWAYS.map(gw => (
+                     <Radio.Button 
+                       key={gw.id} 
+                       value={gw.id}
+                       className={`h-14 flex items-center px-4 rounded-xl border-2 transition-all ${newGateway === gw.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}
+                     >
+                       <div className="flex items-center space-x-3 w-full">
+                         <img src={gw.icon} alt={gw.name} className="h-6 object-contain" />
+                         <span className="font-bold text-slate-700">{gw.name}</span>
+                       </div>
+                     </Radio.Button>
+                   ))}
+                 </Radio.Group>
+               </div>
+
+               <Button 
+                 type="primary" 
+                 size="large" 
+                 className="w-full h-14 text-lg font-bold rounded-xl shadow-lg bg-blue-600 hover:bg-blue-500 animate-pulse mt-4"
+                 onClick={() => handleConfirmRegister(totalFee)}
+               >
+                 THANH TOÁN ĐĂNG KÝ
+               </Button>
+             </div>
+           );
+        })()}
+      </Drawer>
+
+      <Modal
+        open={isRegQRModalVisible}
+        footer={null}
+        closable={!isRegSuccess}
+        onCancel={() => !isRegSuccess && setIsRegQRModalVisible(false)}
+        centered
+        maskClosable={false}
+        width={400}
+      >
+        <div className="text-center py-6">
+          {!isRegSuccess ? (
+            <>
+              <Title level={4} className="mb-2 text-slate-800">Quét mã QR để thanh toán</Title>
+              <Text className="block mb-6 text-slate-500">Mở ứng dụng Ngân hàng hoặc Ví điện tử</Text>
+              
+              <div className="relative inline-block mb-6">
+                <div className="bg-white p-4 border-2 border-dashed border-slate-300 rounded-2xl shadow-sm relative z-10 flex justify-center items-center h-[240px] w-[240px]">
+                  {regPaymentUrl ? <QRCode value={regPaymentUrl} size={200} /> : <Spin size="large" />}
+                </div>
+                <style>
+                  {`
+                    @keyframes scanReg {
+                      0% { transform: translateY(0); }
+                      50% { transform: translateY(220px); }
+                      100% { transform: translateY(0); }
+                    }
+                  `}
+                </style>
+                {regPaymentUrl && <div className="absolute top-2 left-2 w-[calc(100%-16px)] h-1 bg-green-500 shadow-[0_0_15px_#22c55e] z-20" style={{ animation: 'scanReg 2s ease-in-out infinite' }}></div>}
+              </div>
+              
+              <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg break-all px-2 text-xs">
+                {newGateway === 'PAYPAL' ? (
+                  <a href={regPaymentUrl} target="_blank" rel="noreferrer">Mở PayPal Checkout</a>
+                ) : (
+                  <a href={regPaymentUrl} target="_blank" rel="noreferrer">Mở PayOS Checkout</a>
+                )}
+              </Text>
+              
+              <div className="flex items-center justify-center space-x-2 text-slate-600">
+                <Spin size="small" />
+                <Text>Đang chờ thanh toán ({regCountdown}s)...</Text>
+              </div>
+            </>
+          ) : (
+            <div className="animate-fade-in py-8">
+              <CheckCircleOutlined className="text-[80px] text-green-500 mb-6" />
+              <Title level={3} className="text-slate-800">Đăng ký thành công!</Title>
+              <Text className="block text-slate-500 mb-2">Vé tháng của bạn đã được kích hoạt.</Text>
             </div>
           )}
         </div>
