@@ -25,11 +25,13 @@ public class IncidentTicketController {
         }
     }
 
+    // UC-409: Xem danh sách phản hồi sự cố (Staff)
     @GetMapping
     public ResponseEntity<ApiResponse<java.util.List<com.pbms.modules.incident.dto.IncidentTicketDTO>>> getAllIncidents() {
         return ResponseEntity.ok(ApiResponse.success(incidentService.getAllIncidents(), "Fetched successfully"));
     }
 
+    // UC-410: Đánh dấu hoàn tất phản hồi (Staff)
     @PutMapping("/{id}/resolve")
     public ResponseEntity<ApiResponse<com.pbms.modules.incident.dto.IncidentTicketDTO>> resolveIncident(
             @PathVariable Long id,
