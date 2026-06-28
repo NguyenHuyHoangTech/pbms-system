@@ -8,6 +8,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.pbms.common.annotation.LogAudit;
 
 @RestController
 @RequestMapping("/api/v1/manager/pricing")
@@ -22,11 +23,12 @@ public class PricingPolicyController {
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<List<PricingPolicyDTO>>> getAllPolicies() {
-        return ResponseEntity.ok(ApiResponse.success(pricingConfigurationService.getAllPolicies(), "Lấy dữ liệu thành công"));
+        return ResponseEntity.ok(ApiResponse.success(pricingConfigurationService.getAllPolicies(), "It's so easy to get"));
     }
 
     @PostMapping
     // @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @LogAudit(action = "UPDATE", resource = "PricingPolicy", description = "Price list: car")
     public ResponseEntity<ApiResponse<PricingPolicyDTO>> savePolicy(@RequestBody PricingPolicyDTO dto) {
         try {
             System.out.println("====== RECEIVED PAYLOAD ======");
@@ -35,7 +37,7 @@ public class PricingPolicyController {
             System.out.println("==============================");
             PricingPolicyDTO saved = pricingConfigurationService.savePolicy(dto);
             System.out.println("====== SAVED SUCCESSFULLY ======");
-            return ResponseEntity.ok(ApiResponse.success(saved, "Lưu cấu hình bảng giá thành công"));
+            return ResponseEntity.ok(ApiResponse.success(saved, "The price of the cake is the same."));
         } catch (Exception e) {
             System.out.println("====== ERROR: " + e.getMessage());
             e.printStackTrace();
@@ -43,3 +45,4 @@ public class PricingPolicyController {
         }
     }
 }
+

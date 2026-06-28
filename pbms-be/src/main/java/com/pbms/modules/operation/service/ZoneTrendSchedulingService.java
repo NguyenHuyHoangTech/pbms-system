@@ -61,3 +61,4 @@ public class ZoneTrendSchedulingService {
         log.info("Completed hourly zone trend recording.");
     }
 }
+

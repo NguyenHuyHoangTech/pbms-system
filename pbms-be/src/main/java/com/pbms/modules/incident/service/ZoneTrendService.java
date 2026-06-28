@@ -67,3 +67,4 @@ public class ZoneTrendService {
                 .collect(Collectors.toList());
     }
 }
+

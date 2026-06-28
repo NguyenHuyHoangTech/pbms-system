@@ -12,3 +12,4 @@ public @interface LogAudit {
     String resource() default "";
     String description() default "";
 }
+

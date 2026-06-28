@@ -28,3 +28,4 @@ public class VehicleType {
     @Column(name = "category", length = 50)
     private String category; // FOUR_WHEEL, TWO_WHEEL
 }
+

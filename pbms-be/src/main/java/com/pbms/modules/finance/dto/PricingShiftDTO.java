@@ -21,3 +21,4 @@ public class PricingShiftDTO {
     @Builder.Default
     private List<PricingBlockDTO> blocks = new ArrayList<>();
 }
+

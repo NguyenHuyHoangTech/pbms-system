@@ -9,3 +9,4 @@ public class BookingDTO {
     private String slotId;
     private LocalDateTime arrivalTime;
 }
+

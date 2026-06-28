@@ -24,14 +24,14 @@ public class RefundController {
     public ResponseEntity<ApiResponse<List<RefundRequestDTO>>> getAllRefunds() {
         return ResponseEntity.ok(ApiResponse.success(
                 refundService.getAllRefunds(),
-                "Lấy danh sách hoàn tiền thành công"
+                "Make a list of projects"
         ));
     }
 
     @PutMapping("/{id}/approve")
     public ResponseEntity<ApiResponse<Void>> approveRefund(@PathVariable Long id) {
         refundService.approveRefund(id);
-        return ResponseEntity.ok(ApiResponse.success(null, "Đã duyệt hoàn tiền"));
+        return ResponseEntity.ok(ApiResponse.success(null, "Success"));
     }
 
     @PutMapping("/{id}/reject")
@@ -40,7 +40,7 @@ public class RefundController {
             @RequestBody Map<String, String> body) {
         String reason = body.get("rejectReason");
         refundService.rejectRefund(id, reason);
-        return ResponseEntity.ok(ApiResponse.success(null, "Đã từ chối hoàn tiền"));
+        return ResponseEntity.ok(ApiResponse.success(null, "Success"));
     }
 
     @PostMapping("/{id}/proof")
@@ -49,6 +49,7 @@ public class RefundController {
             @RequestParam("file") MultipartFile file) {
         String fileUrl = fileStorageService.storeFile(file);
         refundService.uploadProof(id, fileUrl);
-        return ResponseEntity.ok(ApiResponse.success(fileUrl, "Đã lưu minh chứng hoàn tiền"));
+        return ResponseEntity.ok(ApiResponse.success(fileUrl, "Success"));
     }
 }
+

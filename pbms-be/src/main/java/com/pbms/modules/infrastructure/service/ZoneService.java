@@ -24,12 +24,12 @@ public class ZoneService {
         return zones.stream().map(zone -> {
             List<Slot> slots = slotRepository.findByZoneId(zone.getId());
             long totalSlots = slots.size();
-            long availableSlots = slots.stream().filter(s -> "AVAILABLE".equals(s.getStatus())).count();
+            long availableSlots = slots.stream().filter(s -> "EMPTY".equals(s.getStatus()) || "AVAILABLE".equals(s.getStatus())).count();
             
             List<SlotDTO> slotDTOs = slots.stream().map(s -> SlotDTO.builder()
                 .id(String.valueOf(s.getId())) // FE expects string
                 .name(s.getSlotName())
-                .status("AVAILABLE".equals(s.getStatus()) ? "EMPTY" : s.getStatus())
+                .status(s.getStatus())
                 .build()
             ).collect(Collectors.toList());
 
@@ -39,6 +39,7 @@ public class ZoneService {
                 .name(zone.getZoneName())
                 .capacity((int) totalSlots)
                 .availableSlots((int) availableSlots)
+                .vehicleTypeId(zone.getVehicleType().getId())
                 .vehicleType(zone.getVehicleType().getTypeName())
                 .vehicleMatrixWidth(zone.getVehicleType().getMatrixWidth())
                 .vehicleMatrixHeight(zone.getVehicleType().getMatrixHeight())
@@ -51,3 +52,4 @@ public class ZoneService {
         }).collect(Collectors.toList());
     }
 }
+

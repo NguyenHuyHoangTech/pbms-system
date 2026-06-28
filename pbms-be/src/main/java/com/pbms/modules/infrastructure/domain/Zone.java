@@ -45,3 +45,4 @@ public class Zone {
     @Column(name = "status", length = 50)
     private String status = "ACTIVE"; // ACTIVE, DELETED
 }
+

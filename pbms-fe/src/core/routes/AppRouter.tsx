@@ -1,3 +1,6 @@
+import { useEffect } from 'react';
+import axiosClient from '../api/axiosClient';
+import { setSimulatedOffset } from '../utils/timeProvider';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { LoginScreen } from '../../features/auth/LoginScreen';
 import { BuildingProfileScreen } from '../../features/system/BuildingProfileScreen';
@@ -12,13 +15,12 @@ import { MyParkingScreen } from '../../features/customer/MyParkingScreen';
 import { HelpdeskScreen } from '../../features/customer/HelpdeskScreen';
 import { CustomerMonthlyPassScreen } from '../../features/customer/CustomerMonthlyPassScreen';
 import { UserManagementScreen } from '../../features/admin/UserManagementScreen';
-import { IncidentDeskScreen } from '../../features/incident/IncidentDeskScreen';
-
 import { VehicleTypeScreen } from '../../features/manager/VehicleTypeScreen';
 import { SpaceMapScreen } from '../../features/manager/SpaceMapScreen';
 import { PricingConfigScreen } from '../../features/manager/PricingConfigScreen';
 import { MonthlyPassScreen } from '../../features/manager/MonthlyPassScreen';
 import { RevenueDashboardScreen } from '../../features/manager/RevenueDashboardScreen';
+import ShiftRevenueReportScreen from '../../features/manager/ShiftRevenueReportScreen';
 import { OperationalDashboardScreen } from '../../features/manager/OperationalDashboardScreen';
 import { RefundManagementScreen } from '../../features/manager/RefundManagementScreen';
 import { CardManagementScreen } from '../../features/manager/CardManagementScreen';
@@ -49,6 +51,16 @@ const ProtectedRoute = ({ children, allowedRoles }: { children: React.ReactNode,
 };
 
 export const AppRouter = () => {
+  useEffect(() => {
+    // Fetch time offset on startup
+    axiosClient.get('/public/time-offset').then((res: any) => {
+      const offset = res.data?.data;
+      if (typeof offset === 'number') {
+        setSimulatedOffset(offset);
+      }
+    }).catch((e: any) => console.error('Failed to fetch time offset', e));
+  }, []);
+
   return (
     <BrowserRouter>
       <Routes>
@@ -84,12 +96,13 @@ export const AppRouter = () => {
           <Route path="monthly-passes" element={<MonthlyPassScreen />} />
           <Route path="refund-management" element={<RefundManagementScreen />} />
           <Route path="revenue-dashboard" element={<RevenueDashboardScreen />} />
+          <Route path="shift-revenue" element={<ShiftRevenueReportScreen />} />
           <Route path="operational-dashboard" element={<OperationalDashboardScreen />} />
           <Route path="card-management" element={<CardManagementScreen />} />
           <Route path="ticket-center" element={<TicketCenterScreen />} />
           <Route path="routing" element={<VehicleRoutingScreen />} />
           <Route path="pre-bookings" element={<PreBookingManagementScreen />} />
-          <Route path="incidents" element={<IncidentDeskScreen />} />
+          <Route path="incidents" element={<ExceptionDeskScreen />} />
         </Route>
 
         {/* CUSTOMER LAYOUT ROUTES */}
@@ -120,7 +133,6 @@ export const AppRouter = () => {
           <Route path="gate-console" element={<GateConsoleScreen />} />
           <Route path="shift-management" element={<ShiftManagementScreen />} />
           <Route path="exception-desk" element={<ExceptionDeskScreen />} />
-          <Route path="incidents" element={<IncidentDeskScreen />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/login" replace />} />

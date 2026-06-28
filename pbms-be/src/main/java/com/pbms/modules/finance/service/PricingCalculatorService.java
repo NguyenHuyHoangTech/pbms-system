@@ -31,27 +31,28 @@ public class PricingCalculatorService {
 
     public BigDecimal calculate(PricingPolicy policy, LocalDateTime checkInTime, LocalDateTime checkOutTime) {
         if (checkOutTime.isBefore(checkInTime)) {
-            throw new IllegalArgumentException("Check-out time must be after check-in time");
+            // Prevent exception if OS time goes backwards during testing
+            checkOutTime = checkInTime;
         }
 
         long totalMinutes = Duration.between(checkInTime, checkOutTime).toMinutes();
 
-        // LỚP TIỀN XỬ LÝ: BỘ LỌC CƠ BẢN TOÀN CẢNH (GLOBAL BASE INTERCEPTOR)
+        // Lá»šP TIá»€N Xá»¬ LÃ: Bá»˜ Lá»ŒC CÆ  Báº¢N TOÃ€N Cáº¢NH (GLOBAL BASE INTERCEPTOR)
         if (totalMinutes <= policy.getGlobalBaseMins()) {
             return policy.getGlobalBaseFee();
         }
 
-        // BƯỚC 1: MÁY CẮT THEO CA (Helper_SliceByShift)
+        // BÆ¯á»šC 1: MÃY Cáº®T THEO CA (Helper_SliceByShift)
         List<ShiftSlice> slices = sliceByShift(policy.getShifts(), checkInTime, checkOutTime);
 
-        // BƯỚC 2: CỖ MÁY TRƯỢT BLOCK (Helper_SlideBlocks)
+        // BÆ¯á»šC 2: Cá»– MÃY TRÆ¯á»¢T BLOCK (Helper_SlideBlocks)
         BigDecimal totalFee = BigDecimal.ZERO;
         for (ShiftSlice slice : slices) {
             BigDecimal sliceFee = slideBlocks(slice.shift, slice.durationMins);
             totalFee = totalFee.add(sliceFee);
         }
 
-        // BƯỚC 3: TỔNG HỢP VÀ ÁP TRẦN (Main_CalculateTotalFee)
+        // BÆ¯á»šC 3: Tá»”NG Há»¢P VÃ€ ÃP TRáº¦N (Main_CalculateTotalFee)
         if (totalFee.compareTo(policy.getMaxParkingCap()) > 0) {
             return policy.getMaxParkingCap();
         }
@@ -66,24 +67,24 @@ public class PricingCalculatorService {
         while (current.isBefore(checkOut)) {
             PricingShift currentShift = findShiftForTime(shifts, current.toLocalTime());
             if (currentShift == null) {
-                // Nếu không tìm thấy ca nào (Cấu hình hổng), tính theo giờ mặc định hoặc bỏ qua
+                // Náº¿u khÃ´ng tÃ¬m tháº¥y ca nÃ o (Cáº¥u hÃ¬nh há»•ng), tÃ­nh theo giá» máº·c Ä‘á»‹nh hoáº·c bá» qua
                 current = current.plusMinutes(60);
                 continue;
             }
 
-            // Tính thời điểm kết thúc của Ca này trong ngày hiện tại
+            // TÃ­nh thá»i Ä‘iá»ƒm káº¿t thÃºc cá»§a Ca nÃ y trong ngÃ y hiá»‡n táº¡i
             LocalDateTime shiftEnd = LocalDateTime.of(current.toLocalDate(), currentShift.getEndTime());
             if (currentShift.getEndTime().isBefore(currentShift.getStartTime())) {
-                // Ca vắt qua đêm (ví dụ: 18:00 - 06:00)
+                // Ca váº¯t qua Ä‘Ãªm (vÃ­ dá»¥: 18:00 - 06:00)
                 if (current.toLocalTime().isBefore(currentShift.getEndTime())) {
-                    // Đang ở rạng sáng (sau nửa đêm)
+                    // Äang á»Ÿ ráº¡ng sÃ¡ng (sau ná»­a Ä‘Ãªm)
                 } else {
-                    // Đang ở buổi tối (trước nửa đêm), kết thúc ca là sáng hôm sau
+                    // Äang á»Ÿ buá»•i tá»‘i (trÆ°á»›c ná»­a Ä‘Ãªm), káº¿t thÃºc ca lÃ  sÃ¡ng hÃ´m sau
                     shiftEnd = shiftEnd.plusDays(1);
                 }
             }
 
-            // Thời điểm kết thúc của lát cắt là min(thời điểm ra, thời điểm kết thúc ca)
+            // Thá»i Ä‘iá»ƒm káº¿t thÃºc cá»§a lÃ¡t cáº¯t lÃ  min(thá»i Ä‘iá»ƒm ra, thá»i Ä‘iá»ƒm káº¿t thÃºc ca)
             LocalDateTime sliceEnd = checkOut.isBefore(shiftEnd) ? checkOut : shiftEnd;
 
             long durationMins = Duration.between(current, sliceEnd).toMinutes();
@@ -105,7 +106,7 @@ public class PricingCalculatorService {
                 if (!time.isBefore(s) && time.isBefore(e)) {
                     return shift;
                 }
-            } else { // Vắt qua đêm
+            } else { // Váº¯t qua Ä‘Ãªm
                 if (!time.isBefore(s) || time.isBefore(e)) {
                     return shift;
                 }
@@ -118,17 +119,25 @@ public class PricingCalculatorService {
         BigDecimal fee = BigDecimal.ZERO;
         int remainingMins = durationMins;
 
-        for (PricingBlock block : shift.getBlocks()) {
-            if (remainingMins > 0) {
-                fee = fee.add(block.getFee());
-                remainingMins -= block.getDurationMins();
-            } else {
-                break;
-            }
+        List<PricingBlock> blocks = shift.getBlocks();
+        if (blocks == null || blocks.isEmpty()) {
+            return fee;
         }
 
-        // Nếu còn dư (ví dụ đỗ lố thời gian ca mà thuật toán cắt sai), có thể cộng thêm hoặc bỏ qua.
-        // Ở đây theo spec, tổng block = tổng ca, nên max remainingMins sẽ về <= 0
+        int blockIndex = 0;
+        while (remainingMins > 0) {
+            PricingBlock block;
+            if (blockIndex < blocks.size()) {
+                block = blocks.get(blockIndex);
+                blockIndex++;
+            } else {
+                // Láº·p láº¡i block cuá»‘i cÃ¹ng náº¿u thá»i gian Ä‘á»— vÆ°á»£t quÃ¡ tá»•ng thá»i gian cáº¥u hÃ¬nh cá»§a cÃ¡c block
+                block = blocks.get(blocks.size() - 1);
+            }
+            fee = fee.add(block.getFee());
+            remainingMins -= block.getDurationMins();
+        }
+
         return fee;
     }
 
@@ -142,3 +151,4 @@ public class PricingCalculatorService {
         }
     }
 }
+

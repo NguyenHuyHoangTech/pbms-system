@@ -75,12 +75,17 @@ public class IncidentTicketService {
         if (docUrl != null) ticket.setUploadedDocUrl(docUrl);
         if (cardUrl != null) ticket.setUploadedCardUrl(cardUrl);
         
-        // If lost card, update the RfidCard status to LOST
-        if ("LOST_CARD".equals(ticket.getIssueType()) && ticket.getSession() != null) {
+        // If lost or damaged card, update the RfidCard status
+        if (ticket.getSession() != null) {
             RfidCard card = ticket.getSession().getRfidCard();
             if (card != null) {
-                card.setStatus("LOST");
-                rfidCardRepository.save(card);
+                if ("LOST_CARD".equals(ticket.getIssueType())) {
+                    card.setStatus("LOST");
+                    rfidCardRepository.save(card);
+                } else if ("DAMAGED_CARD".equals(ticket.getIssueType())) {
+                    card.setStatus("DAMAGED");
+                    rfidCardRepository.save(card);
+                }
             }
         }
         
@@ -131,3 +136,4 @@ public class IncidentTicketService {
                 .build();
     }
 }
+

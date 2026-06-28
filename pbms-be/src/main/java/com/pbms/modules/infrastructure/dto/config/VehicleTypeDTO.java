@@ -16,3 +16,4 @@ public class VehicleTypeDTO {
     private Integer matrixHeight;
     private String category;
 }
+

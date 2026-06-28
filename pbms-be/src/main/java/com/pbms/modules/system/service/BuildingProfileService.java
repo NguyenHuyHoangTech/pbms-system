@@ -33,3 +33,4 @@ public class BuildingProfileService {
         return repository.save(existingProfile);
     }
 }
+

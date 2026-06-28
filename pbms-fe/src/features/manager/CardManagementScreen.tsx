@@ -80,34 +80,34 @@ export const CardManagementScreen = () => {
         });
         setIsUploading(false);
         onSuccess?.(res.data);
-        message.success(`Nhập thành công ${res.data.data} thẻ RFID mới!`);
+        message.success(`Successfully imported ${res.data.data} new RFID cards!`);
         setIsModalVisible(false);
         queryClient.invalidateQueries({ queryKey: ['cards'] });
       } catch (err) {
         setIsUploading(false);
         onError?.(err as any);
-        message.error('Nhập lô thẻ thất bại, vui lòng kiểm tra lại định dạng file!');
+        message.error('Import batch of Failed cards, please check the file format again!');
       }
     },
   };
 
   const columns = [
-    { title: 'Mã UID (Hex)', dataIndex: 'uid', key: 'uid', render: (text: string) => <Text strong className="font-mono text-gray-600">{text}</Text> },
-    { title: 'Mã Nhận Diện', dataIndex: 'visualId', key: 'visualId', render: (text: string) => <Tag color="blue" className="text-base font-bold">{text}</Tag> },
+    { title: 'UID Code (Hex)', dataIndex: 'uid', key: 'uid', render: (text: string) => <Text strong className="font-mono text-gray-600">{text}</Text> },
+    { title: 'Identification Code', dataIndex: 'visualId', key: 'visualId', render: (text: string) => <Tag color="blue" className="text-base font-bold">{text}</Tag> },
     { 
-      title: 'Trạng thái', 
+      title: 'Status', 
       dataIndex: 'status', 
       key: 'status',
       render: (status: string) => {
-        if (status === 'AVAILABLE') return <Tag color="success" icon={<CheckCircleOutlined />}>Sẵn sàng (Trống)</Tag>;
-        if (status === 'IN_USE') return <Tag color="processing" icon={<SyncOutlined spin />}>Đang Lưu Hành</Tag>;
-        if (status === 'LOST') return <Tag color="error" icon={<StopOutlined />}>Báo Mất</Tag>;
-        if (status === 'DAMAGED') return <Tag color="warning" icon={<WarningOutlined />}>Báo Hỏng</Tag>;
+        if (status === 'AVAILABLE') return <Tag color="success" icon={<CheckCircleOutlined />}>Ready (Empty)</Tag>;
+        if (status === 'IN_USE') return <Tag color="processing" icon={<SyncOutlined spin />}>Saving Actions</Tag>;
+        if (status === 'LOST') return <Tag color="error" icon={<StopOutlined />}>Report Lost</Tag>;
+        if (status === 'DAMAGED') return <Tag color="warning" icon={<WarningOutlined />}>Report Broken</Tag>;
         return <Tag>{status}</Tag>;
       }
     },
     { 
-      title: 'Vị trí hiện tại', 
+      title: 'Current location', 
       dataIndex: 'location', 
       key: 'location',
       render: (text: string, record: RfidCard) => (
@@ -120,7 +120,7 @@ export const CardManagementScreen = () => {
       title: '',
       key: 'action',
       render: (_: any, record: RfidCard) => (
-        <Button type="primary" size="small" onClick={() => handleOpenDrawer(record)}>Xử lý</Button>
+        <Button type="primary" size="small" onClick={() => handleOpenDrawer(record)}>Resolve</Button>
       )
     }
   ];
@@ -129,56 +129,56 @@ export const CardManagementScreen = () => {
     <div className="h-full overflow-y-auto bg-gray-50 p-6 pb-24">
       <div className="mb-6">
         <Title level={2} className="m-0 text-gray-800 flex items-center">
-          <CreditCardOutlined className="mr-3 text-indigo-600" /> Quản lý Kho Thẻ (RFID)
+          <CreditCardOutlined className="mr-3 text-indigo-600" /> Card Inventory Management (RFID)
         </Title>
-        <Text type="secondary">Trung tâm kiểm soát vòng đời của hàng nghìn thẻ điện tử trong hệ thống.</Text>
+        <Text type="secondary">The center controls the lifecycle of thousands of electronic cards in Systeme</Text>
       </div>
 
-      {/* KHU VỰC 1: KPI CARDS */}
+      {/* Zone 1: KPI CARDS */}
       <Row gutter={16} className="mb-6">
         <Col span={6}>
           <Card className="shadow-sm border-l-4 border-l-blue-500">
-            <Statistic title="Tổng Thẻ Trong Hệ Thống" value={totalCards} valueStyle={{ color: '#1890ff', fontWeight: 'bold' }} />
+            <Statistic title="Total Cards In System" value={totalCards} valueStyle={{ color: '#1890ff', fontWeight: 'bold' }} />
           </Card>
         </Col>
         <Col span={6}>
           <Card className={`shadow-sm border-l-4 ${availableCount < 50 ? 'border-l-red-500 bg-red-50/50' : 'border-l-green-500'}`}>
             <Statistic 
-              title={<span className={availableCount < 50 ? 'text-red-600 font-bold animate-pulse' : ''}>Thẻ Đang Trống (AVAILABLE)</span>} 
+              title={<span className={availableCount < 50 ? 'text-red-600 font-bold animate-pulse' : ''}>Card Is Empty (aVaILaBLE)</span>} 
               value={availableCount} 
               valueStyle={{ color: availableCount < 50 ? '#cf1322' : '#3f8600', fontWeight: 'bold' }} 
             />
             {availableCount < 50 && (
-              <Text type="danger" className="text-xs font-bold animate-pulse">⚠️ RỦI RO THIẾU THẺ TẠI CỔNG!</Text>
+              <Text type="danger" className="text-xs font-bold animate-pulse">⚠️ RISK OF LACK OF CARD AT THE GATE!</Text>
             )}
           </Card>
         </Col>
         <Col span={6}>
           <Card className="shadow-sm border-l-4 border-l-orange-500">
-            <Statistic title="Đang Lưu Hành (IN_USE)" value={inUseCount} valueStyle={{ color: '#d97706', fontWeight: 'bold' }} />
+            <Statistic title="Saving Actions (IN_USE)" value={inUseCount} valueStyle={{ color: '#d97706', fontWeight: 'bold' }} />
           </Card>
         </Col>
         <Col span={6}>
           <Card className="shadow-sm border-l-4 border-l-gray-600">
-            <Statistic title="Thẻ Hỏng & Mất" value={lostDamagedCount} valueStyle={{ color: '#4b5563', fontWeight: 'bold' }} />
+            <Statistic title="Damaged & Lost Cards" value={lostDamagedCount} valueStyle={{ color: '#4b5563', fontWeight: 'bold' }} />
           </Card>
         </Col>
       </Row>
 
-      {/* KHU VỰC 2: ACTION BAR */}
+      {/* Zone 2: ACTION BAR */}
       <Card className="shadow-sm mb-6">
         <div className="flex justify-between">
           <div className="flex gap-4">
             <Select defaultValue="ALL" className="w-48" options={[
-              {label: 'Tất cả Trạng thái', value: 'ALL'},
-              {label: 'Sẵn sàng (Trống)', value: 'AVAILABLE'},
-              {label: 'Đang lưu hành', value: 'IN_USE'},
-              {label: 'Báo mất', value: 'LOST'},
-              {label: 'Báo hỏng', value: 'DAMAGED'}
+              {label: 'All Status', value: 'ALL'},
+              {label: 'Ready (Empty)', value: 'AVAILABLE'},
+              {label: 'Current', value: 'IN_USE'},
+              {label: 'Report lost', value: 'LOST'},
+              {label: 'Report broken', value: 'DAMAGED'}
             ]} />
-            <Button type="primary" icon={<FilterOutlined />} ghost>Lọc</Button>
+            <Button type="primary" icon={<FilterOutlined />} ghost>Filter</Button>
             <Input 
-              placeholder="Gõ UID hoặc Mã In trên thẻ..." 
+              placeholder="Type UID or Print Code on the cardeee" 
               prefix={<SearchOutlined />} 
               className="w-80" 
               allowClear
@@ -191,12 +191,13 @@ export const CardManagementScreen = () => {
             className="bg-indigo-600 hover:bg-indigo-500 font-bold shadow-md"
             onClick={() => setIsModalVisible(true)}
           >
-            + Nhập Lô Thẻ Mới
-          </Button>
+            
+                                  Enter New Card Batch
+                                </Button>
         </div>
       </Card>
 
-      {/* KHU VỰC 3: DATA TABLE */}
+      {/* Zone 3: DATA TABLE */}
       <Card className="shadow-sm rounded-xl border-gray-200" bodyStyle={{ padding: 0 }}>
         <Table 
           dataSource={cardsData} 
@@ -206,9 +207,9 @@ export const CardManagementScreen = () => {
         />
       </Card>
 
-      {/* KHU VỰC 4: RIGHT DRAWER */}
+      {/* Zone 4: RIGHT DRAWER */}
       <Drawer
-        title={<span className="font-bold text-lg">Khám Bệnh & Xử Lý Thẻ</span>}
+        title={<span className="font-bold text-lg">Medical Examination & Card Processing</span>}
         placement="right"
         width={400}
         onClose={() => setIsDrawerOpen(false)}
@@ -219,24 +220,24 @@ export const CardManagementScreen = () => {
             
             {/* Identity Banner */}
             <div className="bg-slate-100 p-4 rounded-lg border border-slate-200 text-center">
-              <Text type="secondary" className="block text-xs uppercase mb-1">Mã Nhận Diện</Text>
+              <Text type="secondary" className="block text-xs uppercase mb-1">Identification Code</Text>
               <div className="text-2xl font-black text-slate-800 tracking-wider">{selectedRecord.visualId}</div>
               <div className="mt-2 text-sm text-gray-500 font-mono">UID: {selectedRecord.uid}</div>
             </div>
 
             {/* Current Status */}
             <div>
-              <Text strong className="block mb-2">Trạng Thái & Vị Trí:</Text>
+              <Text strong className="block mb-2">Status & Location:</Text>
               <div className="flex flex-col gap-2 p-3 bg-white border rounded-md">
                 <div className="flex justify-between">
-                  <Text type="secondary">Trạng thái:</Text>
-                  {selectedRecord.status === 'AVAILABLE' && <Tag color="success">Trống</Tag>}
-                  {selectedRecord.status === 'IN_USE' && <Tag color="processing">Đang Dùng</Tag>}
-                  {selectedRecord.status === 'LOST' && <Tag color="error">Báo Mất</Tag>}
-                  {selectedRecord.status === 'DAMAGED' && <Tag color="warning">Báo Hỏng</Tag>}
+                  <Text type="secondary">Status:</Text>
+                  {selectedRecord.status === 'AVAILABLE' && <Tag color="success">Drum</Tag>}
+                  {selectedRecord.status === 'IN_USE' && <Tag color="processing">Using</Tag>}
+                  {selectedRecord.status === 'LOST' && <Tag color="error">Report Lost</Tag>}
+                  {selectedRecord.status === 'DAMAGED' && <Tag color="warning">Report Broken</Tag>}
                 </div>
                 <div className="flex justify-between">
-                  <Text type="secondary">Vị trí:</Text>
+                  <Text type="secondary">Location:</Text>
                   <Text strong className="text-right">{selectedRecord.location}</Text>
                 </div>
               </div>
@@ -246,20 +247,21 @@ export const CardManagementScreen = () => {
 
             {/* Action Tools */}
             <div>
-              <Title level={5} className="text-gray-800 mb-4">Công Cụ Trị Liệu</Title>
+              <Title level={5} className="text-gray-800 mb-4">Therapy Tools</Title>
               <div className="flex flex-col gap-3">
                 
-                <Tooltip title="Thẻ sẽ bị khóa hoàn toàn. Barrier không mở nếu ai đó dùng thẻ này." placement="left">
+                <Tooltip title="The card will be completely locked and the Barrier will not open if someone uses this card" placement="left">
                   <Button 
                     danger 
                     type="primary" 
                     icon={<StopOutlined />} 
                     className="w-full text-left flex justify-start items-center h-10"
                     disabled={selectedRecord.status === 'LOST'}
-                    onClick={() => handleAction(selectedRecord.uid, 'LOST', 'Không xác định', 'Đã đưa thẻ vào Blacklist báo mất!')}
+                    onClick={() => handleAction(selectedRecord.uid, 'LOST', 'Not determined', 'Card has been added to Blacklist and reported lost!')}
                   >
-                    [Báo Mất Thẻ / Đưa vào Blacklist]
-                  </Button>
+                    
+                                                          [Report Lost Card / Put on Blacklist]
+                                                        </Button>
                 </Tooltip>
 
                 <Button 
@@ -267,21 +269,23 @@ export const CardManagementScreen = () => {
                   icon={<WarningOutlined />} 
                   className="w-full text-left flex justify-start items-center h-10 border-orange-400 text-orange-500 hover:text-orange-600 hover:border-orange-500"
                   disabled={selectedRecord.status === 'DAMAGED'}
-                  onClick={() => handleAction(selectedRecord.uid, 'DAMAGED', 'Kho phế liệu', 'Đã đánh dấu thẻ bị hỏng vật lý.')}
+                  onClick={() => handleAction(selectedRecord.uid, 'DAMAGED', 'Scrap warehouse', 'The card has been marked as physically damaged')}
                 >
-                  [Đánh Dấu Thẻ Hỏng]
-                </Button>
+                  
+                                                    [Mark Broken Card]
+                                                  </Button>
 
-                <Tooltip title="Tẩy não thẻ, cắt đứt liên kết với xe cũ để sẵn sàng tái sử dụng." placement="left">
+                <Tooltip title="Brainwash the card, cut off the connection with the old car to be ready for reuse" placement="left">
                   <Button 
                     type="primary" 
                     ghost 
                     icon={<RetweetOutlined />} 
                     className="w-full text-left flex justify-start items-center h-10"
-                    onClick={() => handleAction(selectedRecord.uid, 'AVAILABLE', 'Nằm trống', 'Đã Xóa trắng dữ liệu (Format) thẻ thành công!')}
+                    onClick={() => handleAction(selectedRecord.uid, 'AVAILABLE', 'Lying empty', 'Deleted blank data (Format) of Success card!')}
                   >
-                    [Xóa Trắng Dữ Liệu (Format Card)]
-                  </Button>
+                    
+                                                          [Delete Blank Data (Format Card)]
+                                                        </Button>
                 </Tooltip>
 
                 {selectedRecord.status === 'LOST' && (
@@ -289,10 +293,11 @@ export const CardManagementScreen = () => {
                     type="primary" 
                     className="w-full bg-green-600 hover:bg-green-500 text-left flex justify-start items-center h-10 mt-4"
                     icon={<UnlockOutlined />}
-                    onClick={() => handleAction(selectedRecord.uid, 'AVAILABLE', 'Nằm trống', 'Đã mở khóa thẻ thành công!')}
+                    onClick={() => handleAction(selectedRecord.uid, 'AVAILABLE', 'Lying empty', 'Success card unlocked!')}
                   >
-                    [Mở Khóa Thẻ] (Khách trả lại)
-                  </Button>
+                    
+                                                          [Unlock Card] (Returned by customer)
+                                                        </Button>
                 )}
 
               </div>
@@ -304,7 +309,7 @@ export const CardManagementScreen = () => {
 
       {/* IMPORT MODAL */}
       <Modal
-        title={<span className="font-bold text-lg"><PlusOutlined className="mr-2"/> Nhập Lô Thẻ Mới</span>}
+        title={<span className="font-bold text-lg"><PlusOutlined className="mr-2"/>  Enter New Card Batch</span>}
         open={isModalVisible}
         onCancel={() => setIsModalVisible(false)}
         footer={null}
@@ -312,11 +317,12 @@ export const CardManagementScreen = () => {
       >
         <div className="py-4">
           <Alert 
-            message="Hướng dẫn Import (Định dạng CSV)" 
+            message="Import Instructions (CSV Format)" 
             description={
               <div className="text-sm mt-2">
-                Vui lòng upload file <strong>.csv</strong> có cấu trúc cột như sau:
-                <div className="bg-white border p-2 mt-2 rounded font-mono text-xs">
+                
+                                    Please upload the file <strong>.csv</strong>  has the following column structure:
+                                    <div className="bg-white border p-2 mt-2 rounded font-mono text-xs">
                   cardCode,status,assignedPlate<br/>
                   E200001968130118,AVAILABLE,<br/>
                   E200001968130119,AVAILABLE,<br/>
@@ -332,10 +338,11 @@ export const CardManagementScreen = () => {
             <p className="ant-upload-drag-icon">
               <InboxOutlined className={isUploading ? "text-gray-400" : "text-indigo-500"} />
             </p>
-            <p className="ant-upload-text font-semibold">Click hoặc Kéo thả file CSV vào đây</p>
+            <p className="ant-upload-text font-semibold">Click or Drag and drop the CSV file here</p>
             <p className="ant-upload-hint px-4 text-xs">
-              Hỗ trợ nhập tối đa 10,000 dòng UID cùng lúc. Chỉ chấp nhận định dạng .csv.
-            </p>
+              
+                                        Supports entering up to 10,000 UID lines at the same time. Only accepts ecsve format
+                                      </p>
           </Dragger>
         </div>
       </Modal>

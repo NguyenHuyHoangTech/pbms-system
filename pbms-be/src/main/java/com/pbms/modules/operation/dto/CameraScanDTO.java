@@ -9,3 +9,4 @@ public class CameraScanDTO {
     private Double confidence;
     private String imageBase64;
 }
+

@@ -3,23 +3,24 @@ package com.pbms.modules.finance.strategy;
 public interface PaymentStrategy {
     
     /**
-     * Tạo mã QR code hoặc URL thanh toán
-     * @param amount Số tiền
-     * @param orderId Mã đơn hàng
-     * @return URL thanh toán hoặc QR Data
+     * Táº¡o mÃ£ QR code hoáº·c URL thanh toÃ¡n
+     * @param amount Sá»‘ tiá»n
+     * @param orderId MÃ£ Ä‘Æ¡n hÃ ng
+     * @return URL thanh toÃ¡n hoáº·c QR Data
      */
     String generatePaymentUrl(double amount, String orderId);
     
     /**
-     * Xác thực Webhook trả về từ Gateway
-     * @param payload Chuỗi JSON hoặc query params
-     * @param signature Chữ ký xác thực
-     * @return Hợp lệ hay không
+     * XÃ¡c thá»±c Webhook tráº£ vá» tá»« Gateway
+     * @param payload Chuá»—i JSON hoáº·c query params
+     * @param signature Chá»¯ kÃ½ xÃ¡c thá»±c
+     * @return Há»£p lá»‡ hay khÃ´ng
      */
     boolean verifyWebhookSignature(String payload, String signature);
     
     /**
-     * Mã Gateway hỗ trợ
+     * MÃ£ Gateway há»— trá»£
      */
     String getProviderCode();
 }
+

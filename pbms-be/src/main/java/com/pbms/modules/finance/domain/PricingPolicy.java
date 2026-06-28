@@ -40,6 +40,9 @@ public class PricingPolicy {
     @Column(nullable = false, length = 50)
     private String status = "ACTIVE"; // ACTIVE, ARCHIVED
 
+    @Column(name = "monthly_rate", nullable = false, precision = 18, scale = 2)
+    private BigDecimal monthlyRate;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -61,3 +64,4 @@ public class PricingPolicy {
         updatedAt = com.pbms.common.utils.TimeProvider.now();
     }
 }
+

@@ -39,3 +39,4 @@ public class UserDTO {
         private Boolean isActive;
     }
 }
+

@@ -18,6 +18,7 @@ import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.Arrays;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Aspect
 @Component
@@ -27,6 +28,10 @@ public class AuditLogAspect {
 
     private final AuditLogRepository auditLogRepository;
     private final UserRepository userRepository;
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule())
+            .disable(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .disable(com.fasterxml.jackson.databind.SerializationFeature.FAIL_ON_EMPTY_BEANS);
 
     @AfterReturning(pointcut = "@annotation(logAudit)", returning = "result")
     public void logAfter(JoinPoint joinPoint, LogAudit logAudit, Object result) {
@@ -45,9 +50,20 @@ public class AuditLogAspect {
                 ipAddress = request.getRemoteAddr();
             }
 
-            // A very simple serialization for demo purposes. 
-            // In a real scenario, use ObjectMapper to convert args to JSON.
-            String newValue = Arrays.toString(joinPoint.getArgs());
+            String newValue;
+            try {
+                // Ignore HttpServletRequest/Response and other un-serializable objects
+                Object[] args = Arrays.stream(joinPoint.getArgs())
+                        .filter(arg -> !(arg instanceof jakarta.servlet.http.HttpServletRequest || 
+                                         arg instanceof jakarta.servlet.http.HttpServletResponse ||
+                                         arg instanceof org.springframework.security.core.Authentication ||
+                                         arg instanceof org.springframework.web.multipart.MultipartFile))
+                        .toArray();
+                newValue = objectMapper.writeValueAsString(args.length == 1 ? args[0] : args);
+            } catch (Exception e) {
+                log.warn("Failed to serialize audit log argument: {}", e.getMessage());
+                newValue = Arrays.toString(joinPoint.getArgs());
+            }
 
             AuditLog auditLog = AuditLog.builder()
                     .actor(actor)
@@ -65,3 +81,4 @@ public class AuditLogAspect {
         }
     }
 }
+

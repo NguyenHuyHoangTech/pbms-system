@@ -67,7 +67,7 @@ export const TicketCenterScreen = () => {
       await axiosClient.put(`/incidents/${data.id}/resolve`, { resolutionNotes: data.notes });
     },
     onSuccess: () => {
-      message.success('Đã xử lý sự cố');
+      message.success('Incident resolved');
       queryClient.invalidateQueries({ queryKey: ['incidents'] });
       closeDrawer();
     }
@@ -78,7 +78,7 @@ export const TicketCenterScreen = () => {
       await axiosClient.post(`/incidents/lost-card`, data);
     },
     onSuccess: () => {
-      message.success('Đã báo mất thẻ và tính phí');
+      message.success('Reported card lost and charged');
       queryClient.invalidateQueries({ queryKey: ['incidents'] });
       closeDrawer();
     }
@@ -89,7 +89,7 @@ export const TicketCenterScreen = () => {
       await axiosClient.post(`/incidents/adjust-fee`, data);
     },
     onSuccess: () => {
-      message.success('Đã điều chỉnh phí');
+      message.success('Fees have been adjusted');
       queryClient.invalidateQueries({ queryKey: ['incidents'] });
       closeDrawer();
     }
@@ -114,75 +114,75 @@ export const TicketCenterScreen = () => {
 
   const renderLprTable = () => (
     <Table dataSource={lprData} rowKey="id" pagination={false} loading={isLoading}>
-      <Table.Column title="Thời gian" dataIndex="time" />
-      <Table.Column title="Cổng" dataIndex="gate" />
-      <Table.Column title="Nhân viên" dataIndex="staff" />
-      <Table.Column title="Biển số AI" dataIndex="aiPlate" render={(val: string) => <Text delete className="text-gray-400">{val}</Text>} />
-      <Table.Column title="Nhân viên sửa" dataIndex="staffPlate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
-      <Table.Column title="Trạng thái" dataIndex="status" render={(val: string) => <Tag color="warning">{val}</Tag>} />
-      <Table.Column title="Thao tác" render={(rec: any) => <Button type="primary" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Hậu kiểm</Button>} />
+      <Table.Column title="Time" dataIndex="time" />
+      <Table.Column title="Gate" dataIndex="gate" />
+      <Table.Column title="Staff" dataIndex="staff" />
+      <Table.Column title="License Plate AI" dataIndex="aiPlate" render={(val: string) => <Text delete className="text-gray-400">{val}</Text>} />
+      <Table.Column title="Staff edited" dataIndex="staffPlate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
+      <Table.Column title="Status" dataIndex="status" render={(val: string) => <Tag color="warning">{val}</Tag>} />
+      <Table.Column title="Actions" render={(rec: any) => <Button type="primary" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Post-check</Button>} />
     </Table>
   );
 
   const renderLostCardTable = () => (
     <Table dataSource={lostCardData} rowKey="id" pagination={false} loading={isLoading}>
-      <Table.Column title="Thời gian" dataIndex="time" />
-      <Table.Column title="Biển số" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
-      <Table.Column title="Mã thẻ" dataIndex="cardId" />
-      <Table.Column title="Trạng thái" dataIndex="status" render={(val: string) => <Tag color="error">{val}</Tag>} />
-      <Table.Column title="Phí phạt" dataIndex="fee" render={(val: number) => <Text strong className="text-orange-600">{(val || 0).toLocaleString()} VNĐ</Text>} />
-      <Table.Column title="Thao tác" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Kiểm toán</Button>} />
+      <Table.Column title="Time" dataIndex="time" />
+      <Table.Column title="License Plate" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
+      <Table.Column title="Card code" dataIndex="cardId" />
+      <Table.Column title="Status" dataIndex="status" render={(val: string) => <Tag color="error">{val}</Tag>} />
+      <Table.Column title="Penalty fee" dataIndex="fee" render={(val: number) => <Text strong className="text-orange-600">{(val || 0).toLocaleString()}  VND</Text>} />
+      <Table.Column title="Actions" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Auditing</Button>} />
     </Table>
   );
 
   const renderFeeAdjustTable = () => (
     <Table dataSource={feeAdjustData} rowKey="id" pagination={false} loading={isLoading}>
-      <Table.Column title="ID Sự cố" dataIndex="id" />
-      <Table.Column title="Biển số" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
-      <Table.Column title="Phí điều chỉnh" dataIndex="liveFee" render={(val: number) => <Text strong className="text-red-500">{(val || 0).toLocaleString()} VNĐ</Text>} />
-      <Table.Column title="Trạng thái" dataIndex="status" render={(val: string) => <Tag color="cyan">{val}</Tag>} />
-      <Table.Column title="Thao tác" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Xử lý</Button>} />
+      <Table.Column title="ID Incidents" dataIndex="id" />
+      <Table.Column title="License Plate" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
+      <Table.Column title="Adjustment fee" dataIndex="liveFee" render={(val: number) => <Text strong className="text-red-500">{(val || 0).toLocaleString()}  VND</Text>} />
+      <Table.Column title="Status" dataIndex="status" render={(val: string) => <Tag color="cyan">{val}</Tag>} />
+      <Table.Column title="Actions" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Resolve</Button>} />
     </Table>
   );
 
   const renderZoneTable = () => (
     <Table dataSource={zoneViolationData} rowKey="id" pagination={false} loading={isLoading}>
-      <Table.Column title="Thời gian" dataIndex="time" />
-      <Table.Column title="Biển số" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
-      <Table.Column title="Zone Quy định" dataIndex="expectedZone" />
-      <Table.Column title="Đỗ Sai Thực Tế" dataIndex="actualZone" render={(val: string) => <Text type="danger" strong>{val}</Text>} />
-      <Table.Column title="Người báo cáo" dataIndex="reporter" />
-      <Table.Column title="Thao tác" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Chi tiết</Button>} />
+      <Table.Column title="Time" dataIndex="time" />
+      <Table.Column title="License Plate" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
+      <Table.Column title="Zone Regulations" dataIndex="expectedZone" />
+      <Table.Column title="Do Sai Reality" dataIndex="actualZone" render={(val: string) => <Text type="danger" strong>{val}</Text>} />
+      <Table.Column title="Reporter" dataIndex="reporter" />
+      <Table.Column title="Actions" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Details</Button>} />
     </Table>
   );
 
   const renderOverstayTable = () => (
     <Table dataSource={overstayData} rowKey="id" pagination={false} loading={isLoading}>
-      <Table.Column title="Biển số" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
-      <Table.Column title="Giờ Check-in" dataIndex="checkIn" />
-      <Table.Column title="Số ngày tồn" dataIndex="days" render={(val: number) => <Text type="danger" strong>{val} Ngày</Text>} />
-      <Table.Column title="Vị trí Slot" dataIndex="slot" />
-      <Table.Column title="Thao tác" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Xem thông tin</Button>} />
+      <Table.Column title="License Plate" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
+      <Table.Column title="Check-in time" dataIndex="checkIn" />
+      <Table.Column title="Number of days remaining" dataIndex="days" render={(val: number) => <Text type="danger" strong>{val}  Day</Text>} />
+      <Table.Column title="Slot Location" dataIndex="slot" />
+      <Table.Column title="Actions" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>View information</Button>} />
     </Table>
   );
 
   const renderGhostTable = () => (
     <Table dataSource={ghostData} rowKey="id" pagination={false} loading={isLoading}>
-      <Table.Column title="Biển số" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
-      <Table.Column title="Giờ Vào" dataIndex="timeIn" />
-      <Table.Column title="Giờ Ra" dataIndex="timeOut" render={() => <Text type="secondary" italic>NULL (Trốn vé)</Text>} />
-      <Table.Column title="Nợ cước" dataIndex="currentFee" render={(val: number) => <Text type="danger" strong>{(val || 0).toLocaleString()} VNĐ</Text>} />
-      <Table.Column title="Thao tác" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Xem thông tin</Button>} />
+      <Table.Column title="License Plate" dataIndex="plate" render={(val: string) => <Tag color="blue">{val}</Tag>} />
+      <Table.Column title="Time to Enter" dataIndex="timeIn" />
+      <Table.Column title="Out time" dataIndex="timeOut" render={() => <Text type="secondary" italic>NULL (Ticket evasion)</Text>} />
+      <Table.Column title="Freight debt" dataIndex="currentFee" render={(val: number) => <Text type="danger" strong>{(val || 0).toLocaleString()}  VND</Text>} />
+      <Table.Column title="Actions" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>View information</Button>} />
     </Table>
   );
 
   const renderFeedbackTable = () => (
     <Table dataSource={feedbackData} rowKey="id" pagination={false} loading={isLoading}>
-      <Table.Column title="ID Sự cố" dataIndex="id" />
-      <Table.Column title="Tên khách" dataIndex="customer" />
-      <Table.Column title="Phân loại" dataIndex="category" />
-      <Table.Column title="Trạng thái" dataIndex="status" render={(val: string) => <Tag color={val === 'OPEN' ? 'orange' : 'success'}>{val}</Tag>} />
-      <Table.Column title="Thao tác" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Phản hồi</Button>} />
+      <Table.Column title="ID Incidents" dataIndex="id" />
+      <Table.Column title="Guest name" dataIndex="customer" />
+      <Table.Column title="Classify" dataIndex="category" />
+      <Table.Column title="Status" dataIndex="status" render={(val: string) => <Tag color={val === 'OPEN' ? 'orange' : 'success'}>{val}</Tag>} />
+      <Table.Column title="Actions" render={(rec: any) => <Button type="dashed" size="small" icon={<EyeOutlined />} onClick={() => openDrawer(rec)}>Feedback</Button>} />
     </Table>
   );
 
@@ -195,28 +195,28 @@ export const TicketCenterScreen = () => {
       case '1': // LPR Corrections
         return (
           <div className="space-y-6">
-            <Alert message="Mục đích: Hậu kiểm nhân viên gõ tay biển số." type="info" showIcon />
+            <Alert message="Purpose: Post-check Staff hand-types License Platee" type="info" showIcon />
             <div className="bg-gray-100 p-4 rounded flex items-center justify-center h-64 border border-dashed border-gray-300">
                <div className="text-center text-gray-400">
                  <CameraOutlined className="text-4xl mb-2" />
-                 <p>[Ảnh Snapshot Camera Biển Số IN/OUT]</p>
+                 <p>[Snapshot Camera License Plate IN/OUT]</p>
                </div>
             </div>
             <Row gutter={16}>
               <Col span={12}>
-                <Card size="small" title="AI Nhận Diện" className="bg-red-50 border-red-200">
+                <Card size="small" title="AI Identification" className="bg-red-50 border-red-200">
                   <Text delete className="text-lg text-gray-500 font-mono">{selectedRecord.aiPlate}</Text>
                 </Card>
               </Col>
               <Col span={12}>
-                <Card size="small" title="Staff Gõ Tay" className="bg-green-50 border-green-200">
+                <Card size="small" title="Staff Hand Typing" className="bg-green-50 border-green-200">
                   <Text strong className="text-lg text-green-700 font-mono">{selectedRecord.staffPlate}</Text>
                 </Card>
               </Col>
             </Row>
             <div className="flex gap-2">
-              <Button type="primary" className="flex-1" onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Staff đúng' })}>Duyệt (Staff đúng)</Button>
-              <Button danger className="flex-1" onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Staff gõ láo' })}>Phạt (Staff gõ láo)</Button>
+              <Button type="primary" className="flex-1" onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Staff is correct' })}>Browse (Staff correct)</Button>
+              <Button danger className="flex-1" onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Staff type lies' })}>Penalty (Staff typing falsely)</Button>
             </div>
           </div>
         );
@@ -224,36 +224,37 @@ export const TicketCenterScreen = () => {
       case '2': // Lost/Damaged Cards
         return (
           <div className="space-y-6">
-            <Alert message="Mục đích: Xác nhận bằng chứng do Staff thu tiền đền thẻ." type="info" showIcon />
+            <Alert message="Purpose: Confirm evidence that Staff collects card compensation" type="info" showIcon />
             <Descriptions column={1} bordered size="small">
-              <Descriptions.Item label="Biển số"><Text strong>{selectedRecord.plate}</Text></Descriptions.Item>
-              <Descriptions.Item label="Phí đền thẻ thu"><Text type="danger" strong>{selectedRecord.fee.toLocaleString()} đ</Text></Descriptions.Item>
+              <Descriptions.Item label="License Plate"><Text strong>{selectedRecord.plate}</Text></Descriptions.Item>
+              <Descriptions.Item label="Card collection fee"><Text type="danger" strong>{selectedRecord.fee.toLocaleString()}  D</Text></Descriptions.Item>
             </Descriptions>
             
             <div>
-              <Text strong className="block mb-2"><IdcardOutlined /> Minh chứng số hóa (Giấy tờ xe / CCCD):</Text>
+              <Text strong className="block mb-2"><IdcardOutlined />  Digital proof (Vehicle documents / CCCD):</Text>
               <div className="bg-gray-100 p-4 rounded flex items-center justify-center h-64 border border-dashed border-gray-300">
                 <div className="text-center text-gray-400">
                   <CameraOutlined className="text-4xl mb-2" />
-                  <p>[Ảnh Giấy tờ do Staff chụp Upload]</p>
+                  <p>[Photo of Documents taken by Staff and Uploaded]</p>
                 </div>
               </div>
             </div>
-            <Button type="primary" size="large" block icon={<CheckCircleOutlined />} onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Đã Kiểm Toán' })}>
-              Đánh dấu Đã Kiểm Toán
-            </Button>
+            <Button type="primary" size="large" block icon={<CheckCircleOutlined />} onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Audited' })}>
+              
+                                  Mark Audited
+                                </Button>
           </div>
         );
 
       case '3': // Fee Adjustments
         return (
           <div className="space-y-6">
-            <Alert message="Luồng xử lý bắt buộc: Phải Tạm Dừng Tính Phí trước khi nhập lệnh điều chỉnh." type="warning" showIcon />
+            <Alert message="Required processing flow: Charges must be Paused before entering the adjustment order" type="warning" showIcon />
             
             <div className="flex justify-between items-center bg-gray-50 p-4 rounded border">
               <div>
-                <Text type="secondary" className="block text-xs uppercase">Phí máy tính (Live)</Text>
-                <Text className="text-xl font-bold text-red-600">{selectedRecord.liveFee.toLocaleString()} đ</Text>
+                <Text type="secondary" className="block text-xs uppercase">Computer fee (Live)</Text>
+                <Text className="text-xl font-bold text-red-600">{selectedRecord.liveFee.toLocaleString()}  D</Text>
               </div>
               <Button 
                 type={feeAdjustStep === 0 ? "primary" : "default"}
@@ -261,14 +262,14 @@ export const TicketCenterScreen = () => {
                 icon={feeAdjustStep === 0 ? <LockOutlined /> : <UnlockOutlined />}
                 onClick={() => setFeeAdjustStep(feeAdjustStep === 0 ? 1 : 0)}
               >
-                {feeAdjustStep === 0 ? 'TẠM DỪNG TÍNH PHÍ' : 'TIẾP TỤC TÍNH PHÍ'}
+                {feeAdjustStep === 0 ? 'PAUSE OF CHARGING' : 'CHARGES CONTINUE'}
               </Button>
             </div>
 
             <Divider className="my-2" />
 
             <Form layout="vertical">
-              <Form.Item label={<Text strong>Phí Thực Thu (VNĐ)</Text>} required>
+              <Form.Item label={<Text strong>Actual Fees Collected (VND)</Text>} required>
                 <InputNumber 
                   disabled={feeAdjustStep === 0}
                   className="w-full text-lg" 
@@ -276,15 +277,15 @@ export const TicketCenterScreen = () => {
                   value={overrideFee} 
                   onChange={v => setOverrideFee(v)} 
                   formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} 
-                  placeholder="Nhập số tiền (để trống nếu từ chối)..."
+                  placeholder="Enter the amount (leave blank if Reject)eee"
                 />
               </Form.Item>
-              <Form.Item label={<Text strong>Lý do (Miễn giảm / Từ chối)</Text>} required={feeAdjustStep === 0}>
+              <Form.Item label={<Text strong>Reason (Exemption / Reject)</Text>} required={feeAdjustStep === 0}>
                 <Input.TextArea 
                   rows={3} 
                   value={overrideReason} 
                   onChange={e => setOverrideReason(e.target.value)} 
-                  placeholder="VD: Sự cố kẹt xe hầm, Khách V.I.P hoặc Lý do từ chối..."
+                  placeholder="For example: Incidents of underground traffic jams, VeIeP Guests or Reason Rejecteee"
                   disabled={feeAdjustStep > 0}
                 />
               </Form.Item>
@@ -294,10 +295,11 @@ export const TicketCenterScreen = () => {
                   size="large" 
                   className="flex-1 font-bold"
                   disabled={feeAdjustStep > 0 || !overrideReason}
-                  onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Từ chối: ' + overrideReason })}
+                  onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: 'Reject: ' + overrideReason })}
                 >
-                  Từ Chối Yêu Cầu
-                </Button>
+                  
+                                              Reject request
+                                            </Button>
                 <Button 
                   type="primary" 
                   size="large" 
@@ -305,8 +307,9 @@ export const TicketCenterScreen = () => {
                   disabled={feeAdjustStep === 0 || overrideFee === null}
                   onClick={() => adjustFeeMutation.mutate({ plate: selectedRecord.plate, liveFee: overrideFee || 0 })}
                 >
-                  Duyệt & Cấp Lệnh Ra
-                </Button>
+                  
+                                              Approve & Issue Orders
+                                            </Button>
               </div>
             </Form>
           </div>
@@ -315,18 +318,18 @@ export const TicketCenterScreen = () => {
       case '4': // Zone Violations
         return (
           <div className="space-y-6">
-            <Alert message="Hệ thống tự động thông báo nhắc nhở cho khách qua App và lúc xe ra cổng. Quản lý chỉ cần xem chi tiết." type="info" showIcon />
+            <Alert message="The system automatically notifies customers via the app and when the car arrives at Gate Management, they just need to see the Details" type="info" showIcon />
             <Descriptions column={1} bordered size="small">
-              <Descriptions.Item label="Biển số xe"><Text strong>{selectedRecord.plate}</Text></Descriptions.Item>
-              <Descriptions.Item label="Quy định"><Text>{selectedRecord.expectedZone}</Text></Descriptions.Item>
-              <Descriptions.Item label="Thực tế"><Text type="danger" strong>{selectedRecord.actualZone}</Text></Descriptions.Item>
+              <Descriptions.Item label="License Plate xe"><Text strong>{selectedRecord.plate}</Text></Descriptions.Item>
+              <Descriptions.Item label="Regulations"><Text>{selectedRecord.expectedZone}</Text></Descriptions.Item>
+              <Descriptions.Item label="Reality"><Text type="danger" strong>{selectedRecord.actualZone}</Text></Descriptions.Item>
             </Descriptions>
             
             <div className="bg-gray-100 rounded flex items-center justify-center h-48 border border-gray-300 relative overflow-hidden">
                <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
                <div className="text-center z-10 text-red-500 flex flex-col items-center">
                  <EnvironmentOutlined className="text-4xl mb-1 drop-shadow-md" />
-                 <Text strong className="bg-white/80 px-2 rounded">Vị trí xe đỗ sai</Text>
+                 <Text strong className="bg-white/80 px-2 rounded">Wrong parking position</Text>
                </div>
             </div>
           </div>
@@ -335,17 +338,17 @@ export const TicketCenterScreen = () => {
       case '5': // Overstaying
         return (
           <div className="space-y-6">
-            <Alert message="Hệ thống tự động bắn thông báo điều động nhân viên xuống hiện trường dời xe giải phóng bãi." type="info" showIcon />
+            <Alert message="The system automatically sends out a notification to dispatch staff to the scene to remove vehicles and clear the parking lot" type="info" showIcon />
             <div className="flex justify-between items-center bg-red-50 p-4 rounded border border-red-200">
               <Text strong className="text-red-700 text-lg">{selectedRecord.plate}</Text>
-              <Tag color="red">TỒN {selectedRecord.days} NGÀY</Tag>
+              <Tag color="red">TON {selectedRecord.days}  SWEET</Tag>
             </div>
             
-            <Divider orientation="left" plain>Nhật ký Xử lý Tự động</Divider>
+            <Divider plain>Automatic Resolve Log</Divider>
             <Timeline>
-               <Timeline.Item color="gray">Hệ thống phát hiện quá 72h ({selectedRecord.checkIn})</Timeline.Item>
-               <Timeline.Item color="blue" dot={<BellOutlined />}>Tự động bắn Push Notification cho Staff đi tuần</Timeline.Item>
-               <Timeline.Item color="orange">Staff đang xử lý dời xe sang khu vi phạm...</Timeline.Item>
+               <Timeline.Item color="gray">System detects more than 72 hours ({selectedRecord.checkIn})</Timeline.Item>
+               <Timeline.Item color="blue" dot={<BellOutlined />}>Automatically send Push Notification to Staff on patrol</Timeline.Item>
+               <Timeline.Item color="orange">Staff is handling the process of moving the car to the violation area</Timeline.Item>
             </Timeline>
           </div>
         );
@@ -354,22 +357,22 @@ export const TicketCenterScreen = () => {
         return (
           <div className="space-y-6">
             <Alert 
-              message={<Text strong className="text-red-700">Ô ĐỖ TRỐNG NHƯNG XE VẪN GHI NHẬN INSIDE!</Text>} 
-              description="Khách hàng có thể đã bám đuôi xe khác trốn vé ra khỏi hầm. Số tiền cước hiện tại đã trở thành NỢ XẤU." 
+              message={<Text strong className="text-red-700">Slot is EMPTY BUT CAR STILL RECORDED INSIDE!</Text>} 
+              description="Customer may have followed another car to escape the tunnel. The current fare has become a BAD DEBT" 
               type="error" 
               showIcon 
               icon={<WarningOutlined />}
             />
             
             <Descriptions column={1} bordered size="small" className="bg-white">
-              <Descriptions.Item label="Biển số"><Text strong className="text-lg">{selectedRecord.plate}</Text></Descriptions.Item>
-              <Descriptions.Item label="Giờ Vào">{selectedRecord.timeIn}</Descriptions.Item>
-              <Descriptions.Item label="Nợ Cước Ước Tính"><Text type="danger" strong className="text-lg">{selectedRecord.currentFee.toLocaleString()} đ</Text></Descriptions.Item>
+              <Descriptions.Item label="License Plate"><Text strong className="text-lg">{selectedRecord.plate}</Text></Descriptions.Item>
+              <Descriptions.Item label="Time to Enter">{selectedRecord.timeIn}</Descriptions.Item>
+              <Descriptions.Item label="Estimated Freight Debt"><Text type="danger" strong className="text-lg">{selectedRecord.currentFee.toLocaleString()}  D</Text></Descriptions.Item>
             </Descriptions>
 
             <Alert 
-              message="Xử lý Tự động" 
-              description="Hệ thống đã tự động Đóng Phiên đỗ ma và thêm biển số này vào Blacklist." 
+              message="Resolve Automatically" 
+              description="The System has automatically closed the ghost session and added this License Plate to the Blackliste" 
               type="info" 
               showIcon 
             />
@@ -380,7 +383,7 @@ export const TicketCenterScreen = () => {
         return (
           <div className="space-y-4 h-full flex flex-col">
             <div className="bg-gray-50 p-4 rounded border">
-              <Text type="secondary" className="block mb-1">Khách hàng: <Text strong>{selectedRecord.customer}</Text></Text>
+              <Text type="secondary" className="block mb-1">Customer: <Text strong>{selectedRecord.customer}</Text></Text>
               <Text strong className="text-gray-800">{selectedRecord.content}</Text>
             </div>
             
@@ -391,12 +394,13 @@ export const TicketCenterScreen = () => {
                 rows={4} 
                 value={chatMessage} 
                 onChange={e => setChatMessage(e.target.value)} 
-                placeholder="Nhập nội dung phản hồi xin lỗi / giải thích..." 
+                placeholder="Enter the response content apologizing / explainingeee" 
                 className="mb-2"
               />
               <Button type="primary" icon={<SendOutlined />} block disabled={!chatMessage} onClick={() => resolveMutation.mutate({ id: selectedRecord.id, notes: chatMessage })}>
-                Gửi Phản Hồi & Đóng Ticket
-              </Button>
+                
+                                        Send Feedback & Close Ticket
+                                      </Button>
             </div>
           </div>
         );
@@ -408,27 +412,27 @@ export const TicketCenterScreen = () => {
 
   const getDrawerTitle = () => {
     switch (activeTab) {
-      case '1': return 'Chỉnh sửa Biển Số (LPR)';
-      case '2': return 'Xử lý Mất/Hỏng Thẻ';
-      case '3': return 'Điều chỉnh Cước Phí';
-      case '4': return 'Báo cáo Sai Zone';
-      case '5': return 'Kiểm soát Xe Nằm Bãi';
-      case '6': return 'Truy thu Nợ / Trốn Vé';
-      case '7': return 'Phản hồi Khách hàng';
-      default: return 'Chi tiết';
+      case '1': return 'Edit License Plate (LPR)';
+      case '2': return 'Resolve Lost/Damaged Card';
+      case '3': return 'Adjusting Fees';
+      case '4': return 'Report Sai Zone';
+      case '5': return 'Parking Vehicle Control';
+      case '6': return 'Debt Collection / Fare Evasion';
+      case '7': return 'Customer Response';
+      default: return 'Details';
     }
   };
 
   // --- TABS DEFINITION ---
 
   const items = [
-    { key: '1', label: <span><Badge dot offset={[5, 0]}>Sai lệch Biển số LPR</Badge></span>, children: renderLprTable() },
-    { key: '2', label: <span><Badge count={1} offset={[10, 0]}>Mất & Hỏng Thẻ</Badge></span>, children: renderLostCardTable() },
-    { key: '3', label: <span><Badge count={1} offset={[10, 0]}>Sai phí & Giảm giá</Badge></span>, children: renderFeeAdjustTable() },
-    { key: '4', label: 'Xe đỗ sai khu vực', children: renderZoneTable() },
-    { key: '5', label: <span><Badge count={1} offset={[10, 0]}>Quá hạn &gt; 72H</Badge></span>, children: renderOverstayTable() },
-    { key: '6', label: <span><Badge count={1} offset={[10, 0]} className="[&_.ant-badge-count]:bg-red-600">Nợ Cước / Trốn vé</Badge></span>, children: renderGhostTable() },
-    { key: '7', label: 'Phản hồi từ Khách', children: renderFeedbackTable() },
+    { key: '1', label: <span><Badge dot offset={[5, 0]}>License Plate LPR deviation</Badge></span>, children: renderLprTable() },
+    { key: '2', label: <span><Badge count={1} offset={[10, 0]}>Lost & Damaged Cards</Badge></span>, children: renderLostCardTable() },
+    { key: '3', label: <span><Badge count={1} offset={[10, 0]}>Wrong Fees & Discounts</Badge></span>, children: renderFeeAdjustTable() },
+    { key: '4', label: 'Car parked in wrong Zone', children: renderZoneTable() },
+    { key: '5', label: <span><Badge count={1} offset={[10, 0]}>Overdue &gt; 72H</Badge></span>, children: renderOverstayTable() },
+    { key: '6', label: <span><Badge count={1} offset={[10, 0]} className="[&_.ant-badge-count]:bg-red-600">Fare Debt / Fare Evasion</Badge></span>, children: renderGhostTable() },
+    { key: '7', label: 'Feedback from Guests', children: renderFeedbackTable() },
   ];
 
   return (
@@ -437,15 +441,15 @@ export const TicketCenterScreen = () => {
       <div className="mb-6 flex justify-between items-start">
         <div>
           <Title level={2} className="m-0 text-gray-800 flex items-center">
-            <WarningOutlined className="mr-3 text-red-600" /> Quản Lý Sự Cố (Incident Center)
+            <WarningOutlined className="mr-3 text-red-600" /> Incident Management (Incident Center)
           </Title>
-          <Text type="secondary">Xử lý ngoại lệ, gian lận, truy thu và khiếu nại cước phí.</Text>
+          <Text type="secondary">Resolve exceptions, fraud, collections and freight complaints</Text>
         </div>
         
         <div className="flex gap-3">
           <RangePicker className="w-64" />
-          <Search placeholder="Biển số / Mã Ticket" className="w-64" onSearch={() => {}} enterButton />
-          <Button icon={<DownloadOutlined />}>Xuất Excel</Button>
+          <Search placeholder="License Plate / Ticket Code" className="w-64" onSearch={() => {}} enterButton />
+          <Button icon={<DownloadOutlined />}>Export Excel</Button>
         </div>
       </div>
 

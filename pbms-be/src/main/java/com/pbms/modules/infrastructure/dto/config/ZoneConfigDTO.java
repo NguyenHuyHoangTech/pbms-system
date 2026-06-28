@@ -23,5 +23,7 @@ public class ZoneConfigDTO {
     private Double layoutY;
     private Integer rotation;
     private Integer overflowThreshold;
+    private Long activeReservationsCount;
     private List<SlotConfigDTO> slots;
 }
+

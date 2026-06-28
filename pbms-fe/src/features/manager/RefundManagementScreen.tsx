@@ -18,7 +18,7 @@ const { TextArea } = Input;
 interface RefundRecord {
   id: string;
   customerName: string;
-  registeredName: string; // Tên đăng ký App
+  registeredName: string; // App registered name
   plateNumber: string;
   bookingTime: string;
   expectedInTime: string;
@@ -29,7 +29,6 @@ interface RefundRecord {
   status: 'PENDING' | 'REFUNDED' | 'REJECTED';
   bankName: string;
   accountNumber: string;
-  accountName: string;
   accountName: string;
   rejectReason?: string;
   proofUrl?: string;
@@ -90,16 +89,16 @@ export const RefundManagementScreen = () => {
 
   const handleCopy = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
-    message.success(`Đã copy ${type}!`);
+    message.success(`Copied ${type}!`);
   };
 
   const handleApprove = () => {
     if (!selectedRecord) return;
-    message.loading({ content: 'Đang xử lý đóng đơn...', key: 'process' });
+    message.loading({ content: 'Processing the ordereee', key: 'process' });
     approveMutation.mutate(selectedRecord.id, {
       onSuccess: () => {
         setIsDrawerOpen(false);
-        message.success({ content: `Đã hoàn tiền thành công cho mã ${selectedRecord.id}!`, key: 'process', duration: 3 });
+        message.success({ content: `Refund successful for ID ${selectedRecord.id}!`, key: 'process', duration: 3 });
       }
     });
   };
@@ -107,14 +106,14 @@ export const RefundManagementScreen = () => {
   const handleReject = () => {
     if (!selectedRecord) return;
     if (!rejectReason.trim()) {
-      message.error('Vui lòng nhập lý do từ chối!');
+      message.error('Please enter reason for Reject!');
       return;
     }
-    message.loading({ content: 'Đang từ chối yêu cầu...', key: 'process' });
+    message.loading({ content: 'Rejecting requesteee', key: 'process' });
     rejectMutation.mutate({ id: selectedRecord.id, reason: rejectReason }, {
       onSuccess: () => {
         setIsDrawerOpen(false);
-        message.success({ content: `Đã từ chối đơn hoàn tiền ${selectedRecord.id}!`, key: 'process', duration: 3 });
+        message.success({ content: `Rejected refund request ${selectedRecord.id}!`, key: 'process', duration: 3 });
       }
     });
   };
@@ -133,14 +132,14 @@ export const RefundManagementScreen = () => {
         });
         setProofUploaded(true);
         onSuccess?.(res.data);
-        message.success('Tải ảnh minh chứng thành công!');
+        message.success('Download photo proof of Success!');
         queryClient.invalidateQueries({ queryKey: ['refunds'] });
         
         // Update local state to show image immediately
         setSelectedRecord(prev => prev ? {...prev, proofUrl: res.data.data} : null);
       } catch (err) {
         onError?.(err as any);
-        message.error('Tải ảnh thất bại!');
+        message.error('Download image Failed!');
       }
     },
     onRemove: () => {
@@ -150,7 +149,7 @@ export const RefundManagementScreen = () => {
 
   const columns = [
     {
-      title: 'Mã Yêu Cầu',
+      title: 'Ma oeu Cau',
       dataIndex: 'id',
       key: 'id',
       render: (text: string, record: RefundRecord) => (
@@ -161,33 +160,33 @@ export const RefundManagementScreen = () => {
       )
     },
     {
-      title: 'Khách hàng',
+      title: 'Customer',
       dataIndex: 'customerName',
       key: 'customerName',
     },
     {
-      title: 'TG Hủy (Cancel Time)',
+      title: 'TG Cancel (Cancel Time)',
       dataIndex: 'cancelTime',
       key: 'cancelTime',
     },
     {
-      title: 'Số tiền Cần hoàn',
+      title: 'Amount to be refunded',
       dataIndex: 'refundAmount',
       key: 'refundAmount',
       render: (amount: number) => <Text strong className="text-orange-600">{amount.toLocaleString()} VND</Text>
     },
     {
-      title: 'Trạng thái',
+      title: 'Status',
       key: 'status',
       dataIndex: 'status',
       render: (status: string) => {
         if (status === 'REFUNDED') {
-          return <Tag color="success" icon={<CheckCircleOutlined />}>Đã hoàn</Tag>;
+          return <Tag color="success" icon={<CheckCircleOutlined />}>Completed</Tag>;
         }
         if (status === 'REJECTED') {
-          return <Tag color="error" icon={<CloseCircleOutlined />}>Từ chối</Tag>;
+          return <Tag color="error" icon={<CloseCircleOutlined />}>Reject</Tag>;
         }
-        return <Tag color="warning" icon={<SyncOutlined spin />}>Chờ xử lý</Tag>;
+        return <Tag color="warning" icon={<SyncOutlined spin />}>Waiting for processing</Tag>;
       }
     },
     {
@@ -209,18 +208,18 @@ export const RefundManagementScreen = () => {
       <div className="mb-6 flex justify-between items-center">
         <div>
           <Title level={2} className="m-0 text-slate-800 flex items-center">
-            <DollarOutlined className="mr-3 text-green-600" /> Quản lý Hoàn tiền
+            <DollarOutlined className="mr-3 text-green-600" /> Refund Management
           </Title>
-          <Text type="secondary">Xử lý các yêu cầu hủy đặt chỗ và hoàn tiền cọc cho khách hàng</Text>
+          <Text type="secondary">Resolve requests to cancel reservations and refund deposits to Customers</Text>
         </div>
       </div>
 
-      {/* KHU VỰC 1: TOP BAR & KPI */}
+      {/* Zone 1: TOP BAR & KPI */}
       <Row gutter={16} className="mb-6">
         <Col span={8}>
           <Card className={`shadow-sm ${pendingCount > 0 ? 'border-orange-300 bg-orange-50/30' : ''}`}>
             <Statistic 
-              title={<span className={pendingCount > 0 ? 'text-orange-600 font-semibold animate-pulse' : ''}>Yêu cầu chờ xử lý</span>}
+              title={<span className={pendingCount > 0 ? 'text-orange-600 font-semibold animate-pulse' : ''}>pending request</span>}
               value={pendingCount} 
               suffix="Tickets" 
               valueStyle={{ color: pendingCount > 0 ? '#d97706' : '#000', fontWeight: 'bold' }} 
@@ -230,9 +229,9 @@ export const RefundManagementScreen = () => {
         <Col span={8}>
           <Card className="shadow-sm">
             <Statistic 
-              title="Tổng tiền Cần hoàn (Pending)" 
+              title="Total amount to be refunded (Pending)" 
               value={totalPendingAmount} 
-              suffix="VNĐ" 
+              suffix="VND" 
               valueStyle={{ color: '#cf1322', fontWeight: 'bold' }} 
             />
           </Card>
@@ -240,9 +239,9 @@ export const RefundManagementScreen = () => {
         <Col span={8}>
           <Card className="shadow-sm">
             <Statistic 
-              title="Đã hoàn hôm nay" 
+              title="Completed today" 
               value={totalRefundedToday} 
-              suffix="VNĐ" 
+              suffix="VND" 
               valueStyle={{ color: '#3f8600', fontWeight: 'bold' }} 
             />
           </Card>
@@ -252,19 +251,19 @@ export const RefundManagementScreen = () => {
       <Card className="shadow-sm mb-6">
         <div className="flex gap-4">
           <Select defaultValue="PENDING" className="w-40" options={[
-            {label: 'Chờ xử lý', value: 'PENDING'},
-            {label: 'Đã hoàn', value: 'REFUNDED'},
-            {label: 'Từ chối', value: 'REJECTED'},
-            {label: 'Tất cả', value: 'ALL'}
+            {label: 'Waiting for processing', value: 'PENDING'},
+            {label: 'Completed', value: 'REFUNDED'},
+            {label: 'Reject', value: 'REJECTED'},
+            {label: 'All', value: 'ALL'}
           ]} />
-          <RangePicker format="DD/MM/YYYY" placeholder={['Từ ngày', 'Đến ngày']} className="w-64" />
-          <Button type="primary" icon={<FilterOutlined />}>Lọc</Button>
-          <Search placeholder="Nhập Mã đơn hoặc Biển số xe..." className="w-80" allowClear />
-          <Button>Xuất File Excel</Button>
+          <RangePicker format="DD/MM/YYYY" placeholder={['From date', 'Come day']} className="w-64" />
+          <Button type="primary" icon={<FilterOutlined />}>Filter</Button>
+          <Search placeholder="Enter the Application Code or License Plate xeeee" className="w-80" allowClear />
+          <Button>Export Excel File</Button>
         </div>
       </Card>
 
-      {/* KHU VỰC 2: DATA TABLE */}
+      {/* Zone 2: DATA TABLE */}
       <Card className="shadow-sm rounded-xl border-slate-200" bodyStyle={{ padding: 0 }}>
         <Table 
           columns={columns} 
@@ -275,9 +274,9 @@ export const RefundManagementScreen = () => {
         />
       </Card>
 
-      {/* KHU VỰC 3: RIGHT DRAWER (MASTER-DETAIL) */}
+      {/* Zone 3: RIGHT DRAWER (MASTER-DETAIL) */}
       <Drawer
-        title={<span className="font-bold text-lg">Chi tiết Yêu cầu: {selectedRecord?.id}</span>}
+        title={<span className="font-bold text-lg">Required details: {selectedRecord?.id}</span>}
         placement="right"
         width={500}
         onClose={() => setIsDrawerOpen(false)}
@@ -287,29 +286,31 @@ export const RefundManagementScreen = () => {
             <div className="flex flex-col gap-3 w-full">
               <div className="flex justify-between items-center w-full">
                 <Button danger onClick={() => setIsRejecting(!isRejecting)}>
-                  Từ chối Hoàn tiền
-                </Button>
+                  
+                                              Reject Refund
+                                            </Button>
                 <Button 
                   type="primary" 
                   className="bg-green-600 hover:bg-green-500" 
                   disabled={!proofUploaded}
                   onClick={handleApprove}
                 >
-                  Đã Chuyển Khoản & Đóng Đơn
-                </Button>
+                  
+                                              Fund Transfer & Application Closed
+                                            </Button>
               </div>
               {isRejecting && (
                 <div className="bg-red-50 p-4 rounded-lg border border-red-200 mt-2">
-                  <Text strong className="text-red-600 block mb-2">Lý do từ chối:</Text>
+                  <Text strong className="text-red-600 block mb-2">Reason Reject:</Text>
                   <TextArea 
                     rows={3} 
-                    placeholder="VD: Sai thông tin tài khoản, đã liên hệ khách..." 
+                    placeholder="Example: Wrong account information, contacted customer" 
                     value={rejectReason}
                     onChange={(e) => setRejectReason(e.target.value)}
                     className="mb-3"
                   />
                   <div className="flex justify-end">
-                    <Button danger type="primary" onClick={handleReject}>Xác nhận Từ Chối</Button>
+                    <Button danger type="primary" onClick={handleReject}>Confirm Reject</Button>
                   </div>
                 </div>
               )}
@@ -322,12 +323,12 @@ export const RefundManagementScreen = () => {
             
             {/* Status Banner */}
             {selectedRecord.status === 'REFUNDED' && (
-              <Alert message="Đơn này đã được hoàn tiền thành công." type="success" showIcon />
+              <Alert message="This application has been successfully refunded" type="success" showIcon />
             )}
             {selectedRecord.status === 'REJECTED' && (
               <Alert 
-                message="Đơn này đã bị từ chối hoàn tiền." 
-                description={<Text className="text-red-700">Lý do: {selectedRecord.rejectReason || 'Không có lý do'}</Text>}
+                message="This application has been Rejected" 
+                description={<Text className="text-red-700">Reason: {selectedRecord.rejectReason || 'No reason'}</Text>}
                 type="error" 
                 showIcon 
               />
@@ -335,41 +336,41 @@ export const RefundManagementScreen = () => {
 
 
 
-            {/* Phần A: Cancellation Audit */}
+            {/* Part A: Cancellation Audit */}
             <div>
-              <Title level={5} className="text-indigo-800 border-b pb-2">A. Phân tích Chính sách Hủy</Title>
+              <Title level={5} className="text-indigo-800 border-b pb-2">ae Policy Analysis Cancel</Title>
               <Timeline className="mt-4"
                 items={[
-                  { color: 'green', children: `Giờ khách đặt: ${selectedRecord.bookingTime}` },
-                  { color: 'blue', children: `Giờ dự kiến vào: ${selectedRecord.expectedInTime}` },
-                  { color: 'red', children: `Giờ khách Hủy: ${selectedRecord.cancelTime}` },
+                  { color: 'green', children: `Booking time: ${selectedRecord.bookingTime}` },
+                  { color: 'blue', children: `Expected in time: ${selectedRecord.expectedInTime}` },
+                  { color: 'red', children: `Cancellation time: ${selectedRecord.cancelTime}` },
                 ]}
               />
               <div className="bg-slate-100 p-4 rounded-lg flex flex-col gap-2">
                 <div className="flex justify-between">
-                  <Text>Tiền khách đã thanh toán:</Text>
-                  <Text strong>{selectedRecord.paidAmount.toLocaleString()} đ</Text>
+                  <Text>Amount paid by customer:</Text>
+                  <Text strong>{selectedRecord.paidAmount.toLocaleString()}  D</Text>
                 </div>
                 <div className="flex justify-between text-red-600">
-                  <Text type="danger">Phí phạt hủy muộn:</Text>
-                  <Text strong>- {selectedRecord.penaltyFee.toLocaleString()} đ</Text>
+                  <Text type="danger">Late cancellation penalty:</Text>
+                  <Text strong>- {selectedRecord.penaltyFee.toLocaleString()}  D</Text>
                 </div>
                 <Divider className="my-2" />
                 <div className="flex justify-between items-center">
-                  <Text strong className="text-base">Thực nhận (Cần chuyển):</Text>
-                  <Text strong className="text-2xl text-red-600">{selectedRecord.refundAmount.toLocaleString()} đ</Text>
+                  <Text strong className="text-base">Actual receipt (Need to be transferred):</Text>
+                  <Text strong className="text-2xl text-red-600">{selectedRecord.refundAmount.toLocaleString()}  D</Text>
                 </div>
               </div>
             </div>
 
-            {/* Phần B: Customer Bank Info */}
+            {/* Part B: Customer Bank Info */}
             <div>
-              <Title level={5} className="text-indigo-800 border-b pb-2">B. Thông tin Nhận tiền</Title>
+              <Title level={5} className="text-indigo-800 border-b pb-2">Be Information Receive money</Title>
               
               {selectedRecord.customerName !== selectedRecord.registeredName && (
                 <Alert 
-                  message="Cảnh báo lệch thông tin!" 
-                  description={`Tên chủ thẻ không khớp với Tên tài khoản App (${selectedRecord.registeredName}). Vui lòng kiểm tra kỹ trước khi chuyển.`}
+                  message="Misinformation warning!" 
+                  description={`Cardholder name does not match App Account Name (${selectedRecord.registeredName}). Please check carefully before proceeding.`}
                   type="warning" 
                   showIcon 
                   icon={<WarningOutlined />}
@@ -380,40 +381,40 @@ export const RefundManagementScreen = () => {
               <div className="flex flex-col gap-3 mt-4">
                 <div className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
                   <div>
-                    <div className="text-xs text-gray-500 mb-1">Ngân hàng</div>
+                    <div className="text-xs text-gray-500 mb-1">Bank</div>
                     <div className="font-bold text-gray-800">{selectedRecord.bankName}</div>
                   </div>
-                  <Button type="text" icon={<CopyOutlined />} onClick={() => handleCopy(selectedRecord.bankName, 'Ngân hàng')} />
+                  <Button type="text" icon={<CopyOutlined />} onClick={() => handleCopy(selectedRecord.bankName, 'Bank')} />
                 </div>
 
                 <div className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
                   <div>
-                    <div className="text-xs text-gray-500 mb-1">Số Tài Khoản</div>
+                    <div className="text-xs text-gray-500 mb-1">Account number</div>
                     <div className="font-bold text-lg text-blue-600 font-mono tracking-wider">{selectedRecord.accountNumber}</div>
                   </div>
-                  <Button type="primary" ghost icon={<CopyOutlined />} onClick={() => handleCopy(selectedRecord.accountNumber, 'Số tài khoản')} />
+                  <Button type="primary" ghost icon={<CopyOutlined />} onClick={() => handleCopy(selectedRecord.accountNumber, 'Account number')} />
                 </div>
 
                 <div className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg shadow-sm">
                   <div>
-                    <div className="text-xs text-gray-500 mb-1">Tên Chủ Tài Khoản</div>
+                    <div className="text-xs text-gray-500 mb-1">Account Owner Name</div>
                     <div className="font-bold text-gray-800">{selectedRecord.accountName}</div>
                   </div>
-                  <Button type="text" icon={<CopyOutlined />} onClick={() => handleCopy(selectedRecord.accountName, 'Tên chủ tài khoản')} />
+                  <Button type="text" icon={<CopyOutlined />} onClick={() => handleCopy(selectedRecord.accountName, 'Account owner name')} />
                 </div>
               </div>
             </div>
 
-            {/* Phần C: Proof Upload */}
+            {/* Part C: Proof Upload */}
             {(selectedRecord.status === 'PENDING' || selectedRecord.proofUrl) && (
               <div>
-                <Title level={5} className="text-indigo-800 border-b pb-2 mb-4">C. Minh chứng Chuyển khoản</Title>
+                <Title level={5} className="text-indigo-800 border-b pb-2 mb-4">Ce Evidence of Transfer</Title>
                 
                 {selectedRecord.proofUrl && (
                   <div className="mb-4 text-center">
                     <img 
                       src={selectedRecord.proofUrl.startsWith('http') ? selectedRecord.proofUrl : `http://localhost:8080${selectedRecord.proofUrl}`} 
-                      alt="Minh chứng" 
+                      alt="Proof" 
                       className="max-w-full h-auto max-h-64 rounded shadow-md border"
                     />
                   </div>
@@ -424,10 +425,11 @@ export const RefundManagementScreen = () => {
                     <p className="ant-upload-drag-icon">
                       <InboxOutlined className="text-blue-500" />
                     </p>
-                    <p className="ant-upload-text font-semibold">Click hoặc Kéo thả ảnh Ủy nhiệm chi vào đây</p>
+                    <p className="ant-upload-text font-semibold">Click or Drag and drop the Delegation photo here</p>
                     <p className="ant-upload-hint px-4 text-xs">
-                      Để đảm bảo an toàn kiểm toán, Kế toán bắt buộc phải tải lên hình ảnh chụp giao dịch chuyển khoản thành công trước khi đóng đơn.
-                    </p>
+                      
+                                                                To ensure audit safety, Accountants are required to upload a photo of the Success transfer transaction before closing the order.
+                                                              </p>
                   </Dragger>
                 )}
               </div>

@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -29,21 +31,35 @@ public class WorkSessionService {
     private final ParkingSessionRepository parkingSessionRepository;
 
     @Transactional
-    public StaffWorkSession startSession(String email, Long gateId) {
+    public StaffWorkSession startSession(String email, Long gateId, String gateType) {
         User staff = userRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("Nhân viên không tồn tại"));
+                .orElseThrow(() -> new IllegalArgumentException("Staff do not agree"));
 
         Gate gate = gateRepository.findById(gateId)
-                .orElseThrow(() -> new IllegalArgumentException("Cổng không tồn tại: " + gateId));
+                .orElseThrow(() -> new IllegalArgumentException("Non-advisors:" + gateId));
 
-        // Close any existing active session for this staff
+        // Check if staff already has an active session
         Optional<StaffWorkSession> existing = workSessionRepository
                 .findByStaffIdAndStatus(staff.getId(), "ACTIVE");
-        existing.ifPresent(s -> {
-            s.setStatus("COMPLETED");
-            s.setLogoutTime(com.pbms.common.utils.TimeProvider.now());
-            workSessionRepository.save(s);
-        });
+        if (existing.isPresent()) {
+            throw new IllegalStateException("You're the one who's going to leave the house." 
+                + existing.get().getGate().getGateName() + ")e I'm happy to see my mother's song");
+        }
+
+        // Check if gate is already taken by an active session
+        Optional<StaffWorkSession> gateExisting = workSessionRepository
+                .findByGateIdAndStatus(gate.getId(), "ACTIVE");
+        if (gateExisting.isPresent()) {
+            throw new IllegalStateException("These people are wrong." 
+                + gateExisting.get().getStaff().getFullName() + "I'm afraid that these staff members are not theirs.");
+        }
+
+        // Update physical gate type if requested by staff to temporarily lock it for this shift
+        if (gateType != null && !gateType.trim().isEmpty() && !gateType.equals("PATROL")) {
+            gate.setGateType(gateType);
+            gate.setStatus("ACTIVE");
+            gateRepository.save(gate);
+        }
 
         StaffWorkSession session = StaffWorkSession.builder()
                 .staff(staff)
@@ -56,16 +72,56 @@ public class WorkSessionService {
     }
 
     @Transactional
-    public Map<String, Object> endSession(String email, BigDecimal declaredCash) {
+    public Map<String, Object> endSession(String email, BigDecimal declaredCash, String varianceReason) {
         User staff = userRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("Nhân viên không tồn tại"));
+                .orElseThrow(() -> new IllegalArgumentException("Staff do not agree"));
 
-        StaffWorkSession session = workSessionRepository
-                .findByStaffIdAndStatus(staff.getId(), "ACTIVE")
-                .orElseThrow(() -> new IllegalStateException("Không tìm thấy ca trực đang mở"));
+        Optional<StaffWorkSession> sessionOpt = workSessionRepository
+                .findByStaffIdAndStatus(staff.getId(), "ACTIVE");
+                
+        if (sessionOpt.isEmpty()) {
+            // Graceful fallback to unstick frontend if local storage is desynced
+            Map<String, Object> result = new HashMap<>();
+            result.put("sessionId", null);
+            result.put("staffName", staff.getFullName());
+            result.put("gateName", "N/A");
+            result.put("message", "Work session checked in successfully");
+            return result;
+        }
 
+        StaffWorkSession session = sessionOpt.get();
         session.setStatus("COMPLETED");
         session.setLogoutTime(com.pbms.common.utils.TimeProvider.now());
+
+        // Calculate expected revenue from preview
+        Map<String, Object> preview = getPreviewSettlement(email);
+        BigDecimal expectedRevenue = preview.get("totalRevenue") != null 
+            ? new BigDecimal(preview.get("totalRevenue").toString()) 
+            : BigDecimal.ZERO;
+        
+        session.setExpectedRevenue(expectedRevenue);
+        session.setActualRevenue(declaredCash);
+        
+        BigDecimal variance = declaredCash.subtract(expectedRevenue);
+        session.setRevenueVariance(variance);
+        
+        String status = "MATCH";
+        if (variance.compareTo(BigDecimal.ZERO) < 0) {
+            status = "SHORT";
+        } else if (variance.compareTo(BigDecimal.ZERO) > 0) {
+            status = "OVER";
+        }
+        session.setDiscrepancyStatus(status);
+        session.setVarianceReason(varianceReason);
+
+        // Reset physical gate type back to generic ENTRY_EXIT after shift ends
+        Gate gate = session.getGate();
+        if (gate != null && !"PATROL".equals(gate.getGateType())) {
+            gate.setGateType("ENTRY_EXIT");
+            gate.setStatus("INACTIVE");
+            gateRepository.save(gate);
+        }
+
         workSessionRepository.save(session);
 
         Map<String, Object> result = new HashMap<>();
@@ -75,13 +131,13 @@ public class WorkSessionService {
         result.put("loginTime", session.getLoginTime());
         result.put("logoutTime", session.getLogoutTime());
         result.put("declaredCash", declaredCash);
-        result.put("message", "Đã đóng ca trực thành công");
+        result.put("message", "Work session checked out successfully");
         return result;
     }
 
     public Map<String, Object> getPreviewSettlement(String email) {
         User staff = userRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("Nhân viên không tồn tại"));
+                .orElseThrow(() -> new IllegalArgumentException("Staff do not agree"));
 
         Optional<StaffWorkSession> sessionOpt = workSessionRepository
                 .findByStaffIdAndStatus(staff.getId(), "ACTIVE");
@@ -94,26 +150,84 @@ public class WorkSessionService {
 
         StaffWorkSession session = sessionOpt.get();
 
-        // Tính tổng doanh thu trong ca
-        List<ParkingSession> completedSessions = parkingSessionRepository
-                .findByGateInIdAndTimeOutBetween(
+        List<ParkingSession> checkIns = parkingSessionRepository
+                .findByGateInIdAndTimeInBetween(
                         session.getGate().getId(),
                         session.getLoginTime(),
                         com.pbms.common.utils.TimeProvider.now()
                 );
 
-        BigDecimal totalRevenue = completedSessions.stream()
-                .map(ps -> ps.getTotalFee() != null ? ps.getTotalFee() : BigDecimal.ZERO)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<ParkingSession> checkOuts = parkingSessionRepository
+                .findByGateOutIdAndTimeOutBetween(
+                        session.getGate().getId(),
+                        session.getLoginTime(),
+                        com.pbms.common.utils.TimeProvider.now()
+                );
+
+        BigDecimal totalRevenue = BigDecimal.ZERO;
+        long totalTransactions = 0;
+
+        if ("IN".equals(session.getGate().getGateType()) || "ENTRY".equals(session.getGate().getGateType())) {
+            totalTransactions = checkIns.size();
+            totalRevenue = BigDecimal.ZERO;
+        } else if ("OUT".equals(session.getGate().getGateType()) || "EXIT".equals(session.getGate().getGateType())) {
+            totalTransactions = checkOuts.size();
+            totalRevenue = checkOuts.stream()
+                    .map(ps -> ps.getTotalFee() != null ? ps.getTotalFee() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        } else {
+            // IN_OUT
+            totalTransactions = checkIns.size() + checkOuts.size();
+            totalRevenue = checkOuts.stream()
+                    .map(ps -> ps.getTotalFee() != null ? ps.getTotalFee() : BigDecimal.ZERO)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
 
         Map<String, Object> preview = new HashMap<>();
         preview.put("hasActiveSession", true);
         preview.put("sessionId", session.getId());
+        preview.put("gateId", session.getGate().getId());
+        preview.put("gateType", session.getGate().getGateType());
         preview.put("staffName", staff.getFullName());
         preview.put("gateName", session.getGate().getGateName());
         preview.put("loginTime", session.getLoginTime());
-        preview.put("totalTransactions", completedSessions.size());
+        preview.put("totalTransactions", totalTransactions);
         preview.put("totalRevenue", totalRevenue);
         return preview;
     }
+
+    public Page<Map<String, Object>> getWorkSessionHistory(String startDateStr, String endDateStr, Pageable pageable) {
+        LocalDateTime startDate = null;
+        LocalDateTime endDate = null;
+        if (startDateStr != null && !startDateStr.isEmpty()) {
+            startDate = LocalDateTime.parse(startDateStr + "T00:00:00");
+        }
+        if (endDateStr != null && !endDateStr.isEmpty()) {
+            endDate = LocalDateTime.parse(endDateStr + "T23:59:59");
+        }
+
+        Page<StaffWorkSession> sessions;
+        if (startDate != null && endDate != null) {
+            sessions = workSessionRepository.findByStatusAndLogoutTimeBetween("COMPLETED", startDate, endDate, pageable);
+        } else {
+            sessions = workSessionRepository.findByStatus("COMPLETED", pageable);
+        }
+
+        return sessions.map(session -> {
+            Map<String, Object> map = new HashMap<>();
+            map.put("id", session.getId());
+            map.put("staffName", session.getStaff().getFullName());
+            map.put("gateName", session.getGate().getGateName());
+            map.put("gateType", session.getGate().getGateType());
+            map.put("loginTime", session.getLoginTime());
+            map.put("logoutTime", session.getLogoutTime());
+            map.put("expectedRevenue", session.getExpectedRevenue());
+            map.put("actualRevenue", session.getActualRevenue());
+            map.put("revenueVariance", session.getRevenueVariance());
+            map.put("discrepancyStatus", session.getDiscrepancyStatus());
+            map.put("varianceReason", session.getVarianceReason());
+            return map;
+        });
+    }
 }
+

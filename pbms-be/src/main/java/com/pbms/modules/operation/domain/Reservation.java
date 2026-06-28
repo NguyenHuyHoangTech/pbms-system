@@ -41,6 +41,9 @@ public class Reservation extends BaseEntity {
     @Column(name = "qr_code", unique = true)
     private String qrCode;
 
+    @Column(name = "notified_early_arrival")
+    private Boolean notifiedEarlyArrival;
+
     @Column(name = "refund_status", length = 50)
     private String refundStatus;
 
@@ -50,4 +53,11 @@ public class Reservation extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "refunded_by")
     private User refundedBy;
+
+    @Column(name = "refund_proof_url", length = 500)
+    private String refundProofUrl;
+
+    @Column(name = "refund_reject_reason", columnDefinition = "VARCHAR(MAX)")
+    private String refundRejectReason;
 }
+

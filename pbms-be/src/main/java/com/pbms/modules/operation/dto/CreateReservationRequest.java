@@ -16,3 +16,4 @@ public class CreateReservationRequest {
     
     private Integer expectedDurationMinutes;
 }
+

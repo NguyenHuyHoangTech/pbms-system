@@ -29,12 +29,12 @@ export const VehicleTypeScreen = () => {
       }
     },
     onSuccess: () => {
-      message.success(`Đã ${editingRecord ? 'cập nhật' : 'thêm mới'} loại phương tiện thành công!`);
+      message.success(`Successfully ${editingRecord ? 'updated' : 'added'} vehicle type!`);
       queryClient.invalidateQueries({ queryKey: ['vehicle-types'] });
       setIsModalOpen(false);
     },
     onError: (error: any) => {
-      message.error(error.response?.data?.message || 'Có lỗi xảy ra.');
+      message.error(error.response?.data?.message || 'An error occurred.');
     }
   });
 
@@ -43,11 +43,11 @@ export const VehicleTypeScreen = () => {
       return await axiosClient.delete(`/operation/vehicle-types/${id}`);
     },
     onSuccess: () => {
-      message.success('Đã xóa loại phương tiện thành công!');
+      message.success('Successfully deleted vehicle type!');
       queryClient.invalidateQueries({ queryKey: ['vehicle-types'] });
     },
     onError: (error: any) => {
-      message.error(error.response?.data?.message || 'Có lỗi xảy ra khi xóa.');
+      message.error(error.response?.data?.message || 'An error occurred while deleting.');
     }
   });
 
@@ -70,30 +70,30 @@ export const VehicleTypeScreen = () => {
 
   const handleDelete = (id: number) => {
     Modal.confirm({
-      title: 'Xác nhận xóa',
-      content: 'Bạn có chắc chắn muốn xóa loại phương tiện này?',
-      okText: 'Xóa',
-      cancelText: 'Hủy',
+      title: 'Confirm delete',
+      content: 'Are you sure you want to delete this vehicle type?',
+      okText: 'Delete',
+      cancelText: 'Cancel',
       onOk: () => deleteMutation.mutate(id)
     });
   };
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', render: (text: string) => <Text strong>VT-{text}</Text> },
-    { title: 'Tên Hiển Thị', dataIndex: 'typeName', key: 'typeName', render: (text: string) => <span className="font-semibold text-blue-700">{text}</span> },
+    { title: 'Display Name', dataIndex: 'typeName', key: 'typeName', render: (text: string) => <span className="font-semibold text-blue-700">{text}</span> },
     { 
-      title: 'Phân Loại', 
+      title: 'Category', 
       dataIndex: 'category', 
       key: 'category',
-      render: (cat: string) => cat === 'FOUR_WHEEL' ? <Space><CarOutlined className="text-blue-600"/> Ô tô 4 bánh</Space> : <Space><AppstoreOutlined className="text-green-600"/> Xe 2 bánh</Space>
+      render: (cat: string) => cat === 'FOUR_WHEEL' ? <Space><CarOutlined className="text-blue-600"/> 4-wheel Car</Space> : <Space><AppstoreOutlined className="text-green-600"/> 2-wheel Vehicle</Space>
     },
     { 
-      title: 'Kích thước Ma trận', 
+      title: 'Matrix Size', 
       key: 'dimensions', 
-      render: (_: any, r: any) => `${r.matrixWidth} ô (Ngang) x ${r.matrixHeight} ô (Dọc)` 
+      render: (_: any, r: any) => `${r.matrixWidth} cells (W) x ${r.matrixHeight} cells (H)` 
     },
     {
-      title: 'Thao tác',
+      title: 'Actions',
       key: 'actions',
       render: (_: any, record: any) => (
         <Space>
@@ -101,7 +101,7 @@ export const VehicleTypeScreen = () => {
             Sửa
           </Button>
           <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)}>
-            Xóa
+            Delete
           </Button>
         </Space>
       )
@@ -116,10 +116,10 @@ export const VehicleTypeScreen = () => {
             <Title level={2} className="m-0 text-gray-800 flex items-center">
               <CarOutlined className="mr-3 text-blue-600" /> Quản lý Loại Phương Tiện
             </Title>
-            <Text type="secondary">Định nghĩa kích thước chuẩn trên ma trận bản đồ cho từng loại xe</Text>
+            <Text type="secondary">Define standard matrix size for each vehicle type</Text>
           </div>
           <Button type="primary" icon={<PlusOutlined />} size="large" onClick={() => handleOpenModal()} className="bg-blue-600">
-            Thêm Loại Xe
+            Thêm Vehicle Type
           </Button>
         </div>
 
@@ -134,32 +134,32 @@ export const VehicleTypeScreen = () => {
         </Card>
 
         <Modal
-          title={editingRecord ? "Chỉnh sửa Loại Phương Tiện" : "Thêm Loại Phương Tiện Mới"}
+          title={editingRecord ? "Edit Vehicle Type" : "Add New Vehicle Type"}
           open={isModalOpen}
           onOk={handleSave}
           onCancel={() => setIsModalOpen(false)}
-          okText="Lưu cấu hình"
-          cancelText="Hủy"
+          okText="Save config"
+          cancelText="Cancel"
           width={600}
           confirmLoading={saveMutation.isPending}
         >
           <Form form={form} layout="vertical" className="mt-4" initialValues={{ category: 'FOUR_WHEEL' }}>
-            <Form.Item name="typeName" label="Tên hiển thị (VD: Ô tô 4 chỗ, Xe tay ga)" rules={[{ required: true }]}>
-              <Input placeholder="Nhập tên hiển thị..." />
+            <Form.Item name="typeName" label="Display Name (E.g. 4-seat car, Scooter)" rules={[{ required: true }]}>
+              <Input placeholder="Enter display name..." />
             </Form.Item>
             
-            <Form.Item name="category" label="Phân Loại Xe" rules={[{ required: true }]}>
+            <Form.Item name="category" label="Vehicle Category" rules={[{ required: true }]}>
               <Select>
-                <Select.Option value="FOUR_WHEEL">Ô tô / Xe 4 bánh</Select.Option>
-                <Select.Option value="TWO_WHEEL">Xe máy / Xe 2 bánh</Select.Option>
+                <Select.Option value="FOUR_WHEEL">Car / 4-wheel vehicle</Select.Option>
+                <Select.Option value="TWO_WHEEL">Motorbike / 2-wheel vehicle</Select.Option>
               </Select>
             </Form.Item>
 
             <div className="grid grid-cols-2 gap-4">
-              <Form.Item name="matrixWidth" label="Kích thước chiều ngang (Ô Grid)" rules={[{ required: true }]}>
+              <Form.Item name="matrixWidth" label="Width (Grid cells)" rules={[{ required: true }]}>
                 <InputNumber className="w-full" min={1} max={100} placeholder="VD: 3" />
               </Form.Item>
-              <Form.Item name="matrixHeight" label="Kích thước chiều dọc (Ô Grid)" rules={[{ required: true }]}>
+              <Form.Item name="matrixHeight" label="Height (Grid cells)" rules={[{ required: true }]}>
                 <InputNumber className="w-full" min={1} max={100} placeholder="VD: 5" />
               </Form.Item>
             </div>

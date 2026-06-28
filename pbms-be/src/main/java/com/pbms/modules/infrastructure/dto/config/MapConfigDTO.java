@@ -16,3 +16,4 @@ public class MapConfigDTO {
     private List<GateConfigDTO> gates;
     private List<VehicleTypeDTO> vehicleTypes;
 }
+

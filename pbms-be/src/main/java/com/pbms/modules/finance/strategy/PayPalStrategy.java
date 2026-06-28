@@ -51,9 +51,9 @@ public class PayPalStrategy implements PaymentStrategy {
             }
         } catch (Exception e) {
             log.error("Error getting PayPal access token: {}", e.getMessage());
-            throw new RuntimeException("PayPal chưa được cấu hình đúng hoặc lỗi kết nối.");
+            throw new RuntimeException("An error occurred");
         }
-        throw new RuntimeException("Không thể lấy PayPal Access Token");
+        throw new RuntimeException("PayPal access Token is not allowed");
     }
 
     @Override
@@ -82,8 +82,8 @@ public class PayPalStrategy implements PaymentStrategy {
                 "intent", "CAPTURE",
                 "purchase_units", Collections.singletonList(purchaseUnit),
                 "application_context", Map.of(
-                        "return_url", "http://localhost:5173/payment/success",
-                        "cancel_url", "http://localhost:5173/payment/cancel",
+                        "return_url", "https://www.google.com/search?q=Thanh+toan+PayPal+Thanh+Cong",
+                        "cancel_url", "https://www.google.com/search?q=Thanh+toan+PayPal+That+Bai",
                         "user_action", "PAY_NOW"
                 )
         );
@@ -105,10 +105,10 @@ public class PayPalStrategy implements PaymentStrategy {
             }
         } catch (Exception e) {
             log.error("Error creating PayPal order: {}", e.getMessage());
-            throw new RuntimeException("Lỗi khi tạo đơn hàng PayPal.");
+            throw new RuntimeException("An error occurred");
         }
         
-        throw new RuntimeException("Không tìm thấy link approval từ PayPal");
+        throw new RuntimeException("Do not check the PayPal approval link");
     }
 
     public boolean captureOrder(String paypalOrderId) {
@@ -151,3 +151,4 @@ public class PayPalStrategy implements PaymentStrategy {
         return "PAYPAL";
     }
 }
+

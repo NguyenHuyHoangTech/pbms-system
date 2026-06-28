@@ -37,3 +37,4 @@ public class PaymentOrder extends BaseEntity {
     @Column(name = "payment_method", length = 50)
     private String paymentMethod; // PAYOS, VNPAY, CASH
 }
+

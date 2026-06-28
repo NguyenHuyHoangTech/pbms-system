@@ -9,3 +9,4 @@ public class RetryConfig {
     // This configuration enables the @Retryable annotation across the project,
     // which is critical for handling OptimisticLockingFailureException during race conditions.
 }
+

@@ -8,6 +8,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import com.pbms.common.annotation.LogAudit;
 
 @RestController
 @RequestMapping("/api/v1/system/configs")
@@ -31,16 +32,19 @@ public class SystemConfigController {
     }
 
     @PostMapping
+    @LogAudit(action = "CREATE", resource = "SystemConfig", description = "What are the results of the month?")
     public ResponseEntity<ApiResponse<SystemConfig>> createConfig(@RequestBody SystemConfig config) {
         return ResponseEntity.ok(ApiResponse.success(service.createConfig(config), "Config created successfully"));
     }
 
     @PutMapping("/{id}")
+    @LogAudit(action = "UPDATE", resource = "SystemConfig", description = "The best results of the month")
     public ResponseEntity<ApiResponse<SystemConfig>> updateConfig(@PathVariable Long id, @RequestBody SystemConfig configDetails) {
         return ResponseEntity.ok(ApiResponse.success(service.updateConfig(id, configDetails), "Config updated successfully"));
     }
 
     @DeleteMapping("/{id}")
+    @LogAudit(action = "DELETE", resource = "SystemConfig", description = "What are the results of the month?")
     public ResponseEntity<ApiResponse<Void>> deleteConfig(@PathVariable Long id) {
         service.deleteConfig(id);
         return ResponseEntity.ok(ApiResponse.success(null, "Config deleted successfully"));
@@ -56,4 +60,15 @@ public class SystemConfigController {
         service.testSmtpConnection(email, password);
         return ResponseEntity.ok(ApiResponse.success("Connection successful", "SMTP credentials are valid"));
     }
+    @PostMapping("/test-paypal")
+    public ResponseEntity<ApiResponse<String>> testPaypal(@RequestBody java.util.Map<String, String> payload) {
+        String clientId = payload.get("clientId");
+        String secret = payload.get("secret");
+        if (clientId == null || secret == null) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Client ID and Secret are required"));
+        }
+        service.testPaypalConnection(clientId, secret);
+        return ResponseEntity.ok(ApiResponse.success("Connection successful", "PayPal credentials are valid"));
+    }
 }
+

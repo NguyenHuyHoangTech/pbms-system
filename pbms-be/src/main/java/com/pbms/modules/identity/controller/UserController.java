@@ -12,6 +12,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import com.pbms.common.annotation.LogAudit;
 
 @RestController
 @RequestMapping("/api/v1/users")
@@ -37,12 +38,14 @@ public class UserController {
     }
 
     @PostMapping
+    @LogAudit(action = "CREATE", resource = "User", description = "How do I block users?")
     public ResponseEntity<ApiResponse<String>> createUser(@Valid @RequestBody UserDTO.CreateUserRequest request) {
         userService.createUser(request);
         return ResponseEntity.ok(ApiResponse.success("User created successfully", "A password has been sent to the user's email"));
     }
 
     @PutMapping("/{id}")
+    @LogAudit(action = "UPDATE", resource = "User", description = "User information cable")
     public ResponseEntity<ApiResponse<String>> updateUser(
             @PathVariable Long id,
             @Valid @RequestBody UserDTO.UpdateUserRequest request,
@@ -52,6 +55,7 @@ public class UserController {
     }
 
     @PutMapping("/{id}/status")
+    @LogAudit(action = "UPDATE", resource = "User", description = "Replacing the fruit with the key")
     public ResponseEntity<ApiResponse<String>> changeUserStatus(
             @PathVariable Long id,
             @RequestParam boolean activate,
@@ -62,8 +66,10 @@ public class UserController {
     }
 
     @PutMapping("/{id}/reset-password")
+    @LogAudit(action = "UPDATE", resource = "User", description = "Reset the user's computer")
     public ResponseEntity<ApiResponse<String>> resetUserPassword(@PathVariable Long id) {
         userService.resetPassword(id);
         return ResponseEntity.ok(ApiResponse.success("Password reset successfully", "New password has been sent to the user's email"));
     }
 }
+

@@ -47,7 +47,7 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
 
   const handleUpdateProfile = (values: any) => {
     updateProfile(values.name);
-    message.success('Cập nhật thông tin thành công!');
+    message.success('Update successful!');
     // Không tự động đóng để người dùng có thể thao tác tiếp nếu muốn
   };
 
@@ -57,33 +57,47 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
       return response.data;
     },
     onSuccess: () => {
-      message.success({ content: 'Liên kết tài khoản Google thành công!', key: 'google', duration: 2 });
+      message.success({ content: 'Link your Google Success account!', key: 'google', duration: 2 });
       linkGoogleAccount(); // Updates local Zustand store (authProvider='GOOGLE')
     },
     onError: (error: any) => {
-      message.error({ content: error.response?.data?.message || 'Lỗi khi liên kết Google', key: 'google', duration: 3 });
+      message.error({ content: error.response?.data?.message || 'Error when linking Google', key: 'google', duration: 3 });
+    }
+  });
+
+  const changePasswordMutation = useMutation({
+    mutationFn: async (values: any) => {
+      const response = await axiosClient.post('/auth/reset-password', {
+        newPassword: values.newPassword,
+        confirmPassword: values.confirmPassword
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      if (!hasPassword) {
+        createPassword(); // Update local Zustand state
+        message.success({ content: 'New Password created Success!', key: 'pwd', duration: 2 });
+      } else {
+        message.success({ content: 'Change Password Success!', key: 'pwd', duration: 2 });
+      }
+      pwdForm.resetFields();
+    },
+    onError: (error: any) => {
+      message.error({ content: error.response?.data?.message || 'Error when changing Password', key: 'pwd', duration: 3 });
     }
   });
 
   const handleChangePassword = (values: any) => {
     if (values.newPassword !== values.confirmPassword) {
-      return message.error('Mật khẩu xác nhận không khớp!');
+      return message.error('Password Confirm does not match!');
     }
-    message.loading({ content: 'Đang xử lý...', key: 'pwd' });
-    setTimeout(() => {
-      if (!hasPassword) {
-        createPassword();
-        message.success({ content: 'Đã tạo mật khẩu mới thành công!', key: 'pwd', duration: 2 });
-      } else {
-        message.success({ content: 'Đổi mật khẩu thành công!', key: 'pwd', duration: 2 });
-      }
-      pwdForm.resetFields();
-    }, 1500);
+    message.loading({ content: 'Processingeee', key: 'pwd' });
+    changePasswordMutation.mutate(values);
   };
 
   return (
     <Modal
-      title={<span className="text-xl font-bold">Cài Đặt Tài Khoản</span>}
+      title={<span className="text-xl font-bold">Settings Account</span>}
       open={isOpen}
       onCancel={onClose}
       footer={null}
@@ -92,53 +106,54 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
     >
       <Tabs activeKey={activeTab} onChange={setActiveTab} className="mt-4">
         
-        {/* TAB 1: THÔNG TIN CÁ NHÂN */}
-        <Tabs.TabPane tab={<span><UserOutlined />Hồ sơ</span>} key="1">
+        {/* TAB 1: PERSONAL INFO */}
+        <Tabs.TabPane tab={<span><UserOutlined />File</span>} key="1">
           <Form form={form} layout="vertical" onFinish={handleUpdateProfile} className="mt-2">
-            <Form.Item label="Email đăng nhập">
+            <Form.Item label="Email Login">
               <Input disabled value={email || ''} className="bg-gray-50 text-gray-500" />
             </Form.Item>
             <Form.Item 
               name="name" 
-              label="Tên hiển thị" 
-              rules={[{ required: true, message: 'Vui lòng nhập tên hiển thị!' }]}
+              label="Display name" 
+              rules={[{ required: true, message: 'Please enter a display name!' }]}
             >
-              <Input placeholder="Nhập tên của bạn" size="large" />
+              <Input placeholder="Enter your name" size="large" />
             </Form.Item>
             <Button type="primary" htmlType="submit" icon={<SaveOutlined />} size="large" className="w-full mt-2">
-              Lưu Thay Đổi
-            </Button>
+              
+                                        Save Changes
+                                      </Button>
           </Form>
         </Tabs.TabPane>
 
-        {/* TAB 2: BẢO MẬT */}
-        <Tabs.TabPane tab={<span><SafetyCertificateOutlined />Bảo mật & Liên kết</span>} key="2">
+        {/* TAB 2: SECURITY */}
+        <Tabs.TabPane tab={<span><SafetyCertificateOutlined />Security & Links</span>} key="2">
           <div className="mt-2 space-y-6">
             
-            {/* THÔNG TIN TÀI KHOẢN */}
+            {/* Account Information */}
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
               <div className="flex justify-between items-center mb-2">
-                <Text strong className="text-gray-700">Trạng thái liên kết Google:</Text>
+                <Text strong className="text-gray-700">Google link status:</Text>
                 {authProvider === 'GOOGLE' ? (
-                  <span className="text-green-600 font-bold text-sm bg-green-100 px-2 py-1 rounded">Đã liên kết</span>
+                  <span className="text-green-600 font-bold text-sm bg-green-100 px-2 py-1 rounded">Linked</span>
                 ) : (
-                  <span className="text-gray-500 text-sm">Chưa liên kết</span>
+                  <span className="text-gray-500 text-sm">Not linked yet</span>
                 )}
               </div>
               
               {authProvider !== 'GOOGLE' ? (
                 <>
-                  <Text className="text-xs text-gray-500 block mb-3">Liên kết tài khoản Google giúp bạn đăng nhập nhanh chóng mà không cần nhập mật khẩu hay mã OTP.</Text>
+                  <Text className="text-xs text-gray-500 block mb-3">Linking your Google account helps you Login quickly without needing to enter a Password or OTPe code</Text>
                   <div className="flex justify-center mt-2">
                     <GoogleLogin
                       onSuccess={(credentialResponse) => {
-                        message.loading({ content: 'Đang xác thực với server...', key: 'google' });
+                        message.loading({ content: 'Authenticating with servereee', key: 'google' });
                         if (credentialResponse.credential) {
                           linkGoogleMutation.mutate(credentialResponse.credential);
                         }
                       }}
                       onError={() => {
-                        message.error('Đăng nhập Google thất bại');
+                        message.error('Login Google Failed');
                       }}
                       useOneTap={false}
                       theme="outline"
@@ -149,18 +164,18 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
               ) : (
                 <div className="flex items-center space-x-2 text-sm text-gray-600">
                   <GoogleOutlined className="text-red-500" />
-                  <Text>Tài khoản này đang sử dụng đăng nhập qua Google.</Text>
+                  <Text>This account is using Login via Google</Text>
                 </div>
               )}
             </div>
 
             <Divider className="my-0" />
 
-            {/* QUẢN LÝ MẬT KHẨU */}
+            {/* Management Password */}
             <div>
               <Title level={5} className="mb-4">
                 <LockOutlined className="mr-2 text-blue-500" />
-                {hasPassword ? 'Đổi Mật Khẩu' : 'Tạo Mật Khẩu Đăng Nhập'}
+                {hasPassword ? 'Change Password' : 'Create Password Login'}
               </Title>
               
               {!hasPassword && (
@@ -168,8 +183,8 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
                   type="info" 
                   showIcon 
                   className="mb-4"
-                  message="Bạn chưa có mật khẩu"
-                  description="Bạn đang đăng nhập bằng Google. Hãy tạo một mật khẩu để có thể đăng nhập trực tiếp bằng Email mà không cần thông qua Google."
+                  message="You don't have a Password yet"
+                  description="You are Login with Google. Please create a Password so you can Log in directly by Email without going through Google."
                 />
               )}
 
@@ -177,34 +192,37 @@ export const UserProfileSettingsModal: React.FC<UserProfileSettingsModalProps> =
                 {hasPassword && (
                   <Form.Item 
                     name="oldPassword" 
-                    label="Mật khẩu hiện tại"
-                    rules={[{ required: true, message: 'Nhập mật khẩu hiện tại' }]}
+                    label="Current password"
+                    rules={[{ required: true, message: 'Enter current Password' }]}
                   >
-                    <Input.Password placeholder="Nhập mật khẩu cũ..." />
+                    <Input.Password placeholder="Enter old Passwordeee" />
                   </Form.Item>
                 )}
                 
                 <Form.Item 
                   name="newPassword" 
-                  label="Mật khẩu mới"
+                  label="New Password "
                   rules={[
-                    { required: true, message: 'Nhập mật khẩu mới' },
-                    { min: 6, message: 'Mật khẩu phải từ 6 ký tự' }
+                    { required: true, message: 'Enter new Password' },
+                    { 
+                      pattern: /^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[@#$%^&+=!_]).{8,20}$/,
+                      message: 'Password must be 8-20 characters, including uppercase letters, lowercase letters, numbers and special characters'
+                    }
                   ]}
                 >
-                  <Input.Password placeholder="Nhập mật khẩu mới..." />
+                  <Input.Password placeholder="Enter new Passwordeee" />
                 </Form.Item>
                 
                 <Form.Item 
                   name="confirmPassword" 
-                  label="Xác nhận mật khẩu mới"
-                  rules={[{ required: true, message: 'Xác nhận lại mật khẩu mới' }]}
+                  label="Confirm password"
+                  rules={[{ required: true, message: 'Confirm new Password' }]}
                 >
-                  <Input.Password placeholder="Nhập lại mật khẩu mới..." />
+                  <Input.Password placeholder="Re-enter the new Password" />
                 </Form.Item>
 
                 <Button type="primary" htmlType="submit" className="w-full">
-                  {hasPassword ? 'Đổi Mật Khẩu' : 'Tạo Mật Khẩu'}
+                  {hasPassword ? 'Change Password' : 'Create Password'}
                 </Button>
               </Form>
             </div>

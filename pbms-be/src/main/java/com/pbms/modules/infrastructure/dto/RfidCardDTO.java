@@ -11,3 +11,4 @@ public class RfidCardDTO {
     private String status;
     private String location;
 }
+

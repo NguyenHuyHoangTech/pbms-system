@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   Typography, Select, Button, InputNumber, Input, 
-  Card, message, Space, Tooltip, Spin
+  Card, message, Space, Tooltip, Spin, DatePicker
 } from 'antd';
 import { 
   SaveOutlined, 
@@ -18,6 +18,7 @@ import {
   Legend, ReferenceLine, ResponsiveContainer, Tooltip as RechartsTooltip
 } from 'recharts';
 import axiosClient from '../../core/api/axiosClient';
+import { simulatedDayjs } from '../../core/utils/timeProvider';
 
 const { Title, Text } = Typography;
 
@@ -60,6 +61,7 @@ export const VehicleRoutingScreen = () => {
   const [saving, setSaving] = useState(false);
   const [timeFrames, setTimeFrames] = useState<TimeFrameRuleDTO[]>([]);
   const [chartDataRaw, setChartDataRaw] = useState<ZoneTrendDTO[]>([]);
+  const [selectedTrendDate, setSelectedTrendDate] = useState<any>(simulatedDayjs());
 
   const fetchRules = async (vehicleType: string) => {
     try {
@@ -68,7 +70,7 @@ export const VehicleRoutingScreen = () => {
       const data: TimeFrameRuleDTO[] = res.data.data || [];
       setTimeFrames(data);
     } catch (error) {
-      message.error("Lỗi khi tải cấu hình điều phối");
+      message.error("Error loading dispatcher configuration");
     } finally {
       setLoading(false);
     }
@@ -76,10 +78,11 @@ export const VehicleRoutingScreen = () => {
 
   const fetchTrends = async () => {
     try {
-      const res = await axiosClient.get(`/manager/zone-trends`);
+      const dateStr = selectedTrendDate?.format('YYYY-MM-DD') || simulatedDayjs().format('YYYY-MM-DD');
+      const res = await axiosClient.get(`/manager/zone-trends?date=${dateStr}`);
       setChartDataRaw(res.data.data || []);
     } catch (error) {
-      console.error("Lỗi khi tải biểu đồ", error);
+      console.error("Error when loading chart", error);
     }
   };
 
@@ -96,7 +99,7 @@ export const VehicleRoutingScreen = () => {
         }
       }
     } catch (error) {
-      console.error("Lỗi tải cấu hình map", error);
+      console.error("Error loading map configuration", error);
     }
   };
 
@@ -108,8 +111,13 @@ export const VehicleRoutingScreen = () => {
 
   useEffect(() => {
     fetchMapConfig();
-    fetchTrends();
   }, []);
+
+  useEffect(() => {
+    if (selectedTrendDate) {
+      fetchTrends();
+    }
+  }, [selectedTrendDate]);
 
   const handleFloorChange = (val: number) => {
     setSelectedFloor(val);
@@ -195,7 +203,7 @@ export const VehicleRoutingScreen = () => {
       const defaultIdx = copy.findIndex(tf => tf.isDefault);
       copy.splice(defaultIdx, 0, {
         timeFrameId: `tf_${Date.now()}`,
-        name: `Khung giờ mới`,
+        name: `New time frame`,
         startTime: '07:00',
         endTime: '10:00',
         isDefault: false,
@@ -215,7 +223,7 @@ export const VehicleRoutingScreen = () => {
     for (let i = 0; i < specificFrames.length; i++) {
       const f1 = specificFrames[i];
       if (!f1.startTime || !f1.endTime) {
-        message.error("Vui lòng điền đầy đủ giờ bắt đầu và kết thúc");
+        message.error("Please fill in the full start and end times");
         return true;
       }
       for (let j = i + 1; j < specificFrames.length; j++) {
@@ -229,7 +237,7 @@ export const VehicleRoutingScreen = () => {
         const end2 = parseInt(f2.endTime.split(':')[0]) * 60 + parseInt(f2.endTime.split(':')[1]);
 
         if (start1 < end2 && start2 < end1) {
-          message.error(`Khung giờ ${f1.startTime}-${f1.endTime} bị trùng lặp với khung ${f2.startTime}-${f2.endTime}`);
+          message.error(`Time frame ${f1.startTime}-${f1.endTime} overlaps with frame ${f2.startTime}-${f2.endTime}`);
           return true; // overlapping
         }
       }
@@ -255,10 +263,10 @@ export const VehicleRoutingScreen = () => {
         }))
       };
       await axiosClient.put(`/manager/routing-rules`, payload);
-      message.success('Cấu hình điều phối đã được lưu thành công!');
+      message.success('Dispatcher configuration saved Success!');
       fetchRules(selectedVehicle);
     } catch (error) {
-      message.error("Lỗi khi lưu cấu hình");
+      message.error("Error when saving configuration");
     } finally {
       setSaving(false);
     }
@@ -270,19 +278,19 @@ export const VehicleRoutingScreen = () => {
       {/* HEADER */}
       <div className="bg-white px-8 py-5 border-b border-gray-200 sticky top-0 z-10 flex justify-between items-center shadow-sm">
         <div>
-          <Title level={2} className="m-0 text-gray-800">Điều Phối Zone Tự Động</Title>
-          <Text type="secondary" className="text-base">Thiết lập luồng định tuyến xe thông minh theo từng khung giờ dựa trên ngưỡng dâng nước</Text>
+          <Title level={2} className="m-0 text-gray-800">Automatic Zone Coordination</Title>
+          <Text type="secondary" className="text-base">Set up smart vehicle routing for each time frame based on water level threshold</Text>
         </div>
         
         <Space size="middle" className="bg-gray-50 p-2 rounded-xl border border-gray-200">
            <Select 
               value={selectedFloor} 
               onChange={handleFloorChange}
-              options={floors.map(f => ({ label: `Tầng ${f.name}`, value: f.id }))}
+              options={floors.map(f => ({ label: `Floor ${f.name}`, value: f.id }))}
               className="w-32"
               size="large"
               bordered={false}
-              placeholder="Chọn tầng"
+              placeholder="Select floor"
            />
            <div className="w-px h-6 bg-gray-300"></div>
            <Select 
@@ -296,7 +304,7 @@ export const VehicleRoutingScreen = () => {
                         return floorObj ? v.category === floorObj.type : false;
                       })
                       .map(v => ({ 
-                        label: v.typeName === 'CAR' ? 'Ô tô' : (v.typeName === 'MOTO' ? 'Xe máy' : v.typeName), 
+                        label: v.typeName === 'CAR' ? 'Car' : (v.typeName === 'MOTO' ? 'Motorbike' : v.typeName), 
                         value: v.typeName 
                       }))
                   : []
@@ -304,7 +312,7 @@ export const VehicleRoutingScreen = () => {
               className="w-32"
               size="large"
               bordered={false}
-              placeholder="Chọn xe"
+              placeholder="Select car"
            />
         </Space>
       </div>
@@ -314,11 +322,20 @@ export const VehicleRoutingScreen = () => {
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 mb-8">
           <div className="flex justify-between items-start mb-6">
             <div>
-              <Title level={4} className="m-0 flex items-center gap-2"><DashboardOutlined className="text-blue-600"/> Dâng Nước Từng Zone Hôm Nay</Title>
-              <Text type="secondary">Đo đạc đỉnh lấp đầy mỗi giờ thông qua hệ thống cảm biến AI/IoT</Text>
+              <Title level={4} className="m-0 flex items-center gap-2"><DashboardOutlined className="text-blue-600"/>  Water Leveling Each Zone Automatically</Title>
+              <Text type="secondary">Measure peak fill every hour through AI/IoT Sensor System</Text>
             </div>
-            <div className="flex items-center gap-2 text-sm bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-100 font-medium">
-               Cập nhật tự động mỗi giờ
+            <div className="flex flex-col items-end gap-2">
+              <DatePicker 
+                value={selectedTrendDate} 
+                onChange={setSelectedTrendDate} 
+                format="DD/MM/YYYY" 
+                allowClear={false}
+              />
+              <div className="text-sm bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-100 font-medium">
+                 
+                                               Update automatically every hour
+                                            </div>
             </div>
           </div>
           
@@ -329,11 +346,11 @@ export const VehicleRoutingScreen = () => {
               <YAxis axisLine={false} tickLine={false} tick={{fill: '#6b7280', fontSize: 12}} dx={-10} domain={[0, 100]} />
               <RechartsTooltip 
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                formatter={(value: number) => [`${value}%`, ''] as any}
+                formatter={(value: any) => [`${value}%`, '']}
               />
               <Legend iconType="circle" wrapperStyle={{ paddingTop: '10px' }} />
               
-              <ReferenceLine y={90} stroke="#ef4444" strokeDasharray="5 5" strokeWidth={2} label={{ position: 'top', value: 'Ngưỡng Critical 90%', fill: '#ef4444', fontSize: 12, fontWeight: 'bold' }} />
+              <ReferenceLine y={90} stroke="#ef4444" strokeDasharray="5 5" strokeWidth={2} label={{ position: 'top', value: 'Critical Threshold 90%', fill: '#ef4444', fontSize: 12, fontWeight: 'bold' }} />
               
               {zoneNames.map((name, idx) => (
                  <Line key={name} type="monotone" dataKey={name} stroke={COLORS[idx % COLORS.length]} strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
@@ -348,11 +365,11 @@ export const VehicleRoutingScreen = () => {
         <div className="flex justify-between items-center mb-6">
            <div>
              <Title level={3} className="m-0 flex items-center gap-2 text-gray-800">
-               <NodeIndexOutlined className="text-blue-600" /> Cấu Hình Theo Khung Giờ
-             </Title>
-             <Text type="secondary">Thêm khung giờ và kéo thả để ưu tiên luồng cho mỗi khung. Khung cuối là dự phòng.</Text>
+               <NodeIndexOutlined className="text-blue-600" />  Configuration According to Time Frame
+                                       </Title>
+             <Text type="secondary">Add time frames and drag and drop to prioritize the flow for each frame. The last frame is redundant</Text>
            </div>
-           <Button type="primary" ghost icon={<PlusOutlined />} onClick={handleAddFrame}>Thêm Khung Giờ</Button>
+           <Button type="primary" ghost icon={<PlusOutlined />} onClick={handleAddFrame}>Add Time Frame</Button>
         </div>
 
         <Spin spinning={loading}>
@@ -391,8 +408,9 @@ export const VehicleRoutingScreen = () => {
                     
                     {frame.isDefault && (
                       <div className="text-sm text-gray-500 italic">
-                        Áp dụng khi ngoài các khung giờ cụ thể bên trên.
-                      </div>
+                        
+                                                            Applicable outside the specific time frames above
+                                                          </div>
                     )}
 
                     {!frame.isDefault && (
@@ -403,7 +421,7 @@ export const VehicleRoutingScreen = () => {
                         className="absolute right-0 top-0 xl:static xl:mt-auto xl:w-fit"
                         onClick={() => handleRemoveFrame(frame.timeFrameId)}
                       >
-                        Xóa Khung
+                        Delete Khung
                       </Button>
                     )}
                   </div>
@@ -428,7 +446,7 @@ export const VehicleRoutingScreen = () => {
 
                             <div className="flex items-center justify-between w-full">
                               <div className="flex flex-col items-start">
-                                <span className="text-[10px] text-gray-400 uppercase tracking-wide">Ngưỡng</span>
+                                <span className="text-[10px] text-gray-400 uppercase tracking-wide">Threshold</span>
                                 <InputNumber 
                                   value={rule.fillThresholdPct} 
                                   onChange={(val) => updateThreshold(frame.timeFrameId, index, val)}
@@ -478,7 +496,7 @@ export const VehicleRoutingScreen = () => {
       {/* BOTTOM ACTION BAR */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] z-50 flex justify-end px-8">
          <Space size="large">
-            <Text type="secondary" className="hidden sm:inline-block">Cấu hình sẽ được đồng bộ xuống Backend và Gate ngay lập tức.</Text>
+            <Text type="secondary" className="hidden sm:inline-block">The configuration will be synchronized to the Backend and Gate immediately</Text>
             <Button 
               type="primary" 
               size="large" 
@@ -487,8 +505,9 @@ export const VehicleRoutingScreen = () => {
               loading={saving}
               className="bg-blue-600 hover:bg-blue-500 font-bold px-8 h-12 text-lg shadow-md"
             >
-              LƯU CẤU HÌNH ĐIỀU PHỐI
-            </Button>
+              
+                                    SAVE THE COORDINATE CONFIGURATION
+                                  </Button>
          </Space>
       </div>
 

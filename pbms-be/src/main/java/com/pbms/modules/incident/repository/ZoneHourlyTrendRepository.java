@@ -11,3 +11,4 @@ import java.util.List;
 public interface ZoneHourlyTrendRepository extends JpaRepository<ZoneHourlyTrend, Long> {
     List<ZoneHourlyTrend> findByTimeWindowBetween(LocalDateTime start, LocalDateTime end);
 }
+

@@ -25,3 +25,4 @@ public class RefundRequestDTO {
     private String rejectReason;
     private String proofUrl;
 }
+

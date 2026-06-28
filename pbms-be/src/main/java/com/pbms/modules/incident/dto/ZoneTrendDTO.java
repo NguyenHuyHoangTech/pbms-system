@@ -18,3 +18,4 @@ public class ZoneTrendDTO {
     private String zoneName;
     private BigDecimal occupancyPct;
 }
+

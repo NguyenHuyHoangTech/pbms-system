@@ -14,10 +14,10 @@ public class WebSocketEventPublisher {
     }
 
     /**
-     * Gửi tin nhắn Broadcast (Tất cả những ai subscribe Topic đều nhận được)
+     * Gá»­i tin nháº¯n Broadcast (Táº¥t cáº£ nhá»¯ng ai subscribe Topic Ä‘á»u nháº­n Ä‘Æ°á»£c)
      * @param topic Destination (VD: "/topic/slots/status")
-     * @param eventType Loại sự kiện (VD: "SLOT_UPDATED")
-     * @param payload Dữ liệu lõi
+     * @param eventType Loáº¡i sá»± kiá»‡n (VD: "SLOT_UPDATED")
+     * @param payload Dá»¯ liá»‡u lÃµi
      */
     public void broadcastEvent(String topic, String eventType, Object payload) {
         WsMessageWrapper<Object> message = WsMessageWrapper.of(eventType, payload);
@@ -25,7 +25,7 @@ public class WebSocketEventPublisher {
     }
 
     /**
-     * Gửi tin nhắn Broadcast khẩn cấp
+     * Gá»­i tin nháº¯n Broadcast kháº©n cáº¥p
      */
     public void broadcastCriticalEvent(String topic, String eventType, Object payload) {
         WsMessageWrapper<Object> message = WsMessageWrapper.of(eventType, "CRITICAL", payload);
@@ -33,14 +33,15 @@ public class WebSocketEventPublisher {
     }
 
     /**
-     * Gửi tin nhắn Unicast cho một User cụ thể (Ví dụ màn hình Gateway của nhân viên)
-     * @param username Email hoặc ID của User
+     * Gá»­i tin nháº¯n Unicast cho má»™t User cá»¥ thá»ƒ (VÃ­ dá»¥ mÃ n hÃ¬nh Gateway cá»§a nhÃ¢n viÃªn)
+     * @param username Email hoáº·c ID cá»§a User
      * @param queue Destination queue (VD: "/queue/gates/GATE_IN_01/scans")
-     * @param eventType Loại sự kiện
-     * @param payload Dữ liệu lõi
+     * @param eventType Loáº¡i sá»± kiá»‡n
+     * @param payload Dá»¯ liá»‡u lÃµi
      */
     public void unicastEvent(String username, String queue, String eventType, Object payload) {
         WsMessageWrapper<Object> message = WsMessageWrapper.of(eventType, payload);
         messagingTemplate.convertAndSendToUser(username, queue, message);
     }
 }
+

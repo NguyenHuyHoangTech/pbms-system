@@ -4,6 +4,10 @@ import com.pbms.common.dto.ApiResponse;
 import com.pbms.modules.infrastructure.service.ZoneService;
 import com.pbms.modules.system.domain.BuildingProfile;
 import com.pbms.modules.system.service.BuildingProfileService;
+import com.pbms.modules.operation.service.VehicleTypeService;
+import com.pbms.modules.infrastructure.dto.config.VehicleTypeDTO;
+import com.pbms.modules.system.service.SystemConfigService;
+import com.pbms.modules.system.domain.SystemConfig;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,38 +26,52 @@ public class PublicController {
 
     private final ZoneService zoneService;
     private final BuildingProfileService buildingProfileService;
+    private final VehicleTypeService vehicleTypeService;
+    private final SystemConfigService systemConfigService;
+
+    @GetMapping("/time-offset")
+    public ResponseEntity<ApiResponse<Long>> getTimeOffset() {
+        try {
+            SystemConfig config = systemConfigService.getConfigByKey("TIME_SIMULATED_OFFSET_SECONDS");
+            long offset = Long.parseLong(config.getConfigValue());
+            return ResponseEntity.ok(ApiResponse.success(offset, "This is a challenge for a long time."));
+        } catch (Exception e) {
+            return ResponseEntity.ok(ApiResponse.success(0L, "Don't pay attention to the mood over time"));
+        }
+    }
+
+    @GetMapping("/vehicle-types")
+    public ResponseEntity<ApiResponse<List<VehicleTypeDTO>>> getVehicleTypes() {
+        return ResponseEntity.ok(ApiResponse.success(vehicleTypeService.getAllVehicleTypes(), "Vehicle types retrieved successfully"));
+    }
 
     @GetMapping("/building-profile")
     public ResponseEntity<ApiResponse<BuildingProfile>> getBuildingProfile() {
-        return ResponseEntity.ok(ApiResponse.success(buildingProfileService.getProfile(), "Lấy thông tin tòa nhà thành công"));
+        return ResponseEntity.ok(ApiResponse.success(buildingProfileService.getProfile(), "Let's get information from the house as well"));
     }
 
     @GetMapping("/parking-status")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getParkingStatus() {
-        // Calculate total available slots by vehicle category
         List<Map<String, Object>> statusList = new ArrayList<>();
         
-        // Mock data logic for vehicle categories since we don't have direct vehicle types access here easily
-        // In reality, this should aggregate slots based on the zones' vehicle categories
-        Map<String, Object> carMap = new HashMap<>();
-        carMap.put("type", "CAR");
-        carMap.put("label", "Ô TÔ");
-        carMap.put("available", 45); // Should calculate from Zones
+        List<VehicleTypeDTO> vehicleTypes = vehicleTypeService.getAllVehicleTypes();
+        List<com.pbms.modules.infrastructure.dto.ZoneDTO> zones = zoneService.getMapZones();
+        
+        for (VehicleTypeDTO type : vehicleTypes) {
+            int available = 0;
+            for (com.pbms.modules.infrastructure.dto.ZoneDTO zone : zones) {
+                if (zone.getVehicleTypeId() != null && zone.getVehicleTypeId().equals(type.getId())) {
+                    available += zone.getAvailableSlots();
+                }
+            }
+            Map<String, Object> map = new HashMap<>();
+            map.put("type", type.getCategory()); 
+            map.put("label", type.getTypeName());
+            map.put("available", available);
+            statusList.add(map);
+        }
 
-        Map<String, Object> motoMap = new HashMap<>();
-        motoMap.put("type", "MOTORBIKE");
-        motoMap.put("label", "XE MÁY");
-        motoMap.put("available", 210);
-
-        Map<String, Object> ebikeMap = new HashMap<>();
-        ebikeMap.put("type", "EBIKE");
-        ebikeMap.put("label", "XE ĐẠP ĐIỆN");
-        ebikeMap.put("available", 15);
-
-        statusList.add(carMap);
-        statusList.add(motoMap);
-        statusList.add(ebikeMap);
-
-        return ResponseEntity.ok(ApiResponse.success(statusList, "Lấy trạng thái bãi xe thành công"));
+        return ResponseEntity.ok(ApiResponse.success(statusList, "Fraudulently deleting the car"));
     }
 }
+

@@ -20,7 +20,9 @@ public class PricingPolicyDTO {
     private Integer globalBaseMins;
     private BigDecimal globalBaseFee;
     private BigDecimal maxParkingCap;
+    private BigDecimal monthlyRate;
     private String status;
     @Builder.Default
     private List<PricingShiftDTO> shifts = new ArrayList<>();
 }
+

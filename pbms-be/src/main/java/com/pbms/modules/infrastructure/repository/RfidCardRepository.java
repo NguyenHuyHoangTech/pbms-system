@@ -12,3 +12,4 @@ public interface RfidCardRepository extends JpaRepository<RfidCard, Long> {
     Optional<RfidCard> findByCardCode(String cardCode);
     List<RfidCard> findByStatus(String status);
 }
+

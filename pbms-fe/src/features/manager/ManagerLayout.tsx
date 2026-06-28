@@ -21,8 +21,9 @@ import {
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../core/store/useAuthStore';
 import { UserProfileSettingsModal } from '../shared/components/UserProfileSettingsModal';
+import { SystemClock } from '../shared/components/SystemClock';
 
-const { Sider, Content } = Layout;
+const { Sider, Content, Header } = Layout;
 const { Text } = Typography;
 
 export const ManagerLayout = () => {
@@ -39,27 +40,63 @@ export const ManagerLayout = () => {
     navigate('/login');
   };
 
-  const menuItems = [
-    { key: '/manager/revenue-dashboard', icon: <DashboardOutlined />, label: 'Doanh Thu' },
-    { key: '/manager/operational-dashboard', icon: <DashboardOutlined />, label: 'Vận Hành' },
-    { key: '/manager/routing', icon: <NodeIndexOutlined />, label: 'Điều Phối Tuyến' },
-    { key: '/manager/pre-bookings', icon: <ScheduleOutlined />, label: 'Quản Lý Đặt Trước' },
-    { key: '/manager/space-map', icon: <BlockOutlined />, label: 'Sơ Đồ Bãi Đỗ' },
-    { key: '/manager/vehicle-types', icon: <CarOutlined />, label: 'Loại Phương Tiện' },
-    { key: '/manager/pricing-config', icon: <DollarOutlined />, label: 'Cấu Hình Giá' },
-    { key: '/manager/refund-management', icon: <DollarOutlined />, label: 'Quản Lý Hoàn Tiền' },
-    { key: '/manager/monthly-passes', icon: <IdcardOutlined />, label: 'Vé Tháng' },
-    { key: '/manager/building-profile', icon: <BankOutlined />, label: 'Hồ Sơ Tòa Nhà' },
-    { key: '/manager/card-management', icon: <CreditCardOutlined />, label: 'Kho Thẻ (RFID)' },
-    { key: '/manager/ticket-center', icon: <CustomerServiceOutlined />, label: 'Trung Tâm Xử Lý' },
-    { key: '/manager/incidents', icon: <WarningOutlined />, label: 'Quản Lý Sự Cố' },
-  ];
+    const menuItems: any[] = [
+      {
+        key: 'sub-overview',
+        label: 'Overview',
+        icon: <DashboardOutlined />,
+        children: [
+          { key: '/manager/revenue-dashboard', label: 'Revenue Dashboard' },
+          { key: '/manager/operational-dashboard', label: 'Operate Dashboard' },
+        ],
+      },
+      {
+        key: 'sub-operations',
+        label: 'Operations',
+        icon: <CustomerServiceOutlined />,
+        children: [
+          { key: '/manager/space-map', label: 'Space Map', icon: <BlockOutlined /> },
+          { key: '/manager/routing', label: 'Routing', icon: <NodeIndexOutlined /> },
+          { key: '/manager/incidents', label: 'Incident Management', icon: <WarningOutlined /> },
+          { key: '/manager/ticket-center', label: 'Processing Center' },
+        ],
+      },
+      {
+        key: 'sub-assets-pricing',
+        label: 'Asset & Pricing',
+        icon: <CarOutlined />,
+        children: [
+          { key: '/manager/vehicle-types', label: 'Vehicle Type' },
+          { key: '/manager/pricing-config', label: 'Price Configuration' },
+          { key: '/manager/monthly-passes', label: 'Monthly Passes', icon: <IdcardOutlined /> },
+          { key: '/manager/pre-bookings', label: 'Pre-booking Management', icon: <ScheduleOutlined /> },
+        ],
+      },
+      {
+        key: 'sub-revenue',
+        label: 'Revenue & Financial',
+        icon: <DollarOutlined />,
+        children: [
+          { key: '/manager/shift-revenue', label: 'Shift Revenue' },
+          { key: '/manager/refund-management', label: 'Refund Management' },
+        ],
+      },
+      {
+        key: 'sub-system',
+        label: 'System & Storage',
+        icon: <SettingOutlined />,
+        children: [
+          { key: '/manager/card-management', label: 'Card Warehouse', icon: <CreditCardOutlined /> },
+          { key: '/manager/building-profile', label: 'Building Profile', icon: <BankOutlined /> },
+        ],
+      }
+    ];
 
-  const userMenu = {
+  const userMenu: any = {
     items: [
-      { key: 'settings', icon: <SettingOutlined />, label: 'Cài đặt', onClick: () => setIsSettingsOpen(true) },
+      { key: 'settings', icon: <SettingOutlined />, label: 'Setting', onClick: () => setIsSettingsOpen(true) },
       { type: 'divider' },
-      { key: 'logout', icon: <LogoutOutlined />, label: 'Đăng xuất', onClick: handleLogout, danger: true },
+      { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', onClick: handleLogout, danger: true },
     ],
   };
 
@@ -91,8 +128,9 @@ export const ManagerLayout = () => {
           <Menu
             theme="light"
             mode="inline"
+            defaultOpenKeys={['sub-overview', 'sub-operations', 'sub-assets-pricing', 'sub-revenue', 'sub-system']}
             selectedKeys={[location.pathname]}
-            items={menuItems}
+            items={menuItems as any}
             onClick={({ key }) => navigate(key)}
             className="border-r-0 mt-4"
           />
@@ -105,7 +143,7 @@ export const ManagerLayout = () => {
               {!collapsed && (
                 <div className="flex flex-col overflow-hidden">
                   <Text strong className="text-gray-700 truncate">{name || email || 'Manager'}</Text>
-                  <Text type="secondary" className="text-xs">Quản lý</Text>
+                  <Text type="secondary" className="text-xs">Management</Text>
                 </div>
               )}
             </div>
@@ -114,6 +152,9 @@ export const ManagerLayout = () => {
       </Sider>
       
       <Layout className="h-screen">
+        <Header className="bg-white px-6 flex justify-end items-center shadow-sm z-10 sticky top-0 w-full h-16" style={{ backgroundColor: '#ffffff' }}>
+          <SystemClock />
+        </Header>
         <Content className="bg-gray-50 m-0 h-full overflow-hidden flex flex-col">
           <Outlet />
         </Content>

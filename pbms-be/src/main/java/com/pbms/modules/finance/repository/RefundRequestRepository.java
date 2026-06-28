@@ -10,4 +10,6 @@ import java.util.List;
 public interface RefundRequestRepository extends JpaRepository<RefundRequest, Long> {
     List<RefundRequest> findByUserId(Long userId);
     List<RefundRequest> findByStatus(String status);
+    java.util.Optional<RefundRequest> findByReferenceTypeAndReferenceId(String type, String id);
 }
+

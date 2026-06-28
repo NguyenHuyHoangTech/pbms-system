@@ -36,3 +36,4 @@ public class AuditLog extends BaseEntity {
     @Column(columnDefinition = "NVARCHAR(MAX)")
     private String description;
 }
+

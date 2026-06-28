@@ -42,7 +42,7 @@ public class IncidentTicket extends BaseEntity {
     @Column(nullable = false, length = 50)
     private String status; // PENDING, WAITING_CHECKOUT, RESOLVED, REJECTED
 
-    @Column(name = "uploaded_doc_url", length = 255)
+    @Column(name = "uploaded_doc_url", columnDefinition = "VARCHAR(MAX)")
     private String uploadedDocUrl;
 
     @Column(name = "uploaded_card_url", length = 255)
@@ -64,4 +64,8 @@ public class IncidentTicket extends BaseEntity {
 
     @Column(name = "fine_amount")
     private java.math.BigDecimal fineAmount;
+
+    @Column(name = "fee_paused_at")
+    private LocalDateTime feePausedAt;
 }
+

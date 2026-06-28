@@ -20,6 +20,13 @@ public interface ParkingSessionRepository extends JpaRepository<ParkingSession, 
     Optional<ParkingSession> findByRfidCard_CardCodeAndStatus(String cardCode, String status);
     Optional<ParkingSession> findByPlateAndStatus(String plate, String status);
     List<ParkingSession> findByStatus(String status);
+    
+    @Query("SELECT ps FROM ParkingSession ps WHERE ps.status = 'ACTIVE' AND ps.timeIn < :cutoffTime")
+    List<ParkingSession> findActiveSessionsOlderThan(@Param("cutoffTime") LocalDateTime cutoffTime);
+
     List<ParkingSession> findByPlateOrderByTimeInDesc(String plate);
-    List<ParkingSession> findByGateInIdAndTimeOutBetween(Long gateId, LocalDateTime start, LocalDateTime end);
+    List<ParkingSession> findByGateInIdAndTimeInBetween(Long gateId, LocalDateTime start, LocalDateTime end);
+    List<ParkingSession> findByGateOutIdAndTimeOutBetween(Long gateId, LocalDateTime start, LocalDateTime end);
+    boolean existsByPlateAndTimeInGreaterThanEqual(String plate, LocalDateTime timeIn);
 }
+

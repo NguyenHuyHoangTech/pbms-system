@@ -10,3 +10,4 @@ public interface SlotRepository extends JpaRepository<Slot, Long> {
     long countByZoneId(Long zoneId);
     java.util.List<Slot> findByZoneId(Long zoneId);
 }
+

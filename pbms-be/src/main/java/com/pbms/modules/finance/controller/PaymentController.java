@@ -51,13 +51,13 @@ public class PaymentController {
 
             return ResponseEntity.ok(ApiResponse.success(response, "Generated payment link successfully"));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Lỗi tạo link thanh toán: " + e.getMessage()));
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Here's the payment link:" + e.getMessage()));
         }
     }
 
     /**
      * POST /api/v1/payments/paypal/capture
-     * Xác nhận đơn hàng PayPal
+     * XÃ¡c nháº­n Ä‘Æ¡n hÃ ng PayPal
      */
     @PostMapping("/paypal/capture")
     public ResponseEntity<ApiResponse<Map<String, Object>>> capturePayPalOrder(@RequestBody Map<String, String> requestBody) {
@@ -68,12 +68,13 @@ public class PaymentController {
             }
             boolean success = payPalStrategy.captureOrder(token);
             if (success) {
-                return ResponseEntity.ok(ApiResponse.success(Map.of("status", "COMPLETED"), "Thanh toán thành công"));
+                return ResponseEntity.ok(ApiResponse.success(Map.of("status", "COMPLETED"), "Payment is the same"));
             } else {
-                return ResponseEntity.badRequest().body(ApiResponse.error(400, "Thanh toán chưa hoàn tất hoặc thất bại."));
+                return ResponseEntity.badRequest().body(ApiResponse.error(400, "Payment of goods or completion of goods"));
             }
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Lỗi xác nhận thanh toán: " + e.getMessage()));
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Error: " + e.getMessage()));
         }
     }
 }
+

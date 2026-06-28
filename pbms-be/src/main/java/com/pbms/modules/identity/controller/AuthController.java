@@ -21,43 +21,43 @@ public class AuthController {
     public ResponseEntity<ApiResponse<String>> register(@Valid @RequestBody RegisterRequest request) {
         authService.register(request);
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success("Success", "Mã OTP đã được gửi đến email của bạn."));
+                .body(ApiResponse.success("Success", "Success"));
     }
 
     @PostMapping("/send-otp")
     public ResponseEntity<ApiResponse<String>> sendOtp(@Valid @RequestBody SendOtpRequest request) {
         authService.sendOtp(request.getEmail(), request.getPurpose());
-        return ResponseEntity.ok(ApiResponse.success("Success", "Mã OTP đã được gửi lại đến email của bạn."));
+        return ResponseEntity.ok(ApiResponse.success("Success", "CODE OTP"));
     }
 
     @PostMapping("/verify-otp")
     public ResponseEntity<ApiResponse<AuthResponse>> verifyOtp(@Valid @RequestBody VerifyOtpRequest request) {
         AuthResponse response = authService.verifyOtp(request);
-        return ResponseEntity.ok(ApiResponse.success(response, "Xác thực OTP thành công."));
+        return ResponseEntity.ok(ApiResponse.success(response, "Check OTP status"));
     }
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
         AuthResponse response = authService.login(request);
-        return ResponseEntity.ok(ApiResponse.success(response, "Đăng nhập thành công."));
+        return ResponseEntity.ok(ApiResponse.success(response, "Success"));
     }
 
     @PostMapping("/login/google")
     public ResponseEntity<ApiResponse<AuthResponse>> loginGoogle(@Valid @RequestBody GoogleAuthRequest request) {
         AuthResponse response = authService.googleLogin(request);
-        return ResponseEntity.ok(ApiResponse.success(response, "Đăng nhập Google thành công."));
+        return ResponseEntity.ok(ApiResponse.success(response, "Click on Google to listen"));
     }
 
     @PostMapping("/forgot-password")
     public ResponseEntity<ApiResponse<String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
         authService.forgotPassword(request.getEmail());
-        return ResponseEntity.ok(ApiResponse.success("Success", "Mã OTP đặt lại mật khẩu đã được gửi đến email của bạn."));
+        return ResponseEntity.ok(ApiResponse.success("Success", "CODE OTP"));
     }
 
     @PostMapping("/verify-forgot-password")
     public ResponseEntity<ApiResponse<String>> verifyForgotPassword(@Valid @RequestBody VerifyForgotPasswordRequest request) {
         String resetToken = authService.verifyForgotPasswordOtp(request.getEmail(), request.getOtpCode());
-        return ResponseEntity.ok(ApiResponse.success(resetToken, "Xác thực OTP thành công. Vui lòng đặt mật khẩu mới."));
+        return ResponseEntity.ok(ApiResponse.success(resetToken, "Check that OTP can hear you. Please feel free to comment."));
     }
 
     @PostMapping("/reset-password")
@@ -69,12 +69,12 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         if (!request.getNewPassword().equals(request.getConfirmPassword())) {
-            return ResponseEntity.badRequest().body(ApiResponse.success(null, "Mật khẩu xác nhận không khớp."));
+            return ResponseEntity.badRequest().body(ApiResponse.success(null, "It's quite different from other people."));
         }
 
         String email = authentication.getName();
         authService.resetPassword(email, request.getNewPassword());
-        return ResponseEntity.ok(ApiResponse.success("Success", "Đặt lại mật khẩu thành công. Vui lòng đăng nhập."));
+        return ResponseEntity.ok(ApiResponse.success("Success", "It's pretty cool and you can listen to it. Have fun."));
     }
 
     @PostMapping("/set-password")
@@ -88,7 +88,7 @@ public class AuthController {
         
         String email = authentication.getName();
         authService.setPassword(email, request);
-        return ResponseEntity.ok(ApiResponse.success("Success", "Đã thiết lập mật khẩu thành công."));
+        return ResponseEntity.ok(ApiResponse.success("Success", "Success"));
     }
 
     @PostMapping("/link-google")
@@ -102,7 +102,7 @@ public class AuthController {
 
         String email = authentication.getName();
         authService.linkGoogle(email, request);
-        return ResponseEntity.ok(ApiResponse.success("Success", "Đã liên kết tài khoản Google thành công."));
+        return ResponseEntity.ok(ApiResponse.success("Success", "Success"));
     }
 
     @GetMapping("/test-get-otp")
@@ -110,4 +110,5 @@ public class AuthController {
         return ResponseEntity.ok(authService.getOtpForTest(email, purpose));
     }
 }
+
 

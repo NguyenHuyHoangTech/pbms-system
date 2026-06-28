@@ -14,6 +14,7 @@ public class GateConfigDTO {
     private Long floorId;
     private String floor; // floorName like 'B1', 'B2' for frontend mapping
     private String staffName;
+    private String staffEmail;
     private String name;
     private Long vehicleTypeId;
     private String type; // IN, OUT
@@ -22,3 +23,4 @@ public class GateConfigDTO {
     private Double layoutY;
     private Integer rotation;
 }
+

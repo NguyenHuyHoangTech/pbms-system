@@ -11,3 +11,4 @@ public class VerifyForgotPasswordRequest {
     @NotBlank
     private String otpCode;
 }
+

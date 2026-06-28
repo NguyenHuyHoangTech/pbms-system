@@ -32,18 +32,21 @@ public class SecurityConfig {
                 // 1. PUBLIC & AUTHENTICATION
                 .requestMatchers("/api/v1/public/**", "/api/v1/auth/**", "/api/v1/webhooks/**", "/api/v1/iot/**").permitAll()
                 .requestMatchers("/h2-console/**", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                .requestMatchers("/ws/**").permitAll()
+                .requestMatchers("/ws/**", "/ws-pbms/**", "/uploads/**").permitAll()
                 
                 // 2. SYSTEM ADMIN
                 .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                 
                 // 3. MANAGER DASHBOARD
                 .requestMatchers("/api/v1/manager/**", "/api/v1/reports/**").hasAnyRole("MANAGER", "ADMIN")
+                .requestMatchers("/api/v1/dashboard/**").hasAnyRole("STAFF", "MANAGER", "ADMIN")
                 
                 // 4. STAFF POS & OPERATIONS
-                .requestMatchers("/api/v1/gates/**", "/api/v1/work-sessions/**", "/api/v1/payments/**").hasAnyRole("STAFF", "MANAGER", "ADMIN")
+                .requestMatchers("/api/v1/gates/**", "/api/v1/work-sessions/**").hasAnyRole("STAFF", "MANAGER", "ADMIN")
+                .requestMatchers("/api/v1/payments/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
+                .requestMatchers("/api/v1/operation/monthly-tickets/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
                 .requestMatchers("/api/v1/operation/**").hasAnyRole("STAFF", "MANAGER", "ADMIN")
-                .requestMatchers("/api/v1/incidents/**").hasAnyRole("STAFF", "MANAGER", "ADMIN")
+                .requestMatchers("/api/v1/incidents/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
                 .requestMatchers("/api/v1/parking-sessions/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
                 .requestMatchers("/api/v1/infrastructure/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
                 
@@ -66,3 +69,4 @@ public class SecurityConfig {
         return new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder();
     }
 }
+

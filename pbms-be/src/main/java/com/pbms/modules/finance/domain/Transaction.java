@@ -41,3 +41,4 @@ public class Transaction extends BaseEntity {
     @Column(name = "transaction_reference")
     private String transactionReference;
 }
+

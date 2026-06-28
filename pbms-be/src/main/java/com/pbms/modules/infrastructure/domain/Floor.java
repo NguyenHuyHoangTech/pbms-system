@@ -39,3 +39,4 @@ public class Floor {
     @Column(name = "map_rows")
     private Integer mapRows;
 }
+

@@ -25,7 +25,7 @@ public class MonthlyTicketController {
     public ResponseEntity<ApiResponse<List<MonthlyTicketDTO>>> getAllTickets() {
         return ResponseEntity.ok(ApiResponse.success(
                 monthlyTicketService.getAllTickets(),
-                "Lấy danh sách vé tháng thành công"
+                "Read the list and learn more"
         ));
     }
 
@@ -33,9 +33,9 @@ public class MonthlyTicketController {
     public ResponseEntity<ApiResponse<MonthlyTicketDTO>> createTicket(@RequestBody java.util.Map<String, Object> payload) {
         try {
             MonthlyTicketDTO dto = monthlyTicketService.createTicket(payload);
-            return ResponseEntity.ok(ApiResponse.success(dto, "Đăng ký vé tháng thành công"));
+            return ResponseEntity.ok(ApiResponse.success(dto, "Success"));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Lỗi đăng ký vé tháng: " + e.getMessage()));
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Error: " + e.getMessage()));
         }
     }
 
@@ -46,9 +46,44 @@ public class MonthlyTicketController {
         try {
             int duration = payload.get("duration") != null ? Integer.parseInt(payload.get("duration").toString()) : 1;
             MonthlyTicketDTO dto = monthlyTicketService.renewTicket(id, duration);
-            return ResponseEntity.ok(ApiResponse.success(dto, "Gia hạn vé tháng thành công"));
+            return ResponseEntity.ok(ApiResponse.success(dto, "Cheap and cheap"));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Lỗi gia hạn vé tháng: " + e.getMessage()));
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Error: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{id}/assign-rfid")
+    public ResponseEntity<ApiResponse<MonthlyTicketDTO>> assignRfidCard(
+            @org.springframework.web.bind.annotation.PathVariable Long id,
+            @RequestBody java.util.Map<String, String> payload,
+            @org.springframework.beans.factory.annotation.Autowired com.pbms.modules.infrastructure.repository.RfidCardRepository rfidCardRepository) {
+        try {
+            String rfidCode = payload.get("rfidCode");
+            if (rfidCode == null || rfidCode.isBlank()) {
+                throw new IllegalArgumentException("rfidCode is required");
+            }
+            MonthlyTicketDTO dto = monthlyTicketService.assignRfidCard(id, rfidCode, rfidCardRepository);
+            return ResponseEntity.ok(ApiResponse.success(dto, "RFID technology for smart devices"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "RFID:" + e.getMessage()));
+        }
+    }
+    @PutMapping("/{id}/plate")
+    public ResponseEntity<ApiResponse<MonthlyTicketDTO>> updatePlate(
+            @org.springframework.web.bind.annotation.PathVariable Long id,
+            @RequestBody java.util.Map<String, String> payload) {
+        try {
+            String newPlate = payload.get("plate");
+            if (newPlate == null || newPlate.isBlank()) {
+                throw new IllegalArgumentException("Plate is required");
+            }
+            MonthlyTicketDTO dto = monthlyTicketService.updateTicketPlate(id, newPlate);
+            return ResponseEntity.ok(ApiResponse.success(dto, "Plate updated successfully"));
+        } catch (IllegalStateException e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(500, "Error: " + e.getMessage()));
         }
     }
 }
+

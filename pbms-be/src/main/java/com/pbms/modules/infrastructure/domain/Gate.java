@@ -46,3 +46,4 @@ public class Gate {
 
     private Integer rotation;
 }
+

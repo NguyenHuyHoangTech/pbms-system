@@ -19,7 +19,7 @@ const { Title, Text } = Typography;
 type VehicleType = 'CAR' | 'MOTORBIKE' | 'EBIKE';
 
 interface SlotData {
-  type: VehicleType;
+  type: string;
   label: string;
   available: number;
   icon: React.ReactNode;
@@ -27,11 +27,7 @@ interface SlotData {
 
 export const HomeScreen = () => {
   // 1. STATE CHO KHỐI REAL-TIME
-  const [slots, setSlots] = useState<SlotData[]>([
-    { type: 'CAR', label: 'Ô TÔ', available: 45, icon: <CarOutlined /> },
-    { type: 'MOTORBIKE', label: 'XE MÁY', available: 210, icon: <div className="text-xl leading-none">🛵</div> },
-    { type: 'EBIKE', label: 'XE ĐẠP ĐIỆN', available: 15, icon: <ThunderboltOutlined /> },
-  ]);
+  const [slots, setSlots] = useState<SlotData[]>([]);
 
   const { data: parkingStatusData } = useQuery({
     queryKey: ['public-parking-status'],
@@ -48,15 +44,38 @@ export const HomeScreen = () => {
 
   useEffect(() => {
     if (parkingStatusData && parkingStatusData.length > 0) {
-      setSlots(prev => prev.map(slot => {
-        const matchingData = parkingStatusData.find((d: any) => d.type === slot.type);
-        if (matchingData) {
-          return { ...slot, available: matchingData.available };
-        }
-        return slot;
-      }));
+      setSlots(parkingStatusData.map((d: any) => ({
+        type: d.type,
+        label: d.label,
+        available: d.available,
+        icon: d.type === 'FOUR_WHEEL' ? <CarOutlined /> : (d.type === 'TWO_WHEEL' ? <div className="text-xl leading-none">🏍️</div> : <ThunderboltOutlined />)
+      })));
     }
   }, [parkingStatusData]);
+
+  const { data: pricingPolicies } = useQuery({
+    queryKey: ['public-pricing'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/public/pricing');
+        return res.data.data;
+      } catch (err) {
+        return [];
+      }
+    }
+  });
+
+  const { data: vehicleTypes } = useQuery({
+    queryKey: ['public-vehicle-types'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/public/vehicle-types');
+        return res.data.data;
+      } catch (err) {
+        return [];
+      }
+    }
+  });
 
   const { data: buildingProfile } = useQuery({
     queryKey: ['public-building-profile'],
@@ -84,15 +103,15 @@ export const HomeScreen = () => {
       statusBadge = (
         <div className="absolute top-4 right-4 bg-white/20 px-3 py-1 rounded-full flex items-center animate-pulse">
           <AlertOutlined className="mr-1" />
-          <span className="font-bold text-sm tracking-wide">ĐÃ ĐẦY - HẾT CHỖ</span>
+          <span className="font-bold text-sm tracking-wide">FULL - SOLD OUT</span>
         </div>
       );
     } else if (isWarning) {
       cardClasses += " bg-white border-2 border-orange-500 shadow-md ring-4 ring-orange-500/20 animate-pulse";
       statusBadge = (
         <div className="absolute top-4 right-4 bg-orange-100 text-orange-700 px-3 py-1 rounded-full flex items-center border border-orange-200">
-          <WarningOutlined className="mr-1" />
-          <span className="font-bold text-sm tracking-wide">SẮP ĐẦY</span>
+          <AlertOutlined className="mr-1" />
+          <span className="font-bold text-sm tracking-wide">SOON</span>
         </div>
       );
     } else {
@@ -114,11 +133,11 @@ export const HomeScreen = () => {
             <span className="text-4xl font-extrabold">0</span>
           ) : (
             <>
-              <span className="text-sm font-medium uppercase tracking-wider opacity-80">Trống</span>
+              <span className="text-sm font-medium uppercase tracking-wider opacity-80">Drum</span>
               <span className={`text-5xl font-black ${isWarning ? 'text-orange-600' : 'text-green-600'}`}>
                 {slot.available}
               </span>
-              <span className="text-sm font-medium opacity-80">chỗ</span>
+              <span className="text-sm font-medium opacity-80">place</span>
             </>
           )}
         </div>
@@ -127,65 +146,85 @@ export const HomeScreen = () => {
   };
 
   // 2. KHỐI BIỂU PHÍ (ACCORDION)
-  const pricingItems = [
-    {
-      key: '1',
-      label: <div className="font-bold text-lg flex items-center"><CarOutlined className="mr-2 text-blue-600"/> Biểu phí Ô TÔ</div>,
-      children: (
+  const pricingItems = (vehicleTypes || []).map((vt: any, index: number) => {
+    const isCar = vt.category === 'FOUR_WHEEL';
+    const isEbike = vt.typeName.toLowerCase().includes('electricity');
+    const icon = isCar ? <CarOutlined className="mr-2 text-blue-600"/> : (isEbike ? <ThunderboltOutlined className="mr-2 text-green-600"/> : <div className="text-xl leading-none mr-2">🏍️</div>);
+    const policy = (pricingPolicies || []).find((p: any) => p.vehicleTypeId === vt.id);
+
+    return {
+      key: index.toString(),
+      label: <div className="font-bold text-lg flex items-center">{icon}  Fee schedule {vt.typeName}</div>,
+      children: policy ? (
         <div className="space-y-4">
-          <div>
-            <Text className="font-bold text-blue-800">☀️ Ca Ngày (06:00 - 22:00)</Text>
-            <ul className="list-disc pl-5 mt-1 text-gray-600">
-              <li>120 phút đầu tiên = <span className="font-bold text-gray-800">20.000 VNĐ</span></li>
-              <li>Mỗi 60 phút tiếp theo = <span className="font-bold text-gray-800">10.000 VNĐ</span></li>
-            </ul>
-          </div>
-          <div>
-            <Text className="font-bold text-indigo-800">🌙 Ca Đêm (22:00 - 06:00)</Text>
-            <p className="pl-5 mt-1 text-gray-600">Đồng giá ca đêm = <span className="font-bold text-gray-800">50.000 VNĐ/lượt</span></p>
-          </div>
-          <div className="bg-red-50 p-3 rounded-lg border border-red-100 flex items-start">
-            <DollarOutlined className="text-red-500 text-lg mt-0.5 mr-2" />
+          
+          {(policy.globalBaseFee > 0 || policy.globalBaseMins > 0) && (
             <div>
-              <Text className="font-bold text-red-700">Giá Trần (Max Cap)</Text>
-              <p className="text-red-600 text-sm m-0">Tối đa 3.000.000 VNĐ / đợt lưu bãi liên tục.</p>
+              <Text className="font-bold text-blue-800">1e Basic Fee (Not yet on shift)</Text>
+              <p className="pl-5 mt-1 text-gray-600">
+                <span className="font-bold text-gray-800">{policy.globalBaseFee?.toLocaleString()}  VND</span> cho <span className="font-bold text-gray-800">{policy.globalBaseMins}  minute</span>  firste
+                                        </p>
             </div>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: '2',
-      label: <div className="font-bold text-lg flex items-center"><span className="mr-2 text-xl">🛵</span> Biểu phí XE MÁY</div>,
-      children: (
-        <div className="space-y-4">
+          )}
+
           <div>
-            <Text className="font-bold text-blue-800">☀️ Ca Ngày (06:00 - 22:00)</Text>
-            <p className="pl-5 mt-1 text-gray-600">Đồng giá = <span className="font-bold text-gray-800">5.000 VNĐ/lượt</span></p>
+            <Text className="font-bold text-indigo-800">{(policy.globalBaseFee > 0 || policy.globalBaseMins > 0) ? '2e Fee schedule by shift' : '1e Fee schedule by shift'}</Text>
+            {policy.shifts?.map((shift: any, idx: number) => (
+              <div key={idx} className="mt-3 ml-2 border-l-2 border-indigo-100 pl-3">
+                <Text className="font-bold text-indigo-600">
+                  <ClockCircleOutlined className="mr-1" /> Ca {shift.shiftName} ({shift.startTime} - {shift.endTime})
+                </Text>
+                <ul className="list-disc pl-5 mt-1 text-gray-600">
+                  {shift.blocks?.map((block: any, bIdx: number) => (
+                    <li key={bIdx}>
+                      Block {block.blockOrder} ({block.durationMins}  minute): <span className="font-bold text-gray-800">{block.fee?.toLocaleString()}  VND</span>
+                    </li>
+                  ))}
+                  {(!shift.blocks || shift.blocks.length === 0) && (
+                    <li className="italic text-gray-400">No blocks are defined</li>
+                  )}
+                </ul>
+              </div>
+            ))}
+            {(!policy.shifts || policy.shifts.length === 0) && (
+              <p className="pl-5 mt-1 text-gray-500 italic">There are no cases configured</p>
+            )}
           </div>
-          <div>
-            <Text className="font-bold text-indigo-800">🌙 Ca Đêm (22:00 - 06:00)</Text>
-            <p className="pl-5 mt-1 text-gray-600">Đồng giá = <span className="font-bold text-gray-800">10.000 VNĐ/lượt</span></p>
-          </div>
+
+          {policy.maxParkingCap && policy.maxParkingCap > 0 && (
+            <div className="bg-red-50 p-3 rounded-lg border border-red-100 flex items-start mt-4">
+              <DollarOutlined className="text-red-500 text-lg mt-0.5 mr-2" />
+              <div>
+                <Text className="font-bold text-red-700">Price Ceiling (Max Cap)</Text>
+                <p className="text-red-600 text-sm m-0">Max <span className="font-extrabold">{policy.maxParkingCap?.toLocaleString()}  VND</span>  / number of submissions</p>
+              </div>
+            </div>
+          )}
+
+          {policy.monthlyRate && policy.monthlyRate > 0 && (
+            <div className="bg-green-50 p-3 rounded-lg border border-green-100 flex items-start mt-4">
+              <SafetyCertificateOutlined className="text-green-500 text-lg mt-0.5 mr-2" />
+              <div>
+                <Text className="font-bold text-green-700">Monthly Passes</Text>
+                <p className="text-green-600 text-sm m-0">Sign up for Monthly Pass only <span className="font-extrabold">{policy.monthlyRate?.toLocaleString()}  VND</span>  /monthe</p>
+              </div>
+            </div>
+          )}
         </div>
-      ),
-    },
-    {
-      key: '3',
-      label: <div className="font-bold text-lg flex items-center"><ThunderboltOutlined className="mr-2 text-green-600"/> Biểu phí XE ĐẠP ĐIỆN</div>,
-      children: (
-        <div className="space-y-4">
-           <p className="text-gray-600">Áp dụng chung biểu phí với Xe Máy. Khách hàng sử dụng trạm sạc sẽ tính thêm phụ phí sạc (Thông báo tại trạm).</p>
-        </div>
-      ),
-    }
-  ];
+      ) : (
+        <div className="py-6 text-center text-gray-500">
+          
+                            No fee schedule has been configured for this vehicle type
+                          </div>
+      )
+    };
+  });
 
   return (
     <div className="min-h-screen bg-gray-50/50 pb-12 font-sans selection:bg-blue-200">
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10">
         
-        {/* KHU VỰC 1: HERO SECTION */}
+        {/* Zone 1: HERO SECTION */}
         <section className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-3xl p-8 shadow-xl text-white relative overflow-hidden">
           <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20 mix-blend-overlay"></div>
           <div className="relative z-10">
@@ -193,38 +232,39 @@ export const HomeScreen = () => {
               <Badge status="processing" color="#10b981" />
               <div className="border border-green-500/50 bg-green-500/10 px-3 py-1 rounded-full inline-flex items-center backdrop-blur-sm">
                 <span className="w-2 h-2 rounded-full bg-green-400 mr-2 animate-pulse"></span>
-                <span className="text-green-300 text-xs font-bold uppercase tracking-widest">Đang hoạt động</span>
+                <span className="text-green-300 text-xs font-bold uppercase tracking-widest">Active</span>
               </div>
             </div>
             
             <h1 className="text-3xl md:text-4xl font-extrabold tracking-tight mb-2">
-              {buildingProfile?.name || "Hệ thống Bãi xe Thông minh"}
+              {buildingProfile?.name || "Smart Parking System"}
             </h1>
             
             <div className="flex flex-wrap items-center text-gray-300 mt-4 gap-4">
               <div className="flex items-center">
                 <ClockCircleOutlined className="mr-2 text-blue-400" />
-                <span className="font-medium text-lg">Giờ hoạt động: <span className="text-white font-bold">{buildingProfile?.operatingHours || "24/7"}</span></span>
+                <span className="font-medium text-lg">Active time: <span className="text-white font-bold">{buildingProfile?.operatingHours || "24/7"}</span></span>
               </div>
               <div className="flex items-center">
                 <InfoCircleOutlined className="mr-2 text-indigo-400" />
-                <span className="font-medium text-lg">Hotline: <span className="text-white font-bold">{buildingProfile?.hotline || "Đang cập nhật"}</span></span>
+                <span className="font-medium text-lg">Hotline: <span className="text-white font-bold">{buildingProfile?.hotline || "Updating"}</span></span>
               </div>
               <div className="flex items-center w-full mt-2">
-                <span className="font-medium text-sm">Địa chỉ: {buildingProfile?.address || "Đang cập nhật"}</span>
+                <span className="font-medium text-sm">Address: {buildingProfile?.address || "Updating"}</span>
               </div>
             </div>
           </div>
         </section>
 
-        {/* KHỐI 1: THỐNG KÊ CHỖ ĐỖ (KPI CARDS) */}
+        {/* BLOCK 1: PARKING STATS (KPI CARDS) */}
         <section>
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight">Tình trạng chỗ đỗ</h2>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight">Parking condition</h2>
             <div className="flex items-center text-xs font-medium text-gray-500 bg-gray-200 px-3 py-1.5 rounded-full">
               <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping mr-2"></span>
-              Cập nhật trực tiếp
-            </div>
+              
+                                        Update directly
+                                      </div>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -232,10 +272,10 @@ export const HomeScreen = () => {
           </div>
         </section>
 
-        {/* KHỐI 2: MINH BẠCH BIỂU PHÍ */}
+        {/* BLOCK 2: PRICING TRANSPARENCY */}
         <section>
           <div className="flex items-center mb-6">
-            <h2 className="text-2xl font-black text-gray-900 tracking-tight">Biểu phí gửi xe</h2>
+            <h2 className="text-2xl font-black text-gray-900 tracking-tight">Parking fee schedule</h2>
           </div>
           
           <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -249,15 +289,15 @@ export const HomeScreen = () => {
           </div>
         </section>
 
-        {/* KHỐI 3: THÔNG TIN HÀNH CHÍNH & NỘI QUY */}
+        {/* BLOCK 3: ADMIN & RULES INFO */}
         <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="rounded-2xl shadow-sm border border-gray-100 h-full" title={<span className="font-bold flex items-center"><SafetyCertificateOutlined className="mr-2 text-indigo-600"/> Loại xe phục vụ</span>}>
+          <Card className="rounded-2xl shadow-sm border border-gray-100 h-full" title={<span className="font-bold flex items-center"><SafetyCertificateOutlined className="mr-2 text-indigo-600"/>  Vehicle Type served</span>}>
             <List
               itemLayout="horizontal"
               dataSource={[
-                { title: 'Ô tô chở người', desc: 'Dưới 7 chỗ ngồi, chiều cao lưu thông <= 2.2m' },
-                { title: 'Xe máy, Xe tay ga', desc: 'Các loại xe gắn máy 2 bánh' },
-                { title: 'Xe đạp điện', desc: 'Hỗ trợ khu vực sạc điện riêng biệt' },
+                { title: 'Car transports people', desc: 'Under 7 seats, circulation height i= 2e2m' },
+                { title: 'Motorcycles, Scooters', desc: 'Types of two-wheeled motorbikes' },
+                { title: 'Electric bicycle', desc: 'Supports separate charging zones' },
               ]}
               renderItem={item => (
                 <List.Item>
@@ -270,14 +310,14 @@ export const HomeScreen = () => {
             />
           </Card>
 
-          <Card className="rounded-2xl shadow-sm border border-gray-100 h-full bg-orange-50/30" title={<span className="font-bold flex items-center"><BookOutlined className="mr-2 text-orange-600"/> Nội quy bãi xe</span>}>
+          <Card className="rounded-2xl shadow-sm border border-gray-100 h-full bg-orange-50/30" title={<span className="font-bold flex items-center"><BookOutlined className="mr-2 text-orange-600"/>  Parking lot rules</span>}>
             <List
               size="small"
               dataSource={buildingProfile?.rules ? buildingProfile.rules.split('\n') : [
-                'Cảnh báo xe tồn bãi > 72 giờ sẽ bị lập biên bản theo quy định.',
-                'Nhắc nhở KHÔNG để lại tài sản có giá trị lớn trên xe (Laptop, tiền mặt...). Ban quản lý từ chối bồi thường trong trường hợp mất mát.',
-                'Tuân thủ tốc độ giới hạn 5km/h trong hầm.',
-                'Đỗ đúng vạch kẻ, cấm đỗ vào khu vực dành cho người khuyết tật nếu không có thẻ.',
+                'Warning that vehicles left in the parking lot for more than 72 hours will be recorded according to regulations',
+                'Reminder NOT to leave valuable assets in the vehicle (Laptop, casheee) e Management Reject compensates in case of loss e',
+                'Comply with the speed limit of 5km/h in the tunnel',
+                'Park on the right line, do not park in the Zone for disabled people without a card',
               ]}
               renderItem={(item: any, index: number) => (
                 <List.Item className="border-b-0 py-2 text-gray-700">

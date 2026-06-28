@@ -41,3 +41,4 @@ public class PricingShift {
     @Builder.Default
     private List<PricingBlock> blocks = new ArrayList<>();
 }
+

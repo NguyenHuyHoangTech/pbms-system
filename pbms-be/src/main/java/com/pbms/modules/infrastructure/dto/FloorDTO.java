@@ -10,3 +10,4 @@ public class FloorDTO {
     private Integer mapCols;
     private Integer mapRows;
 }
+

@@ -25,3 +25,4 @@ public class RfidCard {
     @Column(name = "assigned_plate", length = 50)
     private String assignedPlate;
 }
+

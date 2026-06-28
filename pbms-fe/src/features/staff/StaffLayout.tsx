@@ -6,12 +6,14 @@ import {
   AlertOutlined,
   DollarOutlined,
   SettingOutlined,
-  DesktopOutlined
+  DesktopOutlined,
+  ClockCircleOutlined
 } from '@ant-design/icons';
 import { Outlet, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../core/store/useAuthStore';
 import { UserProfileSettingsModal } from '../shared/components/UserProfileSettingsModal';
 import { useState } from 'react';
+import { useSystemTime } from '../../core/utils/timeProvider';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -23,13 +25,14 @@ export const StaffLayout = () => {
   const shiftStatus = useAuthStore((state) => state.shiftStatus);
   const name = useAuthStore((state) => state.name);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const systemTime = useSystemTime();
 
   const handleLogout = () => {
     if (shiftStatus === 'OPEN') {
       Modal.warning({
-        title: 'Chưa chốt ca trực!',
-        content: 'Hệ thống bắt buộc bạn phải xác nhận chốt ca mới có thể đăng xuất an toàn.',
-        okText: 'Đi đến trang Chốt ca',
+        title: 'Shift not ended!',
+        content: 'The system requires you to confirm ending the shift before logging out safely.',
+        okText: 'Go to End Shift page',
         onOk: () => navigate('/staff/shift-management')
       });
       return;
@@ -40,9 +43,9 @@ export const StaffLayout = () => {
 
   const userMenu: any = {
     items: [
-      { key: 'settings', icon: <SettingOutlined />, label: 'Cài đặt', onClick: () => setIsSettingsOpen(true) },
+      { key: 'settings', icon: <SettingOutlined />, label: 'Setting', onClick: () => setIsSettingsOpen(true) },
       { type: 'divider' },
-      { key: 'logout', icon: <LogoutOutlined />, label: 'Đăng xuất', onClick: handleLogout, danger: true },
+      { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', onClick: handleLogout, danger: true },
     ],
   };
 
@@ -66,24 +69,24 @@ export const StaffLayout = () => {
             disabled={shiftStatus !== 'OPEN' || activeGateType === 'PATROL'}
             title={
               shiftStatus !== 'OPEN' 
-                ? "Vui lòng mở ca trực để thực hiện tác vụ này" 
+                ? "Please start a shift to perform this action" 
                 : activeGateType === 'PATROL' 
-                  ? "Nhân viên tuần tra không có quyền truy cập bốt trực cổng" 
+                  ? "Patrol staff do not have access to gate booths" 
                   : ""
             }
           >
-            Trực Cổng
+            Gate Console
           </Button>
           <Button 
             type="primary" 
             danger 
             icon={<AlertOutlined />} 
-            onClick={() => navigate('/staff/incidents')}
+            onClick={() => navigate('/staff/exception-desk')}
             className="font-bold shadow-lg"
             disabled={shiftStatus !== 'OPEN'}
-            title={shiftStatus !== 'OPEN' ? "Vui lòng mở ca trực để thực hiện tác vụ này" : ""}
+            title={shiftStatus !== 'OPEN' ? "Please start a shift to perform this action" : ""}
           >
-            Xử lý sự cố
+            Resolve Incident
           </Button>
           <Button 
             type="primary" 
@@ -91,17 +94,28 @@ export const StaffLayout = () => {
             icon={<DollarOutlined />} 
             onClick={() => navigate('/staff/shift-management')}
             disabled={shiftStatus !== 'OPEN'}
-            title={shiftStatus !== 'OPEN' ? "Vui lòng mở ca trực để thực hiện tác vụ này" : ""}
+            title={shiftStatus !== 'OPEN' ? "Please start a shift to perform this action" : ""}
           >
-            Chốt ca trực
+            End Shift
           </Button>
         </div>
 
         <div className="flex items-center gap-4">
+          {/* System Clock */}
+          <div className="flex items-center gap-2 bg-slate-800 text-white px-4 py-1.5 rounded-lg shadow font-mono text-sm select-none">
+            <ClockCircleOutlined className="text-blue-400 animate-pulse" />
+            <div className="flex flex-col leading-tight">
+              <span className="text-blue-300 font-bold text-base tracking-widest">
+                {systemTime.format('HH:mm:ss')}
+              </span>
+              <span className="text-slate-400 text-xs">{systemTime.format('DD/MM/YYYY')}</span>
+            </div>
+          </div>
+
           <Dropdown menu={userMenu} placement="bottomRight" arrow>
             <div className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 px-3 py-1 rounded transition-colors border border-gray-200">
               <Avatar icon={<UserOutlined />} className="bg-blue-600" />
-              <Text strong className="text-gray-700 hidden sm:block">{name || email || 'Nhân viên'}</Text>
+              <Text strong className="text-gray-700 hidden sm:block">{name || email || 'Staff'}</Text>
             </div>
           </Dropdown>
         </div>

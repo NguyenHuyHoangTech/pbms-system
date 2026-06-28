@@ -7,3 +7,4 @@ public class PreviewPriceRequest {
     private Long vehicleTypeId;
     private Integer expectedDurationMinutes;
 }
+

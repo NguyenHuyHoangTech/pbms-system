@@ -11,6 +11,7 @@ import com.pbms.modules.infrastructure.repository.GateRepository;
 import com.pbms.modules.infrastructure.repository.SlotRepository;
 import com.pbms.modules.infrastructure.repository.ZoneRepository;
 import com.pbms.modules.operation.repository.VehicleTypeRepository;
+import com.pbms.modules.operation.repository.ReservationRepository;
 import com.pbms.modules.system.domain.BuildingProfile;
 import com.pbms.modules.system.repository.BuildingProfileRepository;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +35,8 @@ public class MapConfigurationService {
     private final SlotRepository slotRepository;
     private final VehicleTypeRepository vehicleTypeRepository;
     private final BuildingProfileRepository buildingProfileRepository;
+    private final ReservationRepository reservationRepository;
+    private final com.pbms.modules.system.service.SystemConfigService systemConfigService;
 
     @Transactional(readOnly = true)
     public MapConfigDTO getMapConfiguration() {
@@ -41,7 +44,9 @@ public class MapConfigurationService {
         List<Zone> zones = zoneRepository.findAll().stream()
                 .filter(z -> !"DELETED".equals(z.getStatus()))
                 .collect(Collectors.toList());
-        List<Gate> gates = gateRepository.findAll();
+        List<Gate> gates = gateRepository.findAll().stream()
+                .filter(g -> !"DELETED".equals(g.getStatus()))
+                .collect(Collectors.toList());
 
         Map<Long, VehicleType> vehicleTypes = vehicleTypeRepository.findAll().stream()
                 .collect(Collectors.toMap(VehicleType::getId, Function.identity()));
@@ -63,6 +68,23 @@ public class MapConfigurationService {
                             .build()).collect(Collectors.toList());
 
             VehicleType vt = vehicleTypes.get(z.getVehicleType().getId());
+            
+            // Calculate active reservations for the zone
+            java.time.LocalDateTime now = com.pbms.common.utils.TimeProvider.now();
+            List<com.pbms.modules.operation.domain.Reservation> pendingList = reservationRepository.findByZoneIdAndStatus(z.getId(), "PENDING");
+            int windowMinutes = 30;
+            try {
+                windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_ARRIVAL_WINDOW_MINUTES").getConfigValue());
+            } catch (Exception e) {
+                // ignore
+            }
+            final int finalWindowMinutes = windowMinutes;
+            long activeReservations = pendingList.stream().filter(r -> {
+                java.time.LocalDateTime startWindow = r.getExpectedEntryTime().minusMinutes(finalWindowMinutes);
+                java.time.LocalDateTime endWindow = r.getExpectedEntryTime().plusMinutes(r.getExpectedDurationMinutes());
+                return !now.isBefore(startWindow) && !now.isAfter(endWindow);
+            }).count();
+
             return ZoneConfigDTO.builder()
                     .id(z.getId())
                     .floorId(z.getFloor().getId())
@@ -76,6 +98,7 @@ public class MapConfigurationService {
                     .layoutY(z.getLayoutY())
                     .rotation(z.getRotation())
                     .overflowThreshold(z.getOverflowThreshold())
+                    .activeReservationsCount(activeReservations)
                     .slots(slotDTOs)
                     .build();
         }).collect(Collectors.toList());
@@ -148,7 +171,7 @@ public class MapConfigurationService {
                     boolean hasZones = zoneRepository.findAll().stream()
                             .anyMatch(z -> z.getFloor().getId().equals(currentFloorId) && !"DELETED".equals(z.getStatus()));
                     if (hasZones) {
-                        throw new RuntimeException("Không thể đổi loại xe của Tầng " + floor.getFloorName() + " vì đang có Khu vực hoạt động.");
+                        throw new RuntimeException("Cannot change floor type because it has active zones: " + floor.getFloorName());
                     }
                 }
                 
@@ -173,7 +196,7 @@ public class MapConfigurationService {
                 // Check if any slot is occupied before deleting
                 List<Slot> cSlots = slotRepository.findByZoneId(cz.getId());
                 if (cSlots.stream().anyMatch(s -> "OCCUPIED".equals(s.getStatus()))) {
-                    throw new RuntimeException("Không thể xóa Khu vực " + cz.getZoneName() + " vì đang có xe đỗ.");
+                    throw new RuntimeException("Cannot delete zone because it has occupied slots: " + cz.getZoneName());
                 }
                 cz.setStatus("DELETED");
                 zoneRepository.save(cz);
@@ -191,7 +214,7 @@ public class MapConfigurationService {
                     Zone cz = zoneMap.get(zDTO.getId());
                     List<Slot> cSlots = slotRepository.findByZoneId(cz.getId());
                     if (cSlots.stream().anyMatch(s -> "OCCUPIED".equals(s.getStatus()))) {
-                        throw new RuntimeException("Không thể xóa Khu vực " + cz.getZoneName() + " vì đang có xe đỗ.");
+                        throw new RuntimeException("Cannot delete zone because it has occupied slots: " + cz.getZoneName());
                     }
                     cz.setStatus("DELETED");
                     zoneRepository.save(cz);
@@ -206,7 +229,7 @@ public class MapConfigurationService {
             VehicleType vt = vehicleTypeRepository.findById(zDTO.getVehicleTypeId()).orElseThrow();
 
             if (!f.getFloorType().equals(vt.getCategory())) {
-                throw new RuntimeException("Khu vực " + zDTO.getName() + " có loại phương tiện không khớp với loại xe của Tầng.");
+                throw new RuntimeException("Zone vehicle type does not match floor type for zone: " + zDTO.getName());
             }
 
             Zone zone;
@@ -248,7 +271,7 @@ public class MapConfigurationService {
             for (Slot es : existingSlots) {
                 if (!incomingSlotIds.contains(es.getId())) {
                     if ("OCCUPIED".equals(es.getStatus())) {
-                        throw new RuntimeException("Không thể cắt giảm ô đỗ " + es.getSlotName() + " vì đang có xe đỗ.");
+                        throw new RuntimeException("Cannot delete occupied slot: " + es.getSlotName());
                     }
                     slotRepository.delete(es);
                 }
@@ -260,7 +283,7 @@ public class MapConfigurationService {
                     Slot es = existingSlotMap.get(sDTO.getId());
                     es.setSlotName(sDTO.getName());
                     if ("DISABLED".equals(sDTO.getStatus()) && "OCCUPIED".equals(es.getStatus())) {
-                        throw new RuntimeException("Không thể bảo trì ô đỗ " + es.getSlotName() + " vì đang có xe đỗ.");
+                        throw new RuntimeException("Cannot disable an occupied slot: " + es.getSlotName());
                     }
                     if (!"OCCUPIED".equals(es.getStatus())) {
                         es.setStatus(sDTO.getStatus());
@@ -281,7 +304,22 @@ public class MapConfigurationService {
         List<Gate> currentGates = gateRepository.findAll();
         Map<Long, Gate> gateMap = currentGates.stream().collect(Collectors.toMap(Gate::getId, Function.identity()));
 
+        List<Long> incomingGateIds = mapConfig.getGates().stream()
+                .filter(g -> g.getId() != null && g.getId() < 1000000000L)
+                .map(GateConfigDTO::getId).collect(Collectors.toList());
+
+        for (Gate cg : currentGates) {
+            if (!incomingGateIds.contains(cg.getId()) && !"DELETED".equals(cg.getStatus())) {
+                cg.setStatus("DELETED");
+                gateRepository.save(cg);
+            }
+        }
+
         for (GateConfigDTO gDTO : mapConfig.getGates()) {
+            if (gDTO.getStatus() != null && gDTO.getStatus().equals("DELETED")) {
+                continue;
+            }
+
             Floor f = floorRepository.findById(gDTO.getFloorId()).orElseThrow();
             VehicleType gvt = null;
             if (gDTO.getVehicleTypeId() != null) {
@@ -295,13 +333,14 @@ public class MapConfigurationService {
                         .vehicleType(gvt)
                         .gateName(gDTO.getName())
                         .gateType(gDTO.getType())
-                        .status(gDTO.getStatus())
+                        .status(gDTO.getStatus() != null ? gDTO.getStatus() : "IDLE")
                         .liveOverrideMode("NORMAL")
                         .layoutX(gDTO.getLayoutX())
                         .layoutY(gDTO.getLayoutY())
                         .rotation(gDTO.getRotation())
                         .build();
-                gateRepository.save(gate);
+                gate = gateRepository.save(gate);
+                gDTO.setId(gate.getId());
             } else {
                 gate = gateMap.get(gDTO.getId());
                 gate.setGateName(gDTO.getName());
@@ -311,8 +350,12 @@ public class MapConfigurationService {
                 gate.setLayoutX(gDTO.getLayoutX());
                 gate.setLayoutY(gDTO.getLayoutY());
                 gate.setRotation(gDTO.getRotation());
+                if (!"OCCUPIED".equals(gate.getStatus())) {
+                    gate.setStatus(gDTO.getStatus() != null ? gDTO.getStatus() : "IDLE");
+                }
                 gateRepository.save(gate);
             }
         }
     }
 }
+

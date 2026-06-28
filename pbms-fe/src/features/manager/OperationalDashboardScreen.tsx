@@ -1,94 +1,142 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Typography, Card, Row, Col, DatePicker, Button, Table, Statistic, Radio } from 'antd';
-import { DownloadOutlined, FilterOutlined, NodeIndexOutlined } from '@ant-design/icons';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell, ReferenceLine } from 'recharts';
-import dayjs from 'dayjs';
-import { useQuery } from '@tanstack/react-query';
+import { simulatedDayjs } from '../../core/utils/timeProvider';
+import React, { useState, useMemo } from 'react';
+import { Typography, Card, Row, Col, DatePicker, Button, Table, Statistic, Select, message, Tag } from 'antd';
+import { DownloadOutlined, NodeIndexOutlined, CalendarOutlined } from '@ant-design/icons';
+import { 
+  AreaChart, Area, LineChart, Line,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, 
+  ResponsiveContainer, PieChart, Pie, Cell
+} from 'recharts';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
+const COLORS = ['#1890ff', '#f5222d', '#52c41a', '#faad14'];
+
 export const OperationalDashboardScreen = () => {
-  const [dateRange, setDateRange] = useState<any>([dayjs().subtract(7, 'day'), dayjs()]);
-  const [chartDate, setChartDate] = useState<any>(dayjs());
+  const [dateRange, setDateRange] = useState<any>([simulatedDayjs().subtract(7, 'day'), simulatedDayjs()]);
+  const [chartDate, setChartDate] = useState<any>(simulatedDayjs());
   const [chartVehicleType, setChartVehicleType] = useState('ALL');
   const [rangeVehicleType, setRangeVehicleType] = useState('ALL');
+  const [macroCategory, setMacroCategory] = useState('ALL');
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historySize, setHistorySize] = useState(10);
+
+  // === Operational live data ===
+  const { data: historyData, isLoading: isLoadingHistory } = useQuery({
+    queryKey: ['parking-history', historyPage, historySize],
+    queryFn: async () => {
+      const res = await axiosClient.get(`/parking-sessions/all?page=${historyPage - 1}&size=${historySize}`);
+      return res.data.data;
+    },
+    refetchInterval: 5000
+  });
+
+  const { data: gatesData, refetch: refetchGates } = useQuery({
+    queryKey: ['gates-status-report'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/infrastructure/gates');
+      return res.data.data;
+    },
+    refetchInterval: 5000
+  });
 
   const { data: dashboardData } = useQuery({
-    queryKey: ['operational-dashboard', chartDate],
+    queryKey: ['operational-dashboard'],
     queryFn: async () => {
       const res = await axiosClient.get('/dashboard/operational');
       return res.data.data;
     },
-    refetchInterval: 5000 // Real-time polling as fallback to WebSocket
+    refetchInterval: 5000
   });
 
-  const dailyData = useMemo(() => {
-    return dashboardData?.dailyData || [];
-  }, [dashboardData]);
+  // === Hourly Occupancy (biểu đồ dâng nước) ===
+  const [selectedOccupancyDate, setSelectedOccupancyDate] = useState<any>(simulatedDayjs());
 
-  const hourlyData = useMemo(() => {
-    return dashboardData?.hourlyData || [];
-  }, [dashboardData]);
+  const { data: occupancyData = [], isFetching: isOccupancyLoading } = useQuery({
+    queryKey: ['hourly-occupancy', selectedOccupancyDate?.format('YYYY-MM-DD')],
+    queryFn: async () => {
+      const dateStr = selectedOccupancyDate?.format('YYYY-MM-DD');
+      const res = await axiosClient.get(`/dashboard/occupancy?date=${dateStr}`);
+      return res.data.data as Array<{ hour: string; occupied: number; checkIn: number; checkOut: number }>;
+    },
+    enabled: !!selectedOccupancyDate
+  });
 
+  // === Zone 4: HOURLY TRAFFIC FLOW ===
+  const [selectedTrafficDate, setSelectedTrafficDate] = useState<any>(simulatedDayjs());
+  const { data: hourlyTrafficData = [] } = useQuery({
+    queryKey: ['hourly-flow', selectedTrafficDate?.format('YYYY-MM-DD')],
+    queryFn: async () => {
+      const dateStr = selectedTrafficDate?.format('YYYY-MM-DD');
+      const res = await axiosClient.get(`/dashboard/hourly-flow?date=${dateStr}`);
+      return res.data.data;
+    },
+    enabled: !!selectedTrafficDate
+  });
+
+  // === Zone 5: MACRO TRENDS ===
+  const { data: macroTrends = {} } = useQuery({
+    queryKey: ['macro-trends', dateRange[0]?.format('YYYY-MM-DD'), dateRange[1]?.format('YYYY-MM-DD'), macroCategory],
+    queryFn: async () => {
+      const startDate = dateRange[0]?.format('YYYY-MM-DD');
+      const endDate = dateRange[1]?.format('YYYY-MM-DD');
+      const res = await axiosClient.get(`/dashboard/macro-trends?startDate=${startDate}&endDate=${endDate}&category=${macroCategory}`);
+      return res.data.data;
+    },
+    enabled: !!dateRange[0] && !!dateRange[1]
+  });
+
+  const dailyData = useMemo(() => dashboardData?.dailyData || [], [dashboardData]);
+  const hourlyData = useMemo(() => dashboardData?.hourlyData || [], [dashboardData]);
   const liveData = useMemo(() => {
     if (dashboardData?.liveData) return dashboardData.liveData;
-    return {
-      car: { capacity: 200, occupied: 0 },
-      moto: { capacity: 500, occupied: 0 },
-      checkIns: 0,
-      checkOuts: 0
-    };
+    return { car: { capacity: 200, occupied: 0 }, moto: { capacity: 500, occupied: 0 }, checkIns: 0, checkOuts: 0 };
   }, [dashboardData]);
 
-  const handleApply = () => {
-    // Fetch data based on date range
-  };
+  const totalIn = dailyData.reduce((acc: number, curr: any) => acc + curr.carIn + curr.motoIn, 0);
+  const totalOut = dailyData.reduce((acc: number, curr: any) => acc + curr.carOut + curr.motoOut, 0);
+  const totalCarIn = dailyData.reduce((acc: number, curr: any) => acc + curr.carIn, 0);
+  const totalMotoIn = dailyData.reduce((acc: number, curr: any) => acc + curr.motoIn, 0);
+
+  // Stats from occupancy data
+  const occupancyStats = useMemo(() => {
+    if (!occupancyData.length) return { maxOccupied: 0, totalIn: 0, totalOut: 0, peakHour: '--' };
+    const maxOccupied = Math.max(...occupancyData.map(d => d.occupied));
+    const peakHourObj = occupancyData.find(d => d.occupied === maxOccupied);
+    const totalInDay = occupancyData.reduce((sum, d) => sum + d.checkIn, 0);
+    const totalOutDay = occupancyData.reduce((sum, d) => sum + d.checkOut, 0);
+    return { maxOccupied, totalIn: totalInDay, totalOut: totalOutDay, peakHour: peakHourObj?.hour || '--' };
+  }, [occupancyData]);
 
   const handleExportCSV = () => {
-    let csvContent = "Date;Hour;Total In;Total Out;Peak Occupancy %\n";
-    hourlyData.forEach(row => {
-      const totalIn = row.carIn + row.motoIn;
-      const totalOut = row.carOut + row.motoOut;
-      csvContent += `${chartDate?.format('YYYY-MM-DD')};${row.hour};${totalIn};${totalOut};${row.zoneOccupancy}\n`;
+    const dateStr = selectedOccupancyDate?.format('YYYY-MM-DD') || '';
+    let csvContent = `Hours;Number of cars in the lot;Vehicles entering;Vehicles leaving
+`;
+    occupancyData.forEach(row => {
+      csvContent += `${row.hour};${row.occupied};${row.checkIn};${row.checkOut}\n`;
     });
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", "operational_report.csv");
-    link.style.visibility = 'hidden';
+    link.setAttribute("href", URL.createObjectURL(blob));
+    link.setAttribute("download", `occupancy-${dateStr}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   const renderGauge = (occupied: number, capacity: number, title: string) => {
-    const percent = Math.round((occupied / capacity) * 100);
-    const isCritical = percent > 90;
-    const color = isCritical ? '#ff4d4f' : '#52c41a';
-    
-    const data = [
-      { name: 'Occupied', value: occupied },
-      { name: 'Available', value: capacity - occupied }
-    ];
-
+    const percent = capacity > 0 ? Math.min(Math.round((occupied / capacity) * 100), 100) : 0;
+    const color = percent > 90 ? '#f5222d' : percent > 70 ? '#faad14' : '#52c41a';
+    const data = [{ value: percent }, { value: 100 - percent }];
     return (
       <div className="flex flex-col items-center">
         <Text strong className="mb-2">{title}</Text>
         <ResponsiveContainer width={120} height={120}>
           <PieChart>
-            <Pie
-              data={data}
-              innerRadius={40}
-              outerRadius={55}
-              startAngle={180}
-              endAngle={0}
-              dataKey="value"
-              stroke="none"
-            >
+            <Pie data={data} innerRadius={40} outerRadius={55} startAngle={180} endAngle={0} dataKey="value" stroke="none">
               <Cell fill={color} />
               <Cell fill="#f0f0f0" />
             </Pie>
@@ -102,217 +150,394 @@ export const OperationalDashboardScreen = () => {
     );
   };
 
-  const totalIn = dailyData.reduce((acc, curr) => acc + curr.carIn + curr.motoIn, 0);
-  const totalOut = dailyData.reduce((acc, curr) => acc + curr.carOut + curr.motoOut, 0);
-  const totalCarIn = dailyData.reduce((acc, curr) => acc + curr.carIn, 0);
-  const totalMotoIn = dailyData.reduce((acc, curr) => acc + curr.motoIn, 0);
-
   const columns = [
-    { title: 'Giờ', dataIndex: 'hour', key: 'hour' },
-    { title: 'Lượt Vào', key: 'in', render: (_:any, record:any) => record.carIn + record.motoIn },
-    { title: 'Lượt Ra', key: 'out', render: (_:any, record:any) => record.carOut + record.motoOut },
-    { title: 'Công suất đỉnh (%)', dataIndex: 'zoneOccupancy', key: 'zoneOccupancy', render: (val: number) => <span className={val > 90 ? 'text-red-500 font-bold' : ''}>{val}%</span> },
+    { title: 'Hour', dataIndex: 'hour', key: 'hour' },
+    { title: 'Car in the parking lot', dataIndex: 'occupied', key: 'occupied', render: (v: number) => <strong>{v}</strong> },
+    { title: 'Car comes in', dataIndex: 'checkIn', key: 'checkIn', render: (v: number) => <span className="text-blue-500">+{v}</span> },
+    { title: 'Xe ra', dataIndex: 'checkOut', key: 'checkOut', render: (v: number) => <span className="text-orange-500">-{v}</span> },
   ];
 
   return (
     <div className="h-full overflow-y-auto bg-gray-50 p-6 pb-24">
-      {/* Global Control Panel */}
+      {/* Header */}
       <Card className="mb-6 shadow-sm">
         <div className="flex justify-between items-center">
           <Title level={3} className="m-0 flex items-center">
-            <NodeIndexOutlined className="mr-3 text-blue-600" /> Báo cáo Vận Hành
-          </Title>
+            <NodeIndexOutlined className="mr-3 text-blue-600" />  Operation Report
+                                </Title>
         </div>
       </Card>
 
-      {/* Live KPI Grid */}
+      {/* Live KPI */}
       <Row gutter={16} className="mb-6">
         <Col span={8}>
           <Card className="shadow-sm h-full flex justify-center items-center">
             <div className="flex justify-around w-full">
-              {renderGauge(liveData.car.occupied, liveData.car.capacity, "Sức chứa Ô tô")}
-              {renderGauge(liveData.moto.occupied, liveData.moto.capacity, "Sức chứa Xe máy")}
+              {renderGauge(liveData.car.occupied, liveData.car.capacity, "Car capacity")}
+              {renderGauge(liveData.moto.occupied, liveData.moto.capacity, "Motorcycle capacity")}
             </div>
           </Card>
         </Col>
         <Col span={8}>
           <Card className="shadow-sm h-full">
-            <Statistic title="Check-in Hôm Nay (Live)" value={liveData.checkIns} valueStyle={{ color: '#1890ff', fontWeight: 'bold' }} />
+            <Statistic title="Check-in Today (Live)" value={liveData.checkIns} valueStyle={{ color: '#1890ff', fontWeight: 'bold' }} />
           </Card>
         </Col>
         <Col span={8}>
           <Card className="shadow-sm h-full">
-            <Statistic title="Check-out Hôm Nay (Live)" value={liveData.checkOuts} valueStyle={{ color: '#fa8c16', fontWeight: 'bold' }} />
+            <Statistic title="Check-out Today (Live)" value={liveData.checkOuts} valueStyle={{ color: '#fa8c16', fontWeight: 'bold' }} />
           </Card>
         </Col>
       </Row>
 
+      {/* === WATERFALL CHART === */}
+      <Card
+        className="shadow-sm mb-6"
+        title={
+          <span className="flex items-center gap-2">
+            <CalendarOutlined className="text-blue-500" />
+            <span>Chart of Saving Number of Vehicles in the Park by Hour</span>
+          </span>
+        }
+        extra={
+          <div className="flex items-center gap-3">
+            <DatePicker
+              value={selectedOccupancyDate}
+              onChange={setSelectedOccupancyDate}
+              format="DD/MM/YYYY"
+              allowClear={false}
+              size="middle"
+            />
+            <Button icon={<DownloadOutlined />} onClick={handleExportCSV} size="middle">
+              
+                                  Export CSV
+                                </Button>
+          </div>
+        }
+      >
+        {/* KPI mini row */}
+        <Row gutter={16} className="mb-4">
+          <Col span={6}>
+            <Statistic 
+              title="The top takes over" 
+              value={occupancyStats.maxOccupied} 
+              suffix="xe"
+              valueStyle={{ color: '#1890ff', fontWeight: 'bold' }} 
+            />
+          </Col>
+          <Col span={6}>
+            <Statistic 
+              title="Rush hour" 
+              value={occupancyStats.peakHour} 
+              valueStyle={{ color: '#722ed1', fontWeight: 'bold' }} 
+            />
+          </Col>
+          <Col span={6}>
+            <Statistic 
+              title="Total visits" 
+              value={occupancyStats.totalIn} 
+              suffix="turn"
+              valueStyle={{ color: '#52c41a', fontWeight: 'bold' }} 
+            />
+          </Col>
+          <Col span={6}>
+            <Statistic 
+              title="Total turn out" 
+              value={occupancyStats.totalOut} 
+              suffix="turn"
+              valueStyle={{ color: '#fa8c16', fontWeight: 'bold' }} 
+            />
+          </Col>
+        </Row>
+
+        {/* Area Chart */}
+        <div style={{ height: 360, minHeight: 360 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={occupancyData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="gradOccupied" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#1890ff" stopOpacity={0.4} />
+                  <stop offset="95%" stopColor="#1890ff" stopOpacity={0.05} />
+                </linearGradient>
+                <linearGradient id="gradIn" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#52c41a" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#52c41a" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="gradOut" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#fa8c16" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#fa8c16" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+              <XAxis dataKey="hour" tick={{ fill: '#666', fontSize: 12 }} tickLine={false} axisLine={false} />
+              <YAxis tick={{ fill: '#666', fontSize: 12 }} tickLine={false} axisLine={false} />
+              <Tooltip
+                formatter={(value: any, name: any) => {
+                  const labels: Record<string, string> = {
+                    occupied: 'Car in the parking lot',
+                    checkIn: 'Hit enter',
+                    checkOut: 'Hit out'
+                  };
+                  return [`${value} xe`, (labels as any)[name] || name];
+                }}
+                contentStyle={{ borderRadius: 8, border: '1px solid #eee', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
+              />
+              <Legend
+                formatter={(value: string) => ({ occupied: 'Occupied', checkIn: 'Entries', checkOut: 'Exits' } as any)[value as any] || value}
+              />
+              <Area
+                type="monotone"
+                dataKey="occupied"
+                name="occupied"
+                stroke="#1890ff"
+                strokeWidth={2.5}
+                fill="url(#gradOccupied)"
+                activeDot={{ r: 6, fill: '#1890ff' }}
+              />
+              <Area
+                type="monotone"
+                dataKey="checkIn"
+                name="checkIn"
+                stroke="#52c41a"
+                strokeWidth={2}
+                fill="url(#gradIn)"
+                activeDot={{ r: 5 }}
+              />
+              <Area
+                type="monotone"
+                dataKey="checkOut"
+                name="checkOut"
+                stroke="#fa8c16"
+                strokeWidth={2}
+                fill="url(#gradOut)"
+                activeDot={{ r: 5 }}
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Detail Table */}
+        <Table
+          dataSource={occupancyData.map((d, i) => ({ ...d, key: i }))}
+          columns={columns}
+          pagination={{ pageSize: 6, size: 'small' }}
+          size="small"
+          className="mt-4"
+          loading={isOccupancyLoading}
+        />
+      </Card>
+
+      {/* === Zone 4: IN/OUT TRAFFIC AND PEAK HOURS === */}
+      <Card
+        className="shadow-sm mb-6"
+        title={
+          <span className="flex items-center gap-2">
+            <CalendarOutlined className="text-blue-500" />
+            <span>Save In/Out Volume & Peak Hours</span>
+          </span>
+        }
+        extra={
+          <div className="flex items-center gap-3">
+            <DatePicker
+              value={selectedTrafficDate}
+              onChange={setSelectedTrafficDate}
+              format="DD/MM/YYYY"
+              allowClear={false}
+              size="middle"
+            />
+          </div>
+        }
+      >
+        <div style={{ height: 360, minHeight: 360 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={hourlyTrafficData} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+              <XAxis dataKey="hour" tick={{ fill: '#666', fontSize: 12 }} tickLine={false} axisLine={false} />
+              <YAxis tick={{ fill: '#666', fontSize: 12 }} tickLine={false} axisLine={false} />
+              <Tooltip
+                formatter={(value: any, name: any) => {
+                  const labels: Record<string, string> = {
+                    fourWheelIn: 'Car Enter',
+                    fourWheelOut: 'Car Ra',
+                    twoWheelIn: 'Motorcycle Enter',
+                    twoWheelOut: 'Motorbike Ra'
+                  };
+                  return [`${value} times`, (labels as any)[name] || name];
+                }}
+                contentStyle={{ borderRadius: 8, border: '1px solid #eee', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}
+              />
+              <Legend
+                formatter={(value: string) => ({ fourWheelIn: 'Car In', fourWheelOut: 'Car Out', twoWheelIn: 'Motorbike In', twoWheelOut: 'Motorbike Out' } as any)[value as any] || value}
+              />
+              <Line type="monotone" dataKey="fourWheelIn" name="fourWheelIn" stroke="#1890ff" strokeWidth={2} dot={false} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="fourWheelOut" name="fourWheelOut" stroke="#1890ff" strokeWidth={2} strokeDasharray="5 5" dot={false} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="twoWheelIn" name="twoWheelIn" stroke="#f5222d" strokeWidth={2} dot={false} activeDot={{ r: 6 }} />
+              <Line type="monotone" dataKey="twoWheelOut" name="twoWheelOut" stroke="#f5222d" strokeWidth={2} strokeDasharray="5 5" dot={false} activeDot={{ r: 6 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      {/* === Zone 5: MACRO ANALYSIS === */}
       <Row gutter={16} className="mb-6">
-        {/* Hourly Traffic Flow */}
         <Col span={12}>
           <Card 
-            title="Lưu lượng Giao thông (Theo Giờ)" 
+            title="Daily Net Flow Trend" 
             className="shadow-sm h-full"
             extra={
-              <div className="flex gap-2">
-                <DatePicker 
-                  value={chartDate} 
-                  onChange={setChartDate} 
-                  format="DD/MM/YYYY" 
-                  allowClear={false}
-                  size="small"
+              <div className="flex items-center gap-3">
+                <Select
+                  value={macroCategory}
+                  onChange={setMacroCategory}
+                  style={{ width: 120 }}
+                  options={[
+                    { value: 'ALL', label: 'All Vehicle Types' },
+                    { value: 'FOUR_WHEEL', label: 'Car' },
+                    { value: 'TWO_WHEEL', label: 'Motorbike' },
+                  ]}
                 />
-                <Radio.Group 
-                  value={chartVehicleType} 
-                  onChange={e => setChartVehicleType(e.target.value)} 
-                  size="small"
-                >
-                  <Radio.Button value="ALL">Tất cả</Radio.Button>
-                  <Radio.Button value="CAR">Ô tô</Radio.Button>
-                  <Radio.Button value="MOTO">Xe máy</Radio.Button>
-                </Radio.Group>
-              </div>
-            }
-          >
-            <div style={{ height: 300 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={hourlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="hour" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  {(chartVehicleType === 'ALL' || chartVehicleType === 'CAR') && (
-                    <>
-                      <Line type="monotone" dataKey="carIn" name="Ô tô IN" stroke="#1890ff" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="carOut" name="Ô tô OUT" stroke="#1890ff" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-                    </>
-                  )}
-                  {(chartVehicleType === 'ALL' || chartVehicleType === 'MOTO') && (
-                    <>
-                      <Line type="monotone" dataKey="motoIn" name="Xe máy IN" stroke="#f5222d" strokeWidth={2} dot={false} />
-                      <Line type="monotone" dataKey="motoOut" name="Xe máy OUT" stroke="#f5222d" strokeWidth={2} strokeDasharray="5 5" dot={false} />
-                    </>
-                  )}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-        </Col>
-        
-        {/* Daily Traffic Trend */}
-        <Col span={12}>
-          <Card 
-            title="Lượt Check-in / Check-out Theo Ngày" 
-            className="shadow-sm h-full"
-            extra={
-              <div className="flex gap-2">
                 <RangePicker 
                   value={dateRange} 
-                  onChange={setDateRange} 
-                  format="DD/MM" 
+                  onChange={(dates) => dates && setDateRange(dates)} 
+                  format="DD/MM/YYYY" 
                   allowClear={false}
-                  size="small"
-                  className="w-48"
+                  style={{ width: 240 }}
                 />
-                <Radio.Group 
-                  value={rangeVehicleType} 
-                  onChange={e => setRangeVehicleType(e.target.value)} 
-                  size="small"
-                >
-                  <Radio.Button value="ALL">Tất cả</Radio.Button>
-                  <Radio.Button value="CAR">Ô tô</Radio.Button>
-                  <Radio.Button value="MOTO">Xe máy</Radio.Button>
-                </Radio.Group>
               </div>
             }
           >
-            <div style={{ height: 300 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dailyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="dateStr" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  {(rangeVehicleType === 'ALL' || rangeVehicleType === 'CAR') && (
-                    <>
-                      <Line type="monotone" dataKey="carIn" name="Ô tô IN" stroke="#1890ff" strokeWidth={2} dot={true} />
-                      <Line type="monotone" dataKey="carOut" name="Ô tô OUT" stroke="#1890ff" strokeWidth={2} strokeDasharray="5 5" dot={true} />
-                    </>
-                  )}
-                  {(rangeVehicleType === 'ALL' || rangeVehicleType === 'MOTO') && (
-                    <>
-                      <Line type="monotone" dataKey="motoIn" name="Xe máy IN" stroke="#f5222d" strokeWidth={2} dot={true} />
-                      <Line type="monotone" dataKey="motoOut" name="Xe máy OUT" stroke="#f5222d" strokeWidth={2} strokeDasharray="5 5" dot={true} />
-                    </>
-                  )}
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </Card>
-        </Col>
-      </Row>
-
-      {/* Macro Ratios (50/25/25 Layout) */}
-      <Row gutter={16} className="mb-6">
-        <Col span={12}>
-          <Card title="Lưu lượng Thực (Theo Khoảng Thời Gian)" className="shadow-sm h-full">
-            <div className="flex justify-around items-center h-full">
-              <Statistic title="Tổng Lượt Vào" value={totalIn} valueStyle={{ color: '#1890ff' }} />
-              <Statistic title="Tổng Lượt Ra" value={totalOut} valueStyle={{ color: '#fa8c16' }} />
-              <Statistic 
-                title="Lưu lượng Ròng" 
-                value={totalIn - totalOut} 
-                prefix={totalIn - totalOut > 0 ? '+' : ''}
-                valueStyle={{ color: totalIn - totalOut > 0 ? '#cf1322' : '#3f8600' }} 
-              />
-            </div>
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={macroTrends.dailyNetFlow || []} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fill: '#666', fontSize: 12 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fill: '#666', fontSize: 12 }} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={{ borderRadius: 8, border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }} />
+                <Legend formatter={(value) => ({ totalIn: 'Total In', totalOut: 'Total Out' } as any)[value as any] || value} />
+                <Line type="monotone" dataKey="totalIn" stroke="#1890ff" strokeWidth={2} activeDot={{ r: 6 }} />
+                <Line type="monotone" dataKey="totalOut" stroke="#f5222d" strokeWidth={2} activeDot={{ r: 6 }} />
+              </LineChart>
+            </ResponsiveContainer>
           </Card>
         </Col>
         <Col span={6}>
-          <Card title="Tỷ lệ Phương tiện (Kỳ chọn)" className="shadow-sm h-full">
-            <ResponsiveContainer width="100%" height={120}>
+          <Card title="Vehicle structure" className="shadow-sm h-full">
+            <ResponsiveContainer width="100%" height={250}>
               <PieChart>
-                <Pie data={[
-                  { name: 'Ô tô', value: totalCarIn },
-                  { name: 'Xe máy', value: totalMotoIn }
-                ]} innerRadius={35} outerRadius={50} dataKey="value" stroke="none">
-                  <Cell fill="#1890ff" />
-                  <Cell fill="#f5222d" />
+                <Pie data={macroTrends.vehicleTypeRatio || []} innerRadius={60} outerRadius={80} dataKey="value" stroke="none" label>
+                  {
+                    (macroTrends.vehicleTypeRatio || []).map((entry: any, index: number) => (
+                      <Cell key={`cell-${index}`} fill={entry.name === 'FOUR_WHEEL' ? '#1890ff' : '#f5222d'} />
+                    ))
+                  }
                 </Pie>
-                <Tooltip />
+                <Tooltip formatter={(value: any, name: any) => [value, name]} />
+                <Legend />
               </PieChart>
             </ResponsiveContainer>
           </Card>
         </Col>
         <Col span={6}>
-          <Card title="Nguồn Khách (Kỳ chọn)" className="shadow-sm h-full">
-            <ResponsiveContainer width="100%" height={120}>
+          <Card title="Customer structure" className="shadow-sm h-full">
+            <ResponsiveContainer width="100%" height={250}>
               <PieChart>
-                <Pie data={[
-                  { name: 'Vãng lai', value: totalIn * 0.8 },
-                  { name: 'Đặt trước', value: totalIn * 0.2 }
-                ]} innerRadius={35} outerRadius={50} dataKey="value" stroke="none">
-                  <Cell fill="#faad14" />
-                  <Cell fill="#52c41a" />
+                <Pie data={macroTrends.customerSegmentRatio || []} innerRadius={60} outerRadius={80} dataKey="value" stroke="none" label>
+                  {
+                    (macroTrends.customerSegmentRatio || []).map((entry: any, index: number) => {
+                      let color = '#faad14'; // WALK_IN
+                      if (entry.name === 'BOOKING') color = '#52c41a';
+                      else if (entry.name === 'MONTHLY') color = '#722ed1';
+                      return <Cell key={`cell-${index}`} fill={color} />;
+                    })
+                  }
                 </Pie>
-                <Tooltip />
+                <Tooltip formatter={(value: any, name: any) => [value, name === 'WALK_IN' ? 'Walk-in' : name === 'BOOKING' ? 'Pre-booked' : 'Monthly Pass']} />
+                <Legend formatter={(value: string) => value === 'WALK_IN' ? 'Walk-in' : value === 'BOOKING' ? 'Pre-booked' : 'Monthly Pass'} />
               </PieChart>
             </ResponsiveContainer>
           </Card>
         </Col>
       </Row>
 
-      {/* DataTable & Export */}
-      <Card title="Chi tiết Vận hành Theo Giờ" className="shadow-sm" extra={
-        <Button type="primary" icon={<DownloadOutlined />} onClick={handleExportCSV}>Export CSV</Button>
-      }>
+            {/* GATE STATUS REPORT */}
+      <Card 
+        className="mt-6 shadow-sm border-slate-200 rounded-xl"
+        title={
+          <div className="flex items-center text-slate-800">
+            <span className="mr-2 text-xl">🚪</span> 
+            <span className="font-bold tracking-wide">GATE STATUS MANAGEMENT & ACTIVE OPERATOR</span>
+          </div>
+        }
+      >
         <Table 
-          columns={columns} 
-          dataSource={hourlyData.map((d, i) => ({ ...d, key: i }))} 
-          pagination={{ pageSize: 5 }} 
-        />
+          dataSource={gatesData || []} 
+          rowKey="id"
+          pagination={false}
+          bordered
+          size="middle"
+        >
+          <Table.Column title="ID" dataIndex="id" width={60} />
+          <Table.Column title="Gate name" dataIndex="name" render={(val) => <strong>{val}</strong>} />
+          <Table.Column title="Vehicle Type" dataIndex="vehicleTypeId" render={(val) => val === 1 ? 'Car' : val === 2 ? 'Motorbike' : val === 3 ? 'Bicycle' : 'All'} />
+          <Table.Column title="Current function" dataIndex="type" render={(val, r: any) => {
+            if (r.status !== 'OCCUPIED') return <span className="text-gray-400 italic">Not selected yet</span>;
+            return val === 'ENTRY' || val === 'IN' ? <Tag color="blue">GATEWAY</Tag> : <Tag color="green">GATE Out</Tag>;
+          }} />
+          <Table.Column title="Status" dataIndex="status" render={(val) => {
+            if (val === 'OCCUPIED') return <Tag color="green">OPEN</Tag>;
+            if (val === 'IDLE') return <Tag color="default">CLOSE</Tag>;
+            return <Tag color="red">Maintenance</Tag>;
+          }} />
+          <Table.Column title="Staff on duty" dataIndex="staffName" render={(val) => val ? <span className="font-medium text-blue-700">{val}</span> : <span className="text-gray-400 italic">Do not have</span>} />
+        </Table>
+      </Card>
+
+      {/* HISTORY TABLE */}
+      <Card 
+        className="mt-6 shadow-sm border-slate-200 rounded-xl"
+        title={
+          <div className="flex items-center text-slate-800">
+            <span className="mr-2 text-xl">📜</span> 
+            <span className="font-bold tracking-wide">VEHICLE ENTRANCE / EXIT HISTORY</span>
+          </div>
+        }
+        extra={
+          <Button type="primary" icon={<DownloadOutlined />} onClick={handleExportCSV}>
+            
+                            Export CSV
+                          </Button>
+        }
+      >
+        <Table 
+          dataSource={historyData?.content || []} 
+          rowKey="id"
+          loading={isLoadingHistory}
+          pagination={{ 
+            current: historyPage, 
+            pageSize: historySize, 
+            total: historyData?.totalElements || 0,
+            onChange: (page, size) => {
+              setHistoryPage(page);
+              setHistorySize(size);
+            }
+          }}
+          bordered
+          size="middle"
+        >
+          <Table.Column title="ID" dataIndex="id" width={60} />
+          <Table.Column title="License Plate" dataIndex="plate" render={(val) => <strong className="text-blue-700">{val}</strong>} />
+          <Table.Column title="Vehicle Type" dataIndex="vehicleType" />
+          <Table.Column title="Entry Time" dataIndex="timeIn" render={(val) => val ? simulatedDayjs(val).format('HH:mm:ss DD/MM/YYYY') : '-'} />
+          <Table.Column title="Entry Gate" dataIndex="gateInName" render={(val) => val || '-'} />
+          <Table.Column title="Exit Time" dataIndex="timeOut" render={(val) => val ? simulatedDayjs(val).format('HH:mm:ss DD/MM/YYYY') : '-'} />
+          <Table.Column title="Exit Gate" dataIndex="gateOutName" render={(val) => val || '-'} />
+          <Table.Column title="Fees" dataIndex="totalFee" render={(val) => val != null ? <span className="font-bold text-green-600">{val.toLocaleString()}  VND</span> : '-'} />
+          <Table.Column title="Status" dataIndex="status" render={(val: string) => {
+            if (val === 'ACTIVE') return <Tag color="blue">Parked</Tag>;
+            if (val === 'COMPLETED') return <Tag color="green">Completed</Tag>;
+            if (val === 'LOCKED') return <Tag color="red">Locked</Tag>;
+            return <Tag>{val}</Tag>;
+          }} />
+        </Table>
       </Card>
     </div>
   );

@@ -1,0 +1,437 @@
+{
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\finance\\controller\\DashboardController.java": [
+    {
+      "line": 49,
+      "string": "This is the price of the cheese— according to the market price.",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(data, \"This is the price of the cheese— according to the market price.\"));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\finance\\controller\\PaymentController.java": [
+    {
+      "line": 76,
+      "string": "Leave—I confirm payment:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"Leave—I confirm payment:\" + e.getMessage()));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\finance\\controller\\RefundController.java": [
+    {
+      "line": 34,
+      "string": "ÄÃ£ sole»‡activities",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(null, \"ÄÃ£ sole»‡activities\"));"
+    },
+    {
+      "line": 43,
+      "string": "ÄÃ£ dozen»« chá»‘i or ti»n",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(null, \"ÄÃ£ dozen»« chá»‘i or ti»n\"));"
+    },
+    {
+      "line": 52,
+      "string": "ÄÃ£ is the proof",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(fileUrl, \"ÄÃ£ is the proof\"));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\finance\\service\\RefundService.java": [
+    {
+      "line": 55,
+      "string": "ÄÆ¡completed",
+      "original_line": "messagingTemplate.convertAndSend(\"/topic/alerts\", \"ÄÆ¡completed\" + id + \"Ä‘Ã£ Ä‘Æ°á»£ac» is the thing that can be heard\");"
+    },
+    {
+      "line": 55,
+      "string": "Ä‘Ã£ Ä‘Æ°á»£ac» is the thing that can be heard",
+      "original_line": "messagingTemplate.convertAndSend(\"/topic/alerts\", \"ÄÆ¡completed\" + id + \"Ä‘Ã£ Ä‘Æ°á»£ac» is the thing that can be heard\");"
+    },
+    {
+      "line": 67,
+      "string": "ÄÆ¡completed",
+      "original_line": "messagingTemplate.convertAndSend(\"/topic/alerts\", \"ÄÆ¡completed\" + id + \"ba»‹ ta»« chá»‘i:\" + reason);"
+    },
+    {
+      "line": 67,
+      "string": "ba»‹ ta»« chá»‘i:",
+      "original_line": "messagingTemplate.convertAndSend(\"/topic/alerts\", \"ÄÆ¡completed\" + id + \"ba»‹ ta»« chá»‘i:\" + reason);"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\finance\\service\\RevenueService.java": [
+    {
+      "line": 32,
+      "string": "WHEN psepenalty_fee o 0 THEN N'Phaº¡t'",
+      "original_line": "\"WHEN psepenalty_fee o 0 THEN N'Phaº¡t'\" +"
+    },
+    {
+      "line": 33,
+      "string": "WHEN psereservation_id IS NOT NULL THEN N'Äáº·t chá»—'",
+      "original_line": "\"WHEN psereservation_id IS NOT NULL THEN N'Äáº·t chá»—'\" +"
+    },
+    {
+      "line": 34,
+      "string": "WHEN mteid IS NOT NULL THEN N'VÃ© thÃ¡ng'",
+      "original_line": "\"WHEN mteid IS NOT NULL THEN N'VÃ© thÃ¡ng'\" +"
+    },
+    {
+      "line": 35,
+      "string": "ELSE N'VÃ¢â‚¬â€œ",
+      "original_line": "\"ELSE N'VÃ¢â‚¬â€œ\" +"
+    },
+    {
+      "line": 53,
+      "string": "WHEN psepenalty_fee o 0 THEN N'Phaº¡t'",
+      "original_line": "\"WHEN psepenalty_fee o 0 THEN N'Phaº¡t'\" +"
+    },
+    {
+      "line": 54,
+      "string": "WHEN psereservation_id IS NOT NULL THEN N'Äáº·t chá»—'",
+      "original_line": "\"WHEN psereservation_id IS NOT NULL THEN N'Äáº·t chá»—'\" +"
+    },
+    {
+      "line": 55,
+      "string": "WHEN mteid IS NOT NULL THEN N'VÃ© thÃ¡ng'",
+      "original_line": "\"WHEN mteid IS NOT NULL THEN N'VÃ© thÃ¡ng'\" +"
+    },
+    {
+      "line": 56,
+      "string": "ELSE N'VÃ¢â‚¬â€œ",
+      "original_line": "\"ELSE N'VÃ¢â‚¬â€œ\" +"
+    },
+    {
+      "line": 64,
+      "string": "N'Pháº¡t ha»§y chá»—' aS revenueSource,",
+      "original_line": "\"N'Pháº¡t ha»§y chá»—' aS revenueSource,\" +"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\finance\\strategy\\PayPalStrategy.java": [
+    {
+      "line": 54,
+      "string": "PayPal only accepts invoices—nothing like that",
+      "original_line": "throw new RuntimeException(\"PayPal only accepts invoices—nothing like that\");"
+    },
+    {
+      "line": 108,
+      "string": "Leaves—when do you want to pay PayPale?",
+      "original_line": "throw new RuntimeException(\"Leaves—when do you want to pay PayPale?\");"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\identity\\controller\\AuthController.java": [
+    {
+      "line": 24,
+      "string": "OTP CODE Ä‘Ã£ Ä‘Æ°á»£c girl Ä‘áº¿n email address",
+      "original_line": ".body(ApiResponse.success(\"Success\", \"OTP CODE Ä‘Ã£ Ä‘Æ°á»£c girl Ä‘áº¿n email address\"));"
+    },
+    {
+      "line": 42,
+      "string": "ÄÄºtap ºnge Ã´nge",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(response, \"ÄÄºtap ºnge Ã´nge\"));"
+    },
+    {
+      "line": 91,
+      "string": "ÄÃ£ the coolest thing is pretty cool",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(\"Success\", \"ÄÃ£ the coolest thing is pretty cool\"));"
+    },
+    {
+      "line": 105,
+      "string": "ÄÃ£ link from Google",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(\"Success\", \"ÄÃ£ link from Google\"));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\identity\\controller\\WorkSessionController.java": [
+    {
+      "line": 49,
+      "string": "La»—i ma»Ÿ ca:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"La»—i ma»Ÿ ca:\" + e.getMessage()));"
+    },
+    {
+      "line": 69,
+      "string": "ÄÃ£ Ä‘Ã³ng ca trai»±cÃ´ng",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(result, \"ÄÃ£ Ä‘Ã³ng ca trai»±cÃ´ng\"));"
+    },
+    {
+      "line": 71,
+      "string": "La»—i Ä‘Ã³ng ca:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"La»—i Ä‘Ã³ng ca:\" + e.getMessage()));"
+    },
+    {
+      "line": 104,
+      "string": "La»—i laº¥th tin ca:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"La»—i laº¥th tin ca:\" + e.getMessage()));"
+    },
+    {
+      "line": 123,
+      "string": "La»—i laº¥y la»‹book» ca tra»±c:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"La»—i laº¥y la»‹book» ca tra»±c:\" + e.getMessage()));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\identity\\dto\\RegisterRequest.java": [
+    {
+      "line": 16,
+      "string": "The dish is quite good, 8-20 pieces, 1 piece of flower, 1 piece of fruit, 1 piece and 1 piece of fruit. bi»‡t",
+      "original_line": "message = \"The dish is quite good, 8-20 pieces, 1 piece of flower, 1 piece of fruit, 1 piece and 1 piece of fruit. bi»‡t\""
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\identity\\dto\\ResetPasswordRequest.java": [
+    {
+      "line": 12,
+      "string": "The dish is quite good, 8-20 pieces, 1 piece of flower, 1 piece of fruit, 1 piece and 1 piece of fruit. bi»‡t",
+      "original_line": "message = \"The dish is quite good, 8-20 pieces, 1 piece of flower, 1 piece of fruit, 1 piece and 1 piece of fruit. bi»‡t\""
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\identity\\dto\\SetPasswordRequest.java": [
+    {
+      "line": 11,
+      "string": "The dish is quite good, 8-20 pieces, 1 piece of flower, 1 piece of fruit, 1 piece and 1 piece of fruit. bi»‡t",
+      "original_line": "message = \"The dish is quite good, 8-20 pieces, 1 piece of flower, 1 piece of fruit, 1 piece and 1 piece of fruit. bi»‡t\""
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\identity\\service\\AuthService.java": [
+    {
+      "line": 163,
+      "string": "I don't know what to do anymore viÃƒÂªne",
+      "original_line": "throw new IllegalArgumentException(\"I don't know what to do anymore viÃƒÂªne\");"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\identity\\service\\UserService.java": [
+    {
+      "line": 125,
+      "string": "The role is not so bad‡:",
+      "original_line": "throw new IllegalArgumentException(\"The role is not so bad‡:\" + request.getRole());"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\identity\\service\\WorkSessionService.java": [
+    {
+      "line": 87,
+      "string": "ÄÃ£ Ä‘á»“promoter»™ of fruit leaves, no fruit juice",
+      "original_line": "result.put(\"message\", \"ÄÃ£ Ä‘á»“promoter»™ of fruit leaves, no fruit juice\");"
+    },
+    {
+      "line": 125,
+      "string": "ÄÃ£ Ä‘Ã³ng ca trai»±cÃ´ng",
+      "original_line": "result.put(\"message\", \"ÄÃ£ Ä‘Ã³ng ca trai»±cÃ´ng\");"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\incident\\controller\\IncidentTicketController.java": [
+    {
+      "line": 28,
+      "string": "Leaf—i dozen incident:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"Leaf—i dozen incident:\" + e.getMessage()));"
+    },
+    {
+      "line": 58,
+      "string": "La»—i forgive» is incident:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"La»—i forgive» is incident:\" + e.getMessage()));"
+    },
+    {
+      "line": 71,
+      "string": "Leaf»—i hai»§y sa»± fish»‘:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"Leaf»—i hai»§y sa»± fish»‘:\" + e.getMessage()));"
+    },
+    {
+      "line": 79,
+      "string": "ÄÃ£ how long and how long it has been—",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(dto, \"ÄÃ£ how long and how long it has been—\"));"
+    },
+    {
+      "line": 81,
+      "string": "Leave»—I don't know:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"Leave»—I don't know:\" + e.getMessage()));"
+    },
+    {
+      "line": 91,
+      "string": "Leave»—i forgive» is phase 1:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"Leave»—i forgive» is phase 1:\" + e.getMessage()));"
+    },
+    {
+      "line": 101,
+      "string": "Tá»« chá»‘i sa»± ca»‘ thá also",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(dto, \"Tá»« chá»‘i sa»± ca»‘ thá also\"));"
+    },
+    {
+      "line": 103,
+      "string": "Lá»—i ta»« chá»‘i:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"Lá»—i ta»« chá»‘i:\" + e.getMessage()));"
+    },
+    {
+      "line": 116,
+      "string": "Leaves—what's the price:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"Leaves—what's the price:\" + e.getMessage()));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\incident\\service\\IncidentService.java": [
+    {
+      "line": 132,
+      "string": "New car performance— price 72! Bi»ƒn sa»‘:",
+      "original_line": "messagingTemplate.convertAndSend(\"/topic/alerts\", \"New car performance— price 72! Bi»ƒn sa»‘:\" + session.getPlate());"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\infrastructure\\controller\\PublicController.java": [
+    {
+      "line": 45,
+      "string": "Download the list of languages ​​that need to be changed",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(vehicleTypeService.getAllVehicleTypes(), \"Download the list of languages ​​that need to be changed\"));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\infrastructure\\service\\MapConfigurationService.java": [
+    {
+      "line": 178,
+      "string": "and the vehicle has a motorbike—e",
+      "original_line": "throw new RuntimeException(\"Uncertainty in the area. c\" + cz.getZoneName() + \"and the vehicle has a motorbike—e\");"
+    },
+    {
+      "line": 196,
+      "string": "and the vehicle has a motorbike—e",
+      "original_line": "throw new RuntimeException(\"Uncertainty in the area. c\" + cz.getZoneName() + \"and the vehicle has a motorbike—e\");"
+    },
+    {
+      "line": 211,
+      "string": "Patch area»±c",
+      "original_line": "throw new RuntimeException(\"Patch area»±c\" + zDTO.getName() + \"There are different types of vehicle types that are not quite suitable for fishing vehicles in Táº§nge.\");"
+    },
+    {
+      "line": 211,
+      "string": "There are different types of vehicle types that are not quite suitable for fishing vehicles in Táº§nge.",
+      "original_line": "throw new RuntimeException(\"Patch area»±c\" + zDTO.getName() + \"There are different types of vehicle types that are not quite suitable for fishing vehicles in Táº§nge.\");"
+    },
+    {
+      "line": 253,
+      "string": "and the vehicle has a motorbike—e",
+      "original_line": "throw new RuntimeException(\"Not sure what the price is?\" + es.getSlotName() + \"and the vehicle has a motorbike—e\");"
+    },
+    {
+      "line": 265,
+      "string": "Unable to report on the market—",
+      "original_line": "throw new RuntimeException(\"Unable to report on the market—\" + es.getSlotName() + \"and the vehicle has a motorbike—e\");"
+    },
+    {
+      "line": 265,
+      "string": "and the vehicle has a motorbike—e",
+      "original_line": "throw new RuntimeException(\"Unable to report on the market—\" + es.getSlotName() + \"and the vehicle has a motorbike—e\");"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\infrastructure\\service\\RfidCardService.java": [
+    {
+      "line": 28,
+      "string": "Náº±m tr»‘ng",
+      "original_line": ".location(card.getStatus().equals(\"IN_USE\") ? \"In the room\" : (card.getStatus().equals(\"AVAILABLE\") ? \"Náº±m tr»‘ng\" : \"Not sure\"))"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\infrastructure\\service\\RoutingRuleService.java": [
+    {
+      "line": 69,
+      "string": "Price range»",
+      "original_line": ".name(firstRule.getIsDefault() ? \"Other price brackets\" : (\"Price range»\" + firstRule.getStartTime() + \" - \" + firstRule.getEndTime()))"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\operation\\controller\\IotIntegrationController.java": [
+    {
+      "line": 23,
+      "string": "Leaves—i bet:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"Leaves—i bet:\" + e.getMessage()));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\operation\\controller\\MonthlyTicketController.java": [
+    {
+      "line": 36,
+      "string": "ÄÄƒ kÃ½ and often",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(dto, \"ÄÄƒ kÃ½ and often\"));"
+    },
+    {
+      "line": 38,
+      "string": "La»—i Ä‘Äƒng kÃ½ and thÃ¡ng:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"La»—i Ä‘Äƒng kÃ½ and thÃ¡ng:\" + e.getMessage()));"
+    },
+    {
+      "line": 51,
+      "string": "La»—i family and common:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"La»—i family and common:\" + e.getMessage()));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\operation\\controller\\ParkingSessionController.java": [
+    {
+      "line": 61,
+      "string": "Do not take advantage of this type of vehicle—chemical vehicle or other commercial vehicle.",
+      "original_line": "empty.put(\"message\", \"Do not take advantage of this type of vehicle—chemical vehicle or other commercial vehicle.\");"
+    },
+    {
+      "line": 62,
+      "string": "There are no buses—",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(empty, \"There are no buses—\"));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\operation\\controller\\ReservationController.java": [
+    {
+      "line": 34,
+      "string": "La»—i ha»‡ tha»‘ng:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(500, \"La»—i ha»‡ tha»‘ng:\" + e.getMessage()));"
+    },
+    {
+      "line": 48,
+      "string": "Leaf»—i phha:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"Leaf»—i phha:\" + e.getMessage()));"
+    },
+    {
+      "line": 58,
+      "string": "Ha»§y Ä‘áº·t chá»— so also",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(dto, \"Ha»§y Ä‘áº·t chá»— so also\"));"
+    },
+    {
+      "line": 64,
+      "string": "La»—i ha»‡ tha»‘ng:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(500, \"La»—i ha»‡ tha»‘ng:\" + e.getMessage()));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\operation\\controller\\VehicleController.java": [
+    {
+      "line": 37,
+      "string": "Leaf»—i:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"Leaf»—i:\" + e.getMessage()));"
+    },
+    {
+      "line": 45,
+      "string": "ÄÃ£ price of the book list",
+      "original_line": "return ResponseEntity.ok(ApiResponse.success(dto, \"ÄÃ£ price of the book list\"));"
+    },
+    {
+      "line": 47,
+      "string": "Leaf»—i:",
+      "original_line": "return ResponseEntity.badRequest().body(ApiResponse.error(400, \"Leaf»—i:\" + e.getMessage()));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\operation\\service\\GateOperationService.java": [
+    {
+      "line": 188,
+      "string": "Äáº¶T TRÆ¯á»šC",
+      "original_line": "info.setCustomerType(\"MONTHLY\".equals(customerType) ? \"SO\" : (\"PREBOOKED\".equals(customerType) ? \"Äáº¶T TRÆ¯á»šC\" : \"VUONG LAI\"));"
+    },
+    {
+      "line": 201,
+      "string": "Area patch»±c Ta»± due",
+      "original_line": "info.setSuggestedZoneName(\"Area patch»±c Ta»± due\");"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\operation\\service\\ReservationService.java": [
+    {
+      "line": 70,
+      "string": "Type of vehicle that is not suitable for use‡",
+      "original_line": ".orElseThrow(() -> new RuntimeException(\"Type of vehicle that is not suitable for use‡\"));"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\operation\\service\\ZoneMonitoringService.java": [
+    {
+      "line": 58,
+      "string": "Detection of wrong vehicle in Zone ThÃ¡ng",
+      "original_line": "alertPayload.put(\"message\", \"Detection of wrong vehicle in Zone ThÃ¡ng\" + zone.getZoneName() + \"e Please check it out!\");"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\system\\controller\\BuildingProfileController.java": [
+    {
+      "line": 29,
+      "string": "What's the point? ",
+      "original_line": "@LogAudit(action = \"UPDATE\", resource = \"BuildingProfile\", description = \"What's the point? \")"
+    }
+  ],
+  "d:/0_Semester_5/pbms-system/pbms-be/src/main/java/com/pbms\\modules\\system\\service\\SystemConfigService.java": [
+    {
+      "line": 35,
+      "string": "Tá»± Ä‘á»™ng Táº¡o",
+      "original_line": ".description(\"Tá»± Ä‘á»™ng Táº¡o\")"
+    }
+  ]
+}

@@ -21,6 +21,15 @@ import axiosClient from '../../core/api/axiosClient';
 export const AuditLogScreen = () => {
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null);
 
+  const formatJsonSafely = (val: string | null) => {
+    if (!val) return 'NULL';
+    try {
+      return JSON.stringify(JSON.parse(val), null, 2);
+    } catch (e) {
+      return val;
+    }
+  };
+
   const { data: logs = [], isLoading } = useQuery({
     queryKey: ['audit-logs'],
     queryFn: async () => {
@@ -91,17 +100,11 @@ export const AuditLogScreen = () => {
         >
           {selectedLog && (
             <div className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                  <Text strong className="text-red-700 block mb-2">Old Value</Text>
-                  <pre className="text-xs overflow-auto text-red-900 bg-red-100/50 p-2 rounded">
-                    {selectedLog.oldValue ? JSON.stringify(JSON.parse(selectedLog.oldValue), null, 2) : 'NULL'}
-                  </pre>
-                </div>
-                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                  <Text strong className="text-green-700 block mb-2">New Value</Text>
-                  <pre className="text-xs overflow-auto text-green-900 bg-green-100/50 p-2 rounded">
-                    {selectedLog.newValue ? JSON.stringify(JSON.parse(selectedLog.newValue), null, 2) : 'NULL'}
+              <div className="grid grid-cols-1 gap-4">
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <Text strong className="text-blue-700 block mb-2">Details (Update Details)</Text>
+                  <pre className="text-xs overflow-auto text-blue-900 bg-blue-100/50 p-3 rounded whitespace-pre-wrap break-all">
+                    {formatJsonSafely(selectedLog.newValue)}
                   </pre>
                 </div>
               </div>

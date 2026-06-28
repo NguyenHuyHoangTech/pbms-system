@@ -33,4 +33,13 @@ public class TimeProvider {
     public static void reset() {
         simulatedOffset = Duration.ZERO;
     }
+
+    public static Duration getSimulatedOffset() {
+        return simulatedOffset;
+    }
+
+    public static void setSimulatedOffset(Duration offset) {
+        simulatedOffset = offset;
+    }
 }
+

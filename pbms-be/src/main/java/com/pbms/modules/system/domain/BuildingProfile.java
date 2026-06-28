@@ -30,3 +30,4 @@ public class BuildingProfile extends BaseEntity {
     @Column(columnDefinition = "VARCHAR(MAX)")
     private String rules;
 }
+

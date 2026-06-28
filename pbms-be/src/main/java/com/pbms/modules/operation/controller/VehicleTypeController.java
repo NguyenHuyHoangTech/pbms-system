@@ -33,7 +33,7 @@ public class VehicleTypeController {
 
     @PutMapping("/{id}")
     public ResponseEntity<ApiResponse<VehicleTypeDTO>> update(@PathVariable Long id, @RequestBody VehicleTypeDTO dto) {
-        return ResponseEntity.ok(ApiResponse.success(service.updateVehicleType(id, dto), "Updated successfully"));
+        return ResponseEntity.ok(ApiResponse.success(service.updateVehicleType(id, dto), "Vehicle type updated successfully"));
     }
 
     @DeleteMapping("/{id}")
@@ -42,3 +42,4 @@ public class VehicleTypeController {
         return ResponseEntity.ok(ApiResponse.success(null, "Deleted successfully"));
     }
 }
+

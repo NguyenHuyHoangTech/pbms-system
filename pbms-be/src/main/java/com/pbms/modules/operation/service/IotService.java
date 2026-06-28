@@ -16,3 +16,4 @@ public class IotService {
         messagingTemplate.convertAndSend(destination, payload);
     }
 }
+

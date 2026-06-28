@@ -10,3 +10,4 @@ public class SlotDTO {
     private String name;
     private String status; // EMPTY, OCCUPIED, DISABLED
 }
+

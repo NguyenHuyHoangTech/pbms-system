@@ -69,6 +69,9 @@ public class ParkingSession {
     @Column(name = "pic_out_face", columnDefinition = "VARCHAR(MAX)")
     private String picOutFace;
 
+    @Column(name = "suggested_zone_name", length = 255)
+    private String suggestedZoneName;
+
     @Column(name = "global_base_fee", precision = 18, scale = 2)
     private BigDecimal globalBaseFee;
 
@@ -78,9 +81,13 @@ public class ParkingSession {
     @Column(precision = 18, scale = 2)
     private BigDecimal discount;
 
+    @Column(name = "discount_valid_until")
+    private java.time.LocalDateTime discountValidUntil;
+
     @Column(name = "total_fee", precision = 18, scale = 2)
     private BigDecimal totalFee;
 
     @Column(nullable = false, length = 50)
     private String status; // ACTIVE, COMPLETED, EXCEPTION
 }
+

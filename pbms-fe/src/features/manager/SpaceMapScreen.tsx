@@ -47,13 +47,14 @@ interface Zone {
   rotation: number;
   slots: Slot[];
   overflowThreshold: number;
+  activeReservationsCount?: number;
 }
 
 interface Gate {
   id: string | number;
   floorId: number;
   name: string;
-  type: 'IN' | 'OUT';
+  type: 'ENTRY' | 'EXIT' | 'ENTRY_EXIT';
   status: 'IDLE' | 'OCCUPIED' | 'MAINTENANCE' | string;
   staffName?: string;
   layoutX: number;
@@ -74,7 +75,7 @@ interface VehicleType {
 type SelectedEntity = 
   | { type: 'ZONE'; id: number } 
   | { type: 'SLOT'; zoneId: number; slotId: string } 
-  | { type: 'GATE'; id: string } 
+  | { type: 'GATE'; id: string | number } 
   | null;
 
   const getVehicleDimensions = (typeId: number, vehicleTypes: VehicleType[]) => {
@@ -168,10 +169,10 @@ export const SpaceMapScreen = () => {
     if (selectedEntity) {
        let keep = false;
        if (selectedEntity.type === 'ZONE' || selectedEntity.type === 'SLOT') {
-          const zId = selectedEntity.type === 'ZONE' ? selectedEntity.id : selectedEntity.zoneId;
+          const zId = selectedEntity.type === 'ZONE' ? (selectedEntity as any).id : selectedEntity.zoneId;
           if (zones.find(z => z.id === zId)?.floorId === selectedFloorId) keep = true;
        } else if (selectedEntity.type === 'GATE') {
-          if (gates.find(g => g.id === selectedEntity.id)?.floorId === selectedFloorId) keep = true;
+          if (gates.find(g => g.id === (selectedEntity as any).id)?.floorId === selectedFloorId) keep = true;
        }
        if (!keep) setSelectedEntity(null);
     }
@@ -338,7 +339,7 @@ export const SpaceMapScreen = () => {
         node.position({ x: previousState.layoutX, y: previousState.layoutY });
       }
       node.setAttr('isColliding', false);
-      message.error('Vị trí không hợp lệ do trùng lặp hoặc ngoài bản đồ!');
+      message.error('Invalid location due to duplicate or off map!');
       return;
     }
 
@@ -414,7 +415,7 @@ export const SpaceMapScreen = () => {
     const activeFloor = floors.find(f => f.id === selectedFloorId);
     const validVehicleTypes = vehicleTypes.filter(v => v.category === activeFloor?.type);
     if (validVehicleTypes.length === 0) {
-      message.error("Không có loại xe nào phù hợp với tầng này! Vui lòng tạo loại xe trước.");
+      message.error("There are no vehicles suitable for this floor! Please create a vehicle type first");
       return;
     }
     const defaultVehicleType = validVehicleTypes[0];
@@ -425,7 +426,7 @@ export const SpaceMapScreen = () => {
 
     const pos = findEmptyPosition(w, h);
     if (!pos) {
-      message.error("Bản đồ đã đầy, không còn vị trí trống để thêm Khu vực mới!");
+      message.error("The map is full, there are no more vacancies to add new Zones!");
       return;
     }
 
@@ -433,7 +434,7 @@ export const SpaceMapScreen = () => {
     const newZone: Zone = {
       id: newId,
       floorId: selectedFloorId,
-      name: `Khu vực Mới`,
+      name: `New Zone`,
       capacity: capacity,
       vehicleTypeId: defaultVehicleType.id,
       functionType: 'WALK_IN',
@@ -452,21 +453,21 @@ export const SpaceMapScreen = () => {
   const handleAddGate = () => {
     const pos = findEmptyPosition(3 * GRID_SIZE, GRID_SIZE);
     if (!pos) {
-      message.error("Bản đồ đã đầy, không còn vị trí trống để thêm Cổng mới!");
+      message.error("The map is full, there are no vacancies left to add new Gates!");
       return;
     }
 
-    const newId = Date.now();
+    const newId = Date.now().toString();
     const newGate: Gate = {
       id: newId,
       floorId: selectedFloorId,
-      name: `Cổng ${gates.length + 1}`,
-      type: 'IN_OUT',
+      name: `Gate ${gates.length + 1}`,
+      type: 'ENTRY_EXIT',
       status: 'IDLE',
       layoutX: pos.x,
       layoutY: pos.y,
       rotation: 0,
-      vehicleTypeId: validVehicleTypes.length > 0 ? validVehicleTypes[0].id : undefined
+      vehicleTypeId: undefined
     };
     setGates(prev => [...prev, newGate]);
     setSelectedEntity({ type: 'GATE', id: newId });
@@ -489,7 +490,7 @@ export const SpaceMapScreen = () => {
         const removedSlots = newSlots.slice(newCapacity);
         const hasOccupied = removedSlots.some(s => s.status !== 'EMPTY');
         if (hasOccupied) {
-          message.error('Không thể cắt giảm! Các ô bị cắt đang có xe đỗ.');
+          message.error('Can\'t cut it! The cut off spaces are currently parked');
           return z; // Abort
         }
         newSlots = newSlots.slice(0, newCapacity);
@@ -498,21 +499,30 @@ export const SpaceMapScreen = () => {
     }));
   };
 
-  const handleToggleSlotStatus = (zoneId: number, slotId: string, newStatus: 'EMPTY' | 'DISABLED') => {
-    setZones(prev => prev.map(z => {
-      if (z.id !== zoneId) return z;
-      return {
-        ...z,
-        slots: z.slots.map(s => {
-          if (s.id !== slotId) return s;
-          if (s.status === 'OCCUPIED') {
-            message.warning('Không thể bảo trì ô đang có xe!');
-            return s;
-          }
-          return { ...s, status: newStatus };
-        })
-      };
-    }));
+  const handleToggleSlotStatus = async (zoneId: number, slotId: string, newStatus: 'EMPTY' | 'DISABLED') => {
+    // Check local first for prompt UI feedback if OCCUPIED
+    const zone = zones.find(z => z.id === zoneId);
+    const slot = zone?.slots.find(s => s.id === slotId);
+    if (slot && slot.status === 'OCCUPIED') {
+      message.warning('Can\'t do maintenance on a cell that has a car!');
+      return;
+    }
+
+    try {
+      await axiosClient.put(`/infrastructure/slots/${slotId}/status`, { status: newStatus });
+      // The websocket will broadcast map-updates, and the map will automatically sync.
+      // But we can also update local state instantly for better UX
+      setZones(prev => prev.map(z => {
+        if (z.id !== zoneId) return z;
+        return {
+          ...z,
+          slots: z.slots.map(s => s.id === slotId ? { ...s, status: newStatus } : s)
+        };
+      }));
+      message.success(`Updated Status in Success box!`);
+    } catch (err: any) {
+      message.error(err.response?.data?.message || 'Error when updating cell Status');
+    }
   };
 
   const handleGateCommand = async (gateId: string | number, cmd: string) => {
@@ -523,24 +533,24 @@ export const SpaceMapScreen = () => {
       await axiosClient.post(`/infrastructure/gates/${gateId}/command`, { command: cmd });
       
       if (gate.status === 'IDLE') {
-        message.success(`Đã áp dụng lệnh ${cmd} ngay lập tức cho ${gate.name}`);
+        message.success(`Applied command ${cmd} immediately to ${gate.name}`);
       } else {
         setGates(prev => prev.map(g => g.id === gateId ? { ...g, pendingCommand: cmd } : g));
         notification.error({
-          message: 'LỆNH CHỜ ĐÃ GỬI (CRITICAL)',
-          description: `Đã gửi lệnh ${cmd} đến thiết bị/nhân viên tại cổng.`,
+          message: 'PENDING ORDER SENT (CRITICAL)',
+          description: `Sent command ${cmd} to device/staff at gate.`,
           duration: 8,
           placement: 'bottomRight'
         });
       }
     } catch (error) {
-      message.error('Lỗi khi gửi lệnh điều khiển cổng');
+      message.error('Error when sending gate control command');
     }
   };
 
   const handleCancelGateCommand = (gateId: string | number) => {
     setGates(prev => prev.map(g => g.id === gateId ? { ...g, pendingCommand: null } : g));
-    message.info('Đã hủy lệnh chờ.');
+    message.info('Pending order canceled');
   };
 
   const handleSave = () => {
@@ -548,7 +558,7 @@ export const SpaceMapScreen = () => {
     console.log("Saving Configuration:", payload);
     axiosClient.post('/infrastructure/map/save', payload)
       .then(res => {
-        message.success('Đã lưu cấu hình sơ đồ và trung tâm điều khiển thành công!');
+        message.success('Success! control center and diagram configuration saved!');
         refetch().then((result) => {
           const fetchedData = result.data;
           if (fetchedData && fetchedData.floors && fetchedData.floors.length > 0) {
@@ -560,7 +570,7 @@ export const SpaceMapScreen = () => {
         });
       })
       .catch(err => {
-        message.error(err.response?.data?.message || 'Có lỗi xảy ra khi lưu cấu hình.');
+        message.error(err.response?.data?.message || 'an error occurred when saving the configuration');
       });
   };
 
@@ -584,9 +594,9 @@ export const SpaceMapScreen = () => {
   };
 
   // Get current selected data for Inspector
-  const activeZone = selectedEntity?.type === 'ZONE' || selectedEntity?.type === 'SLOT' ? zones.find(z => z.id === (selectedEntity as any).zoneId || z.id === selectedEntity.id) : null;
+  const activeZone = selectedEntity?.type === 'ZONE' || selectedEntity?.type === 'SLOT' ? zones.find(z => z.id === (selectedEntity as any).zoneId || z.id === (selectedEntity as any).id) : null;
   const activeSlot = selectedEntity?.type === 'SLOT' ? activeZone?.slots.find(s => s.id === selectedEntity.slotId) : null;
-  const activeGate = selectedEntity?.type === 'GATE' ? gates.find(g => g.id === selectedEntity.id) : null;
+  const activeGate = selectedEntity?.type === 'GATE' ? gates.find(g => g.id === (selectedEntity as any).id) : null;
   const validVehicleTypes = vehicleTypes.filter(v => v.category === activeFloor?.type);
 
   return (
@@ -641,7 +651,7 @@ export const SpaceMapScreen = () => {
               {/* Draw Zones & Slots */}
               {visibleZones.map((zone) => {
                 const { width: slotW, height: slotH } = getVehicleDimensions(zone.vehicleTypeId, vehicleTypes);
-                const isZoneSelected = selectedEntity?.type === 'ZONE' && selectedEntity.id === zone.id;
+                const isZoneSelected = selectedEntity?.type === 'ZONE' && (selectedEntity as any).id === zone.id;
                 const isSlotSelectedInZone = selectedEntity?.type === 'SLOT' && selectedEntity.zoneId === zone.id;
                 const isSelected = isZoneSelected || isSlotSelectedInZone;
                 
@@ -736,8 +746,8 @@ export const SpaceMapScreen = () => {
 
                     {/* Zone Name Top-Left (Inside) */}
                     <KonvaText
-                      x={8} y={8}
-                      text={zone.name}
+                      x={5} y={5}
+                      text={`${zone.name} ${zone.activeReservationsCount ? `(Res: ${zone.activeReservationsCount})` : ''}`}
                       fontSize={14}
                       fontFamily="sans-serif"
                       fill={isSelected ? '#2563eb' : '#334155'}
@@ -756,8 +766,8 @@ export const SpaceMapScreen = () => {
                   const vt = vehicleTypes.find(v => v.id === gate.vehicleTypeId);
                   if (vt) gateW = vt.matrixWidth * GRID_SIZE;
                 }
-                const isSelected = selectedEntity?.type === 'GATE' && selectedEntity.id === gate.id;
-                const gateColor = gate.status === 'OCCUPIED' ? '#d97706' : '#059669'; // amber vs emerald, Green if idle
+                const isSelected = selectedEntity?.type === 'GATE' && (selectedEntity as any).id === gate.id;
+                const gateColor = gate.status === 'ACTIVE' ? '#059669' : '#94a3b8'; // emerald if ACTIVE, slate if INACTIVE
                 
                 return (
                   <Group
@@ -810,8 +820,8 @@ export const SpaceMapScreen = () => {
         {/* Header */}
         <div className="px-4 py-3 border-b border-gray-100 bg-slate-50 flex items-center justify-between shrink-0">
           <Title level={5} className="m-0 text-slate-800 flex items-center">
-            <CompassOutlined className="mr-2 text-blue-600" /> Thanh Cấu Hình
-          </Title>
+            <CompassOutlined className="mr-2 text-blue-600" />  Configuration Bar
+                                </Title>
         </div>
 
         {/* Scrollable Content */}
@@ -824,24 +834,25 @@ export const SpaceMapScreen = () => {
             className="bg-white"
           >
             {/* --- SECTION 0: VIEWPORT --- */}
-            <Panel header={<Text strong>0. Tầm nhìn & Điều hướng</Text>} key="0" className="border-b border-gray-100">
+            <Panel header={<Text strong>0e Vision & Navigation</Text>} key="0" className="border-b border-gray-100">
               <Button size="small" block icon={<AimOutlined />} className="mb-3" onClick={() => handleZoomToBox(0, 0, mapCols*GRID_SIZE, mapRows*GRID_SIZE)}>
-                Zoom Toàn Cảnh
-              </Button>
-              <Text type="secondary" className="text-xs mb-1 block">Đi đến Khu vực:</Text>
+                
+                                              Panoramic Zoom
+                                            </Button>
+              <Text type="secondary" className="text-xs mb-1 block">Go to Zone:</Text>
               <Select 
                 size="small"
                 className="w-full" 
-                placeholder="Chọn Zone..."
+                placeholder="Select Zoneeee"
                 onChange={handleZoomZone}
-                value={selectedEntity?.type === 'ZONE' ? selectedEntity.id : undefined}
+                value={selectedEntity?.type === 'ZONE' ? (selectedEntity as any).id : undefined}
               >
                 {visibleZones.map(z => <Select.Option key={z.id} value={z.id}>{z.name}</Select.Option>)}
               </Select>
             </Panel>
 
             {/* --- SECTION 1: FLOOR CONFIG --- */}
-            <Panel header={<Text strong>1. Quản lý Tầng (Floor)</Text>} key="1" className="border-b border-gray-100 bg-slate-50/50">
+            <Panel header={<Text strong>1. Management Floor (Floor)</Text>} key="1" className="border-b border-gray-100 bg-slate-50/50">
               <div className="space-y-3">
                 <div className="flex items-center space-x-2">
                   <Select 
@@ -855,18 +866,18 @@ export const SpaceMapScreen = () => {
                   <div className="flex space-x-2">
                     <Button size="small" icon={<PlusOutlined />} onClick={() => {
                       const newId = Date.now();
-                      setFloors(prev => [...prev, { id: newId, name: `Tầng Mới`, type: 'FOUR_WHEEL', mapCols: 60, mapRows: 40 }]);
+                      setFloors(prev => [...prev, { id: newId, name: `New Floor`, type: 'FOUR_WHEEL', mapCols: 60, mapRows: 40 }]);
                       setSelectedFloorId(newId);
-                    }}>Thêm</Button>
+                    }}>More</Button>
                     <Button size="small" type="primary" icon={<SaveOutlined />} onClick={handleSave}>
-                      Lưu Tầng
+                      Save Floor
                     </Button>
                   </div>
                 </div>
                 {floors.find(f => f.id === selectedFloorId) && (
                   <div className="space-y-3">
                     <div>
-                      <Text className="text-xs text-gray-500 block mb-1">Tên Tầng:</Text>
+                      <Text className="text-xs text-gray-500 block mb-1">Floor Name:</Text>
                       <Input 
                         size="small"
                         value={floors.find(f => f.id === selectedFloorId)?.name} 
@@ -874,7 +885,7 @@ export const SpaceMapScreen = () => {
                       />
                     </div>
                     <div>
-                    <Text className="text-xs text-gray-500 block mb-1">Đặc tính Tầng (Giới hạn loại xe):</Text>
+                    <Text className="text-xs text-gray-500 block mb-1">Floor characteristics (Limited to vehicle type):</Text>
                     <Select 
                       size="small" 
                       value={floors.find(f => f.id === selectedFloorId)?.type} 
@@ -883,14 +894,14 @@ export const SpaceMapScreen = () => {
                          setFloors(prev => prev.map(f => f.id === selectedFloorId ? { ...f, type: v as 'FOUR_WHEEL' | 'TWO_WHEEL' } : f));
                       }}
                     >
-                      <Select.Option value="FOUR_WHEEL">Tầng Ô tô (4 bánh)</Select.Option>
-                      <Select.Option value="TWO_WHEEL">Tầng Xe máy (2 bánh)</Select.Option>
+                      <Select.Option value="FOUR_WHEEL">Floor Car (4 wheels)</Select.Option>
+                      <Select.Option value="TWO_WHEEL">Floor Motorcycle (2 wheels)</Select.Option>
                     </Select>
                   </div>
                   </div>
                 )}
                 <div>
-                  <Text className="text-xs text-gray-500 block mb-1">Kích thước ma trận (Ô):</Text>
+                  <Text className="text-xs text-gray-500 block mb-1">Matrix size (Cell):</Text>
                   <div className="flex items-center space-x-2">
                     <InputNumber size="small" value={mapCols} onChange={v => v && handleUpdateMapSize(v, mapRows)} className="w-20" />
                     <Text type="secondary">x</Text>
@@ -903,7 +914,7 @@ export const SpaceMapScreen = () => {
             {/* --- SECTION 2: ZONE CONFIG --- */}
             <Panel 
               header={<div className="flex justify-between items-center w-full pr-4">
-                <Text strong>2. Khu vực đỗ (Zone)</Text>
+                <Text strong>2. Parking Zone (Zone)</Text>
                 <Button type="primary" size="small" icon={<PlusOutlined />} onClick={(e) => { e.stopPropagation(); handleAddZone(); }} />
               </div>} 
               key="2" 
@@ -924,19 +935,19 @@ export const SpaceMapScreen = () => {
                   </div>
                   
                   <div>
-                    <Text className="text-xs text-gray-500 block mb-1">Chức năng Zone:</Text>
+                    <Text className="text-xs text-gray-500 block mb-1">Zone function:</Text>
                     <Select 
                       size="small" className="w-full" value={activeZone.functionType}
                       onChange={v => setZones(prev => prev.map(z => z.id === activeZone.id ? {...z, functionType: v} : z))}
                     >
-                      <Select.Option value="WALK_IN">Vãng lai (Walk-in)</Select.Option>
-                      <Select.Option value="MONTHLY">Vé tháng (Monthly)</Select.Option>
-                      <Select.Option value="IMPOUNDED">Vi phạm (Impounded)</Select.Option>
+                      <Select.Option value="WALK_IN">Walk-in</Select.Option>
+                      <Select.Option value="MONTHLY">Monthly Pass (Monthly)</Select.Option>
+                      <Select.Option value="IMPOUNDED">Impounded</Select.Option>
                     </Select>
                   </div>
 
                   <div>
-                    <Text className="text-xs text-gray-500 block mb-1">Loại phương tiện:</Text>
+                    <Text className="text-xs text-gray-500 block mb-1">Vehicle Type:</Text>
                     <Select 
                       size="small" className="w-full" value={activeZone.vehicleTypeId}
                       onChange={v => setZones(prev => prev.map(z => z.id === activeZone.id ? {...z, vehicleTypeId: v} : z))}
@@ -948,16 +959,16 @@ export const SpaceMapScreen = () => {
                   </div>
 
                   <div>
-                    <Text className="text-xs text-gray-500 block mb-1">Số lượng chỗ đỗ (giảm về 0 để xóa):</Text>
+                    <Text className="text-xs text-gray-500 block mb-1">Parking Quantity (reduces to 0 to delete):</Text>
                     <InputNumber 
                       size="small" min={0} max={100} value={activeZone.capacity} className="w-full"
                       onChange={v => {
                         if (v === 0) {
                           Modal.confirm({
-                            title: 'Xác nhận xóa Khu vực',
-                            content: 'Bạn có chắc chắn muốn xóa khu vực này?',
-                            okText: 'Xóa',
-                            cancelText: 'Hủy',
+                            title: 'Confirm delete Zone',
+                            content: 'are you sure you want to delete this Zone',
+                            okText: 'Delete',
+                            cancelText: 'Cancel',
                             onOk: () => {
                               setZones(prev => prev.filter(z => z.id !== activeZone.id));
                               setSelectedEntity(null);
@@ -971,7 +982,7 @@ export const SpaceMapScreen = () => {
                   </div>
 
                   <div>
-                    <Text className="text-xs text-gray-500 block mb-1">Ngưỡng lấp đầy điều hướng (%):</Text>
+                    <Text className="text-xs text-gray-500 block mb-1">Navigation fill threshold (%):</Text>
                     <Slider 
                       min={0} max={100} value={activeZone.overflowThreshold}
                       onChange={v => setZones(prev => prev.map(z => z.id === activeZone.id ? {...z, overflowThreshold: v} : z))}
@@ -984,13 +995,14 @@ export const SpaceMapScreen = () => {
                 </div>
               ) : (
                 <div className="py-4 text-center text-gray-400 italic text-sm">
-                  Click vào một Zone trên bản đồ để cấu hình.
-                </div>
+                  
+                                                        Click on a Zone on the map to configure it
+                                                      </div>
               )}
             </Panel>
 
             {/* --- SECTION 3: SLOT CONFIG --- */}
-            <Panel header={<Text strong>3. Ô đỗ đơn lẻ (Slot)</Text>} key="3" className="border-b border-gray-100 bg-slate-50/50">
+            <Panel header={<Text strong>3e Single Slot (Slot)</Text>} key="3" className="border-b border-gray-100 bg-slate-50/50">
               {activeSlot && activeZone ? (
                 <div className="space-y-3">
                   <div className="flex justify-between items-center p-2 bg-white border border-gray-200 rounded">
@@ -999,27 +1011,29 @@ export const SpaceMapScreen = () => {
                   </div>
                   
                   <div className="flex justify-between items-center mt-4">
-                    <Text>Hoạt động bình thường:</Text>
+                    <Text>normal active:</Text>
                     <Switch 
                       checked={activeSlot.status !== 'DISABLED'}
                       onChange={(checked) => handleToggleSlotStatus(activeZone.id, activeSlot.id, checked ? 'EMPTY' : 'DISABLED')}
                     />
                   </div>
                   <Text type="secondary" className="text-xs italic block mt-1">
-                    * Tắt công tắc để chuyển sang chế độ Bảo trì. Không thể bảo trì nếu đang có xe.
-                  </Text>
+                    
+                                                          * Turn off the switch to switch to Maintenance mode. Maintenance is not possible if the vehicle is in use
+                                                        </Text>
                 </div>
               ) : (
                 <div className="py-4 text-center text-gray-400 italic text-sm">
-                  Click đúp vào một Slot để cấu hình riêng biệt.
-                </div>
+                  
+                                                        Double click on a Slot to configure it separately
+                                                      </div>
               )}
             </Panel>
 
             {/* --- SECTION 4: GATE COMMAND CENTER --- */}
             <Panel 
               header={<div className="flex justify-between items-center w-full pr-4">
-                <Text strong className={activeGate ? "text-amber-600" : ""}>4. Lệnh Cổng Điều hành</Text>
+                <Text strong className={activeGate ? "text-amber-600" : ""}>4e Gate Information (Gate)</Text>
                 <Button type="primary" size="small" icon={<PlusOutlined />} onClick={(e) => { e.stopPropagation(); handleAddGate(); }} />
               </div>} 
               key="4" 
@@ -1037,63 +1051,21 @@ export const SpaceMapScreen = () => {
                         onChange={(e) => setGates(prev => prev.map(g => g.id === activeGate.id ? {...g, name: e.target.value} : g))}
                       />
                     </div>
-                    <div className="mb-2">
-                      <Text className="text-xs text-gray-500 block mb-1">Loại cổng:</Text>
-                      <Select 
-                        size="small" 
-                        value={activeGate.type} 
-                        className="w-full"
-                        onChange={(v) => setGates(prev => prev.map(g => g.id === activeGate.id ? {...g, type: v as 'IN' | 'OUT' | 'IN_OUT'} : g))}
-                      >
-                        <Select.Option value="IN">Cổng Vào (IN)</Select.Option>
-                        <Select.Option value="OUT">Cổng Ra (OUT)</Select.Option>
-                        <Select.Option value="IN_OUT">Vào & Ra</Select.Option>
-                      </Select>
+                    <Text className="text-xs block mt-2 text-gray-500">
+                      
+                                                                * Gate function (Enter/Exit) and Vehicle Type will be chosen by the Staff when closing the shift at this gate
+                                                              </Text>
+                    <div className="mt-3">
+                      <Text className="text-xs block">Current status: <Text strong>{activeGate.status}</Text></Text>
+                      {activeGate.staffName && <Text className="text-xs block">Staff on duty: <Text strong>{activeGate.staffName}</Text></Text>}
                     </div>
-                    <div className="mb-2">
-                      <Text className="text-xs text-gray-500 block mb-1">Loại xe:</Text>
-                      <Select 
-                        size="small"
-                        value={activeGate.vehicleTypeId} 
-                        className="w-full"
-                        onChange={(v) => setGates(prev => prev.map(g => g.id === activeGate.id ? {...g, vehicleTypeId: v} : g))}
-                      >
-                        {validVehicleTypes.map(vt => (
-                          <Select.Option key={vt.id} value={vt.id}>{vt.typeName}</Select.Option>
-                        ))}
-                      </Select>
-                    </div>
-                    <Text className="text-xs block">Trạng thái: <Text strong>{activeGate.status}</Text></Text>
-                    {activeGate.staffName && <Text className="text-xs block">Nhân viên trực: <Text strong>{activeGate.staffName}</Text></Text>}
                   </div>
-
-                  {activeGate.pendingCommand ? (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded">
-                      <Text strong className="text-red-600 block mb-2"><SettingOutlined spin /> Lệnh chờ đang thực thi...</Text>
-                      <Text className="text-sm block mb-3">Hệ thống đang chờ nhân viên {activeGate.staffName} dọn dẹp hàng đợi và chốt ca để kích hoạt lệnh: <Text strong>{activeGate.pendingCommand}</Text></Text>
-                      <Button danger block icon={<CloseCircleOutlined />} onClick={() => handleCancelGateCommand(activeGate.id)}>
-                        Hủy Lệnh Chờ
-                      </Button>
-                    </div>
-                  ) : (
-                    <div>
-                      <Text className="text-xs text-gray-500 block mb-2">Gửi lệnh điều khiển từ xa (Override):</Text>
-                      <Radio.Group className="w-full flex flex-col space-y-2">
-                        <Radio value="NORMAL"><Text>Bình thường (Tự động)</Text></Radio>
-                        <Radio value="CLOSED"><Text className="text-red-600">Khóa ĐÓNG CỔNG</Text></Radio>
-                        <Radio value="FORCE_IN"><Text className="text-blue-600">Ép luồng VÀO</Text></Radio>
-                        <Radio value="FORCE_OUT"><Text className="text-orange-600">Ép luồng RA</Text></Radio>
-                      </Radio.Group>
-                      <Button type="primary" className="mt-4 bg-slate-800" block onClick={() => handleGateCommand(activeGate.id, 'CLOSED')}>
-                        Gửi Lệnh Điều Phối
-                      </Button>
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="py-4 text-center text-gray-400 italic text-sm">
-                  Click vào biểu tượng Cổng (Gate) trên viền bản đồ để thao tác.
-                </div>
+                  
+                                                        Click on the Gate icon on the map border to operate
+                                                      </div>
               )}
             </Panel>
           </Collapse>
@@ -1109,8 +1081,9 @@ export const SpaceMapScreen = () => {
             onClick={handleSave} 
             className="bg-blue-600 hover:bg-blue-700 h-12 text-base font-medium shadow-md"
           >
-            LƯU CẤU HÌNH
-          </Button>
+            
+                                  SAVE CONFIGURATION
+                                </Button>
         </div>
 
       </div>

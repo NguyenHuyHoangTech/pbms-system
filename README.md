@@ -1,2 +1,35 @@
 # pbms-system
-A repo for Parking Building Management System.
+
+
+
+To use this system using the information below:
+
+
+Login To System:
+
+
+
+systemadministratorweb@gmail.com
+
+systemmanagerweb@gmail.com
+
+systemstaffwebsite@gmail.com
+
+systemuserweb@gmail.com
+
+Password: Fpt123456789@
+
+
+
+
+
+Login to Payment:
+
+
+
+Gmail: nguyenhuyhoangtest@gmail.com
+
+
+
+Password: 12345678
+

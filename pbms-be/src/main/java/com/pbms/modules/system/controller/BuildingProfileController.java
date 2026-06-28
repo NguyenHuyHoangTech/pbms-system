@@ -6,6 +6,7 @@ import com.pbms.modules.system.service.BuildingProfileService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import com.pbms.common.annotation.LogAudit;
 
 @RestController
 @RequestMapping("/api/v1/system/building-profile")
@@ -25,8 +26,10 @@ public class BuildingProfileController {
 
     @PutMapping
     @PreAuthorize("hasRole('MANAGER')")
+    @LogAudit(action = "UPDATE", resource = "BuildingProfile", description = "Update building profile")
     public ResponseEntity<ApiResponse<BuildingProfile>> updateProfile(@jakarta.validation.Valid @RequestBody BuildingProfile profile) {
         BuildingProfile updated = service.updateProfile(profile);
         return ResponseEntity.ok(ApiResponse.success(updated, "Profile updated successfully"));
     }
 }
+

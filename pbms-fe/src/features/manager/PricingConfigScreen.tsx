@@ -1,3 +1,4 @@
+import { simulatedDayjs } from '../../core/utils/timeProvider';
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
@@ -48,6 +49,7 @@ interface VehicleConfig {
   globalBaseGuardPrice: number;
   globalMaxCapEnabled: boolean;
   globalMaxCapPrice: number | null;
+  monthlyRate: number;
   shifts: Shift[];
 }
 
@@ -71,9 +73,10 @@ export const PricingConfigScreen = () => {
     globalBaseGuardPrice: 0,
     globalMaxCapEnabled: false,
     globalMaxCapPrice: null,
+    monthlyRate: 0,
     shifts: [{
       id: `shift_${Date.now()}`,
-      name: 'Ca Mặc Định',
+      name: 'Default Ca',
       startTime: '00:00',
       endTime: '23:59',
       color: 'bg-blue-100 border-blue-300 text-blue-800',
@@ -87,8 +90,8 @@ export const PricingConfigScreen = () => {
   const [activeAccordion, setActiveAccordion] = useState<string | string[]>(['1', '2']);
 
   // Calculator State
-  const [timeIn, setTimeIn] = useState<Dayjs | null>(dayjs('08:00', 'HH:mm'));
-  const [timeOut, setTimeOut] = useState<Dayjs | null>(dayjs('10:30', 'HH:mm'));
+  const [timeIn, setTimeIn] = useState<Dayjs | null>(simulatedDayjs('08:00', 'HH:mm'));
+  const [timeOut, setTimeOut] = useState<Dayjs | null>(simulatedDayjs('10:30', 'HH:mm'));
   const [calcResult, setCalcResult] = useState<{ total: number, breakdown: string[], minutes: number } | null>(null);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [confirmInput, setConfirmInput] = useState('');
@@ -121,6 +124,7 @@ export const PricingConfigScreen = () => {
           globalBaseGuardPrice: policy.globalBaseFee,
           globalMaxCapEnabled: policy.maxParkingCap < 3000000,
           globalMaxCapPrice: policy.maxParkingCap,
+          monthlyRate: policy.monthlyRate || 0,
           shifts: policy.shifts.map((s: any, idx: number) => {
             const slices: Slice[] = s.blocks.map((b: any, bIdx: number) => {
                return {
@@ -213,11 +217,11 @@ export const PricingConfigScreen = () => {
     // LỚP TIỀN XỬ LÝ: BỘ LỌC CƠ BẢN TOÀN CẢNH (GLOBAL BASE INTERCEPTOR)
     if (globalBaseGuardEnabled && minutes <= globalBaseGuardTime) {
       total = globalBaseGuardPrice;
-      breakdown.push(`[Lớp Tiền Xử Lý] Đỗ ngắn (${minutes}p <= ${globalBaseGuardTime}p)`);
-      breakdown.push(`-> Kết thúc thuật toán: Tính giá nền ${(globalBaseGuardPrice || 0).toLocaleString()}đ`);
+      breakdown.push(`[Pre-processing] Short parking (${minutes}p <= ${globalBaseGuardTime}p)`);
+      breakdown.push(`-> Algorithm end: Calculate base price ${(globalBaseGuardPrice || 0).toLocaleString()} VND`);
     } else {
       if (globalBaseGuardEnabled) {
-         breakdown.push(`[Lớp Tiền Xử Lý] Vượt giá nền (${minutes}p > ${globalBaseGuardTime}p) -> Bỏ qua giá nền, chuyển xuống Máy Cắt Ca.`);
+         breakdown.push(`[Pre-processing] Exceeded base price (${minutes}p > ${globalBaseGuardTime}p) -> Skip base price, move to shift slicer.`);
       }
 
       // BƯỚC 1: MÁY CẮT THEO CA (Helper_SliceByShift)
@@ -237,7 +241,7 @@ export const PricingConfigScreen = () => {
          });
       };
 
-      // Dò từng phút để cắt lát
+      // Dò từng minutes để cắt lát
       for (let i = 0; i < minutes; i++) {
          const currentMin = (startMinOfDay + i) % 1440;
          const shift = getShiftForMinute(currentMin);
@@ -264,7 +268,7 @@ export const PricingConfigScreen = () => {
 
       // BƯỚC 2: CỖ MÁY TRƯỢT BLOCK (Helper_SlideBlocks)
       chunks.forEach((chunk, index) => {
-         breakdown.push(`--- Lát cắt ${index + 1}: ${chunk.shift.name} (Dài ${chunk.duration} phút) ---`);
+         breakdown.push(`--- Slice ${index + 1}: ${chunk.shift.name} (Duration ${chunk.duration} minutes) ---`);
          let remainingChunkTime = chunk.duration;
          
          for (let i = 0; i < chunk.shift.slices.length; i++) {
@@ -272,23 +276,23 @@ export const PricingConfigScreen = () => {
             if (remainingChunkTime <= 0) break;
 
             const blockDuration = slice.isTail ? getTailDuration(chunk.shift) : (slice.duration || 0);
-            const blockName = slice.isTail ? 'Lớp Chốt' : `Lớp ${i+1}`;
+            const blockName = slice.isTail ? 'Latch Class' : `Layer ${i+1}`;
 
             if (remainingChunkTime > 0) {
                total += slice.price;
                if (remainingChunkTime <= blockDuration) {
-                  breakdown.push(`[Trượt] ${blockName}: +${(slice.price || 0).toLocaleString()}đ (Tiêu hao ${remainingChunkTime}p, Hết Lát cắt)`);
+                  breakdown.push(`[Sliding] ${blockName}: +${(slice.price || 0).toLocaleString()}VND (Consumed ${remainingChunkTime}p, End of slice)`);
                   remainingChunkTime -= blockDuration;
                   break;
                } else {
-                  breakdown.push(`[Trượt] ${blockName}: +${(slice.price || 0).toLocaleString()}đ (Tiêu hao hết ${blockDuration}p)`);
+                  breakdown.push(`[Sliding] ${blockName}: +${(slice.price || 0).toLocaleString()}VND (Fully consumed ${blockDuration}p)`);
                   remainingChunkTime -= blockDuration;
                }
             }
          }
 
          if (remainingChunkTime > 0) {
-            breakdown.push(`⚠️ Cảnh báo: Lát cắt còn dư ${remainingChunkTime}p chưa được tính phí (Do cấu hình block bị hụt so với thời lượng Ca).`);
+            breakdown.push(`⚠️ Warning: Remaining slice ${remainingChunkTime}p not charged (due to config compared to shift duration).`);
          }
       });
     }
@@ -297,9 +301,9 @@ export const PricingConfigScreen = () => {
     breakdown.push(`======================`);
     if (globalMaxCapEnabled && globalMaxCapPrice && total > globalMaxCapPrice) {
       total = globalMaxCapPrice;
-      breakdown.push(`-> Chạm Giá Trần Lưu Bãi. Áp dụng trần: ${(globalMaxCapPrice || 0).toLocaleString()}đ`);
+      breakdown.push(`-> Hit Lot Max Cap. Cap applied: ${(globalMaxCapPrice || 0).toLocaleString()} VND`);
     } else {
-      breakdown.push(`-> Tổng hóa đơn tạm tính: ${total.toLocaleString()}đ`);
+      breakdown.push(`-> Total estimated bill: ${total.toLocaleString()} VND`);
     }
 
     setCalcResult({ total, breakdown, minutes });
@@ -311,13 +315,13 @@ export const PricingConfigScreen = () => {
       return await axiosClient.post('/manager/pricing', payload);
     },
     onSuccess: () => {
-      message.success('Đã lưu cấu hình bảng giá thành công!');
+      message.success('Price list configuration saved Success!');
       setIsConfirmModalOpen(false);
       setConfirmInput('');
       queryClient.invalidateQueries({ queryKey: ['pricing-policies'] });
     },
     onError: (error: any) => {
-      message.error('Lỗi khi lưu bảng giá: ' + (error.response?.data?.message || error.message));
+      message.error('Error when saving price list: ' + (error.response?.data?.message || error.message));
     }
   });
 
@@ -325,11 +329,12 @@ export const PricingConfigScreen = () => {
     if (confirmInput === 'XACNHAN') {
       const payload = {
         id: (config as any).id,
-        policyName: config.policyName || `Bảng giá ${vehicleTypesData?.find((v:any) => v.id === activeTabId)?.typeName || 'Mặc định'}`,
+        policyName: config.policyName || `Pricing table ${vehicleTypesData?.find((v:any) => v.id === activeTabId)?.typeName || 'Default'}`,
         vehicleTypeId: activeTabId,
         globalBaseMins: config.globalBaseGuardEnabled ? config.globalBaseGuardTime : 0,
         globalBaseFee: config.globalBaseGuardEnabled ? config.globalBaseGuardPrice : 0,
         maxParkingCap: config.globalMaxCapEnabled && config.globalMaxCapPrice ? config.globalMaxCapPrice : 3000000,
+        monthlyRate: config.monthlyRate,
         status: 'ACTIVE',
         shifts: config.shifts.map(s => {
           
@@ -358,7 +363,7 @@ export const PricingConfigScreen = () => {
 
       saveMutation.mutate(payload);
     } else {
-      message.error('Mã xác nhận không hợp lệ!');
+      message.error('Confirmation code is invalid!');
     }
   };
 
@@ -395,14 +400,14 @@ export const PricingConfigScreen = () => {
        newStartTime = config.shifts[config.shifts.length - 1].endTime;
     }
     const [h, m] = newStartTime.split(':').map(Number);
-    const endH = (h + 4) % 24; // Mặc định ca mới 4 tiếng
+    const endH = (h + 4) % 24; // Default new shift 4 hours
     const newEndTime = `${endH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
     
     setConfig(prev => ({
       ...prev,
       shifts: [...prev.shifts, {
         id: newId,
-        name: `Ca Mới ${prev.shifts.length + 1}`,
+        name: `New Shift ${prev.shifts.length + 1}`,
         startTime: newStartTime,
         endTime: newEndTime,
         color: 'bg-gray-100 border-gray-300 text-gray-800',
@@ -415,7 +420,7 @@ export const PricingConfigScreen = () => {
   const handleDeleteShift = () => {
     if (!selectedShiftId) return;
     if (config.shifts.length <= 1) {
-       message.error('Hệ thống yêu cầu ít nhất 1 ca!');
+       message.error('System requires at least 1 shift!');
        return;
     }
     setConfig(prev => ({
@@ -484,7 +489,7 @@ export const PricingConfigScreen = () => {
       if (end <= start) end += 24 * 60;
       totalMins += (end - start);
     });
-    // Cho phép sai số 1 phút (ví dụ kết thúc 23:59 thay vì 00:00)
+    // Cho phép sai số 1 minutes (ví dụ kết thúc 23:59 thay vì 00:00)
     return totalMins >= 1439 && totalMins <= 1440;
   };
   const is24HCovered = checkTimelineCoverage();
@@ -502,8 +507,8 @@ export const PricingConfigScreen = () => {
                <DollarOutlined className="text-blue-600 text-xl" />
              </div>
              <div>
-               <h1 className="text-lg font-bold text-gray-800 m-0">Cấu hình Bảng Giá</h1>
-               <p className="text-xs text-gray-500 m-0">Quản lý ma trận giá cước & thời gian</p>
+               <h1 className="text-lg font-bold text-gray-800 m-0">Price List Configuration</h1>
+               <p className="text-xs text-gray-500 m-0">Manage fare matrix & Time</p>
              </div>
           </div>
           
@@ -528,17 +533,19 @@ export const PricingConfigScreen = () => {
           <div className="space-y-3 bg-white p-6 rounded-xl border border-gray-200 shadow-sm">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wide flex items-center gap-2 m-0">
-                <ClockCircleOutlined /> Trục Thời Gian Tổng Thể (24H)
-              </h3>
+                <ClockCircleOutlined />  Overall Time Axis (24H)
+                                            </h3>
               <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={handleAddShift}>
-                Thêm Ca
-              </Button>
+                
+                                              Add Ca
+                                            </Button>
             </div>
             
             {!is24HCovered && (
               <div className="text-xs text-amber-600 font-semibold bg-amber-50 px-3 py-2 rounded-md border border-amber-200 inline-block mb-2">
-                ⚠️ Tổng thời gian các ca chưa đủ 24H hoặc có sự chồng chéo. Vui lòng kiểm tra lại.
-              </div>
+                
+                                              ⚠️ The total time of the cases is not 24 hours or there is an overlap. Please check again.
+                                            </div>
             )}
             
             <div className="relative h-16 bg-gray-100 rounded-lg border border-gray-200 overflow-hidden mt-4">
@@ -561,7 +568,10 @@ export const PricingConfigScreen = () => {
                       onClick={() => {
                         setSelectedShiftId(shift.id);
                         setSelectedSliceId(null);
-                        setActiveAccordion(['2']);
+                        setActiveAccordion(prev => {
+                          const arr = Array.isArray(prev) ? prev : [prev];
+                          return arr.includes('2') ? arr : [...arr, '2'];
+                        });
                       }}
                       className={`absolute top-1 bottom-1 rounded-md transition-all duration-200 cursor-pointer flex items-center justify-center border
                         ${shift.color} ${isSelected ? 'ring-2 ring-blue-500 ring-offset-2 z-10' : 'opacity-80 hover:opacity-100'} ${extraClasses}`}
@@ -595,7 +605,7 @@ export const PricingConfigScreen = () => {
           {/* Shift Slicing Workspace */}
           <div className="flex-1 bg-white rounded-xl border border-gray-200 shadow-sm p-6 flex flex-col relative overflow-hidden">
             <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wide m-0 mb-6 flex items-center gap-2">
-              <DollarOutlined /> Lớp Cắt Giá: <span className="text-blue-600">{selectedShift?.name || 'Chưa chọn Ca'}</span>
+              <DollarOutlined />  Price Cutting Class: <span className="text-blue-600">{selectedShift?.name || 'Ca not selected'}</span>
             </h3>
 
             {selectedShift ? (
@@ -611,8 +621,9 @@ export const PricingConfigScreen = () => {
                     <>
                       {isOverLimit && (
                         <div className="text-xs text-red-600 font-semibold bg-red-50 px-3 py-2 rounded-md border border-red-200 mb-4 inline-block self-start">
-                          ⚠️ Tổng thời gian các lớp vượt quá thời lượng Ca ({othersSum}/{shiftDur} phút). Lớp chốt hiện đang là 0 Phút.
-                        </div>
+                          
+                                                            ⚠️ Total class time exceeds shift duration ({othersSum}/{shiftDur}  min)e The key layer is currently 0 Minutes
+                                                          </div>
                       )}
 
                       <div className="flex gap-4 items-stretch w-full overflow-x-auto pb-4 custom-scrollbar px-2">
@@ -638,14 +649,14 @@ export const PricingConfigScreen = () => {
                               `}
                             >
                               <div className="text-xs text-gray-500 mb-2 font-medium uppercase">
-                                {isTail ? 'Lớp Chốt (Tự động)' : `Lớp ${index + 1}`}
+                                {isTail ? 'Latch Layer (Automatic)' : `Layer ${index + 1}`}
                               </div>
                               <div className={`text-lg font-bold mb-3 flex items-center gap-2 ${isTail && isOverLimit ? 'text-red-500' : 'text-gray-800'}`}>
-                                {isTail ? `${displayDuration} Phút` : `${slice.duration} Phút`}
+                                {isTail ? `${displayDuration} Minutes` : `${slice.duration} Minutes`}
                               </div>
                               <div className="bg-green-100 text-green-700 px-3 py-1 rounded-md text-sm font-bold border border-green-200">
-                                {(slice.price || 0).toLocaleString()} đ
-                              </div>
+                                {(slice.price || 0).toLocaleString()}  D
+                                                                    </div>
                               
                               {/* Connection arrow between blocks */}
                               {!isTail && (
@@ -674,7 +685,7 @@ export const PricingConfigScreen = () => {
               <div className="flex-1 flex items-center justify-center text-gray-400 bg-gray-50 rounded-lg border border-gray-200 border-dashed">
                 <div className="text-center">
                   <ClockCircleOutlined className="text-3xl mb-2 text-gray-300" />
-                  <p>Vui lòng chọn một Ca trên trục thời gian để cấu hình lớp cắt.</p>
+                  <p>Please select a Shift on the Time axis to configure the cutting layer</p>
                 </div>
               </div>
             )}
@@ -686,7 +697,7 @@ export const PricingConfigScreen = () => {
       <div className="w-[450px] bg-white flex flex-col relative z-20">
         
         <div className="p-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-          <h2 className="text-sm font-bold text-gray-700 m-0 uppercase tracking-wide">Cấu hình thông số</h2>
+          <h2 className="text-sm font-bold text-gray-700 m-0 uppercase tracking-wide">Parameter configuration</h2>
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar pb-32">
@@ -694,12 +705,12 @@ export const PricingConfigScreen = () => {
           {/* CALCULATOR WIDGET FIXED AT TOP OF INSPECTOR */}
           <div className="p-4 border-b border-gray-200 bg-blue-50/50">
              <div className="flex items-center gap-2 text-blue-700 font-bold text-sm mb-3">
-               <CalculatorOutlined /> WIDGET TÍNH THỬ
-             </div>
+               <CalculatorOutlined />  WIDGET COMPUTATION TEST
+                                       </div>
              
              <div className="flex items-center gap-2 mb-3">
                <div className="flex-1">
-                 <label className="block text-xs text-gray-500 mb-1">Giờ Vào</label>
+                 <label className="block text-xs text-gray-500 mb-1">Time to Enter</label>
                  <TimePicker 
                    className="w-full" 
                    format="HH:mm" 
@@ -709,7 +720,7 @@ export const PricingConfigScreen = () => {
                  />
                </div>
                <div className="flex-1">
-                 <label className="block text-xs text-gray-500 mb-1">Giờ Ra</label>
+                 <label className="block text-xs text-gray-500 mb-1">Out time</label>
                  <TimePicker 
                    className="w-full" 
                    format="HH:mm" 
@@ -719,7 +730,7 @@ export const PricingConfigScreen = () => {
                  />
                </div>
                <div className="pt-5">
-                 <Button type="primary" onClick={calculatePrice} className="bg-blue-600 shadow-sm">Tính</Button>
+                 <Button type="primary" onClick={calculatePrice} className="bg-blue-600 shadow-sm">Calculate</Button>
                </div>
              </div>
 
@@ -729,21 +740,23 @@ export const PricingConfigScreen = () => {
                  <>
                    <div className="text-xs text-gray-600 space-y-1 mb-2">
                       <div className="font-semibold text-gray-800 mb-1 border-b border-gray-100 pb-1">
-                        Tổng thời gian đỗ: {calcResult.minutes} phút
-                      </div>
+                        
+                                                                  Total Parking Time: {calcResult.minutes}  minute
+                                                                </div>
                       {calcResult.breakdown.map((line, i) => <div key={i}>{line}</div>)}
                    </div>
                    <div className="text-right pt-2 border-t border-gray-100 flex justify-between items-center">
-                      <span className="text-xs text-gray-500 font-bold">TỔNG CỘNG</span>
+                      <span className="text-xs text-gray-500 font-bold">TOTAL</span>
                       <span className="text-lg text-green-600 font-bold">
-                        {calcResult.total.toLocaleString()} đ
-                      </span>
+                        {calcResult.total.toLocaleString()}  D
+                                                                </span>
                    </div>
                  </>
                ) : (
                  <div className="text-gray-400 text-xs flex h-full items-center justify-center">
-                   Chưa có dữ liệu tính toán.
-                 </div>
+                   
+                                                         None calculated data
+                                                       </div>
                )}
              </div>
           </div>
@@ -756,20 +769,30 @@ export const PricingConfigScreen = () => {
              className="[&_.ant-collapse-item]:border-b [&_.ant-collapse-item]:border-gray-200 [&_.ant-collapse-header]:text-gray-800 [&_.ant-collapse-header]:font-bold [&_.ant-collapse-header]:p-4"
           >
             {/* Section 1: Global */}
-            <Panel header={<span className="text-orange-500 text-sm"><CarOutlined className="mr-2"/> CẤU HÌNH TOÀN CỤC</span>} key="1">
+            <Panel header={<span className="text-orange-500 text-sm"><CarOutlined className="mr-2"/>  GLOBAL CONFIGURATION</span>} key="1">
                <div className="space-y-4 px-2 pb-2">
-                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                   <div className="flex justify-between items-center mb-3">
-                     <span className="text-gray-700 font-semibold text-sm">Giá Nền (Base Guard)</span>
+                   <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                     <div className="flex justify-between items-center mb-3">
+                       <span className="text-gray-700 font-semibold text-sm">Monthly Passes Price (VND)</span>
+                     </div>
+                     <div>
+                       <label className="text-xs text-gray-500 block mb-1 font-medium">Monthly Pass fee for this Vehicle</label>
+                       <InputNumber className="w-full font-mono text-blue-600" placeholder="VD: 1000000" value={config.monthlyRate} onChange={v => updateConfig('monthlyRate', v || 0)} formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
+                     </div>
+                   </div>
+
+                   <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                     <div className="flex justify-between items-center mb-3">
+                       <span className="text-gray-700 font-semibold text-sm">Base Guard</span>
                      <Switch checked={config.globalBaseGuardEnabled} onChange={v => updateConfig('globalBaseGuardEnabled', v)} />
                    </div>
                    <div className="space-y-3">
                      <div>
-                       <label className="text-xs text-gray-500 block mb-1 font-medium">Thời gian mốc (Phút)</label>
+                       <label className="text-xs text-gray-500 block mb-1 font-medium">Time mark (Minutes)</label>
                        <InputNumber disabled={!config.globalBaseGuardEnabled} className="w-full" value={config.globalBaseGuardTime} onChange={v => updateConfig('globalBaseGuardTime', v || 0)} />
                      </div>
                      <div>
-                       <label className="text-xs text-gray-500 block mb-1 font-medium">Giá tiền (VNĐ)</label>
+                       <label className="text-xs text-gray-500 block mb-1 font-medium">Price (VND)</label>
                        <InputNumber disabled={!config.globalBaseGuardEnabled} className="w-full font-mono text-green-600" value={config.globalBaseGuardPrice} onChange={v => updateConfig('globalBaseGuardPrice', v || 0)} formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
                      </div>
                    </div>
@@ -777,11 +800,11 @@ export const PricingConfigScreen = () => {
 
                  <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                    <div className="flex justify-between items-center mb-3">
-                     <span className="text-gray-700 font-semibold text-sm">Giá Lưu Bãi Tối Đa</span>
+                     <span className="text-gray-700 font-semibold text-sm">Maximum Save Yard Price</span>
                      <Switch checked={config.globalMaxCapEnabled} onChange={v => updateConfig('globalMaxCapEnabled', v)} />
                    </div>
                    <div>
-                     <label className="text-xs text-gray-500 block mb-1 font-medium">Mức phí tối đa / 1 lượt (VNĐ)</label>
+                     <label className="text-xs text-gray-500 block mb-1 font-medium">Maximum fee per trip (VND)</label>
                      <InputNumber disabled={!config.globalMaxCapEnabled} className="w-full font-mono text-orange-600" placeholder="VD: 150000" value={config.globalMaxCapPrice} onChange={v => updateConfig('globalMaxCapPrice', v)} formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} />
                    </div>
                  </div>
@@ -790,26 +813,26 @@ export const PricingConfigScreen = () => {
 
             {/* Section 2: Shift */}
             {selectedShiftId && (
-              <Panel header={<span className="text-blue-500 text-sm"><ClockCircleOutlined className="mr-2"/> CẤU HÌNH CA</span>} key="2">
+              <Panel header={<span className="text-blue-500 text-sm"><ClockCircleOutlined className="mr-2"/>  CONFIGURATION Ca</span>} key="2">
                 <div className="space-y-4 px-2 pb-2">
                   <div>
-                     <label className="text-xs text-gray-500 block mb-1 font-medium">Tên Ca</label>
+                     <label className="text-xs text-gray-500 block mb-1 font-medium">Name Ca</label>
                      <Input value={selectedShift?.name} onChange={e => {
                        setConfig(prev => ({...prev, shifts: prev.shifts.map(s => s.id === selectedShiftId ? {...s, name: e.target.value} : s)}));
                      }}/>
                   </div>
                   <div className="flex gap-3">
                     <div className="flex-1">
-                      <label className="text-xs text-gray-500 block mb-1 font-medium">Bắt đầu</label>
-                      <TimePicker className="w-full" value={dayjs(selectedShift?.startTime, 'HH:mm')} format="HH:mm" allowClear={false} onChange={(t, ts) => {
+                      <label className="text-xs text-gray-500 block mb-1 font-medium">Begin</label>
+                      <TimePicker className="w-full" value={simulatedDayjs(selectedShift?.startTime, 'HH:mm')} format="HH:mm" allowClear={false} onChange={(t, ts) => {
                          if(typeof ts === 'string') {
                            setConfig(prev => ({...prev, shifts: prev.shifts.map(s => s.id === selectedShiftId ? {...s, startTime: ts} : s)}));
                          }
                       }}/>
                     </div>
                     <div className="flex-1">
-                      <label className="text-xs text-gray-500 block mb-1 font-medium">Kết thúc</label>
-                      <TimePicker className="w-full" value={dayjs(selectedShift?.endTime, 'HH:mm')} format="HH:mm" allowClear={false} onChange={(t, ts) => {
+                      <label className="text-xs text-gray-500 block mb-1 font-medium">End</label>
+                      <TimePicker className="w-full" value={simulatedDayjs(selectedShift?.endTime, 'HH:mm')} format="HH:mm" allowClear={false} onChange={(t, ts) => {
                          if(typeof ts === 'string') {
                            setConfig(prev => ({...prev, shifts: prev.shifts.map(s => s.id === selectedShiftId ? {...s, endTime: ts} : s)}));
                          }
@@ -818,8 +841,9 @@ export const PricingConfigScreen = () => {
                   </div>
                   <div className="flex justify-end pt-2 border-t border-gray-100">
                      <Button danger size="small" icon={<DeleteOutlined />} onClick={handleDeleteShift}>
-                        Xóa Ca Này
-                     </Button>
+                        
+                                                                  Delete This Song
+                                                               </Button>
                   </div>
                 </div>
               </Panel>
@@ -827,35 +851,36 @@ export const PricingConfigScreen = () => {
 
             {/* Section 3: Slice */}
             {selectedSliceId && selectedSlice && (
-              <Panel header={<span className="text-green-600 text-sm"><DollarOutlined className="mr-2"/> CHI TIẾT LỚP CẮT</span>} key="3">
+              <Panel header={<span className="text-green-600 text-sm"><DollarOutlined className="mr-2"/>  CUT LAYER Detail</span>} key="3">
                  <div className="space-y-4 px-2 pb-2">
                     <div className="bg-green-50 p-4 rounded-lg border border-green-200">
                        <h4 className="text-green-800 font-bold mb-4 text-sm flex justify-between items-center">
-                         <span>Cấu hình Lớp số {selectedShift?.slices.findIndex(s => s.id === selectedSliceId) !== undefined ? (selectedShift!.slices.findIndex(s => s.id === selectedSliceId) + 1) : 'X'}</span>
-                         {selectedSlice.isTail && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">Lớp Chốt</span>}
+                         <span>Configuration Layer no {selectedShift?.slices.findIndex(s => s.id === selectedSliceId) !== undefined ? (selectedShift!.slices.findIndex(s => s.id === selectedSliceId) + 1) : 'X'}</span>
+                         {selectedSlice.isTail && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs">Latch Class</span>}
                        </h4>
                        
                        <div className="space-y-4">
                          <div>
                            <label className="text-xs text-gray-600 block mb-1 font-medium">
-                             Thời lượng {selectedSlice.isTail && "(Tự động tính toán)"}
+                             
+                                                                               Duration {selectedSlice.isTail && "(Automatic calculation)"}
                            </label>
                            <InputNumber 
                              disabled={selectedSlice?.isTail} 
                              className="w-full" 
                              value={selectedSlice?.isTail ? getTailDuration(selectedShift!) : selectedSlice?.duration} 
                              onChange={v => handleSliceUpdate('duration', v)}
-                             addonAfter={<span className="text-gray-500 text-xs">Phút</span>}
+                             addonAfter={<span className="text-gray-500 text-xs">Minute</span>}
                            />
                          </div>
                          <div>
-                           <label className="text-xs text-gray-600 block mb-1 font-medium">Giá tiền áp dụng</label>
+                           <label className="text-xs text-gray-600 block mb-1 font-medium">Price applies</label>
                            <InputNumber 
                              className="w-full font-mono text-green-600 text-base" 
                              value={selectedSlice?.price} 
                              onChange={v => handleSliceUpdate('price', v)}
                              formatter={v => `${v}`.replace(/\B(?=(\d{3})+(?!\d))/g, ',')} 
-                             addonAfter={<span className="text-gray-500 text-xs">VNĐ</span>}
+                             addonAfter={<span className="text-gray-500 text-xs">VND</span>}
                            />
                          </div>
 
@@ -881,8 +906,9 @@ export const PricingConfigScreen = () => {
                              disabled={selectedSlice.isTail}
                              onClick={handleDeleteSlice}
                            >
-                              Xóa Lớp
-                           </Button>
+                              
+                                                                                Delete Class
+                                                                             </Button>
                         </div>
                        </div>
                     </div>
@@ -896,22 +922,23 @@ export const PricingConfigScreen = () => {
         {/* BOTTOM ACTION - FIXED */}
         <div className="absolute bottom-0 left-0 right-0 p-4 bg-white border-t border-gray-200 shadow-[0_-4px_10px_rgba(0,0,0,0.05)] z-30 flex gap-3">
            <Button size="large" icon={<CloseOutlined />} className="flex-1 bg-gray-50 text-gray-600 border-gray-300 hover:bg-gray-100">
-             Hủy
+             Cancel
            </Button>
            <Button 
              size="large" type="primary" icon={<SaveOutlined />} 
              className="flex-[2] bg-blue-600 hover:bg-blue-500 border-none font-bold shadow-md"
              onClick={() => setIsConfirmModalOpen(true)}
            >
-             LƯU BẢNG GIÁ
-           </Button>
+             
+                                   SAVE PRICE LIST
+                                 </Button>
         </div>
 
       </div>
 
       {/* CONFIRMATION MODAL */}
       <Modal
-        title={<span className="text-red-500 font-bold flex items-center gap-2"><InfoCircleOutlined /> XÁC NHẬN THAY ĐỔI DÒNG TIỀN</span>}
+        title={<span className="text-red-500 font-bold flex items-center gap-2"><InfoCircleOutlined />  Confirm CASH FLOW CHANGE</span>}
         open={isConfirmModalOpen}
         onCancel={() => setIsConfirmModalOpen(false)}
         footer={null}
@@ -919,15 +946,15 @@ export const PricingConfigScreen = () => {
         width={400}
       >
         <div className="py-4 text-gray-700">
-          <p className="mb-4 text-sm">Hành động này sẽ cập nhật thuật toán tính tiền cho <strong>{vehicleTypesData?.find((v:any) => v.id === activeTabId)?.typeName}</strong>. Vui lòng gõ chữ xác nhận:</p>
+          <p className="mb-4 text-sm">This action will Update the payment algorithm <strong>{vehicleTypesData?.find((v:any) => v.id === activeTabId)?.typeName}</strong>e Please type Confirm:</p>
           <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-4">
             <p className="mb-2 text-xs text-gray-500 flex justify-between">
-              <span>Mã xác nhận:</span>
+              <span>Confirmation code:</span>
               <strong className="text-blue-600 bg-blue-50 px-1 rounded font-mono">XACNHAN</strong>
             </p>
             <Input 
               autoFocus
-              placeholder="Gõ XACNHAN..." 
+              placeholder="Type XaCNHaNeee" 
               value={confirmInput}
               onChange={e => setConfirmInput(e.target.value)}
               className="text-center font-mono uppercase"
@@ -935,10 +962,11 @@ export const PricingConfigScreen = () => {
             />
           </div>
           <div className="flex gap-2">
-             <Button onClick={() => setIsConfirmModalOpen(false)} className="flex-1">Hủy Bỏ</Button>
+             <Button onClick={() => setIsConfirmModalOpen(false)} className="flex-1">Cancel Cancel</Button>
              <Button type="primary" danger onClick={handleSave} disabled={confirmInput !== 'XACNHAN'} className="flex-1 font-bold">
-               XÁC NHẬN LƯU
-             </Button>
+               
+                                         Confirm SAVE
+                                       </Button>
           </div>
         </div>
       </Modal>

@@ -1,178 +1,411 @@
-import React, { useState } from 'react';
-import { Typography, Card, Row, Col, DatePicker, Button, Table, Radio, Statistic } from 'antd';
-import { DownloadOutlined, FilterOutlined } from '@ant-design/icons';
-import { BarChart, Bar, PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import React, { useState, useMemo } from 'react';
+import { Card, DatePicker, Button, Typography, Table, Space, Row, Col, Statistic, Radio } from 'antd';
+import { SearchOutlined, DownloadOutlined, DollarOutlined, TransactionOutlined, AreaChartOutlined } from '@ant-design/icons';
+import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import axiosClient from '../../core/api/axiosClient';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend } from 'recharts';
 
 const { Title, Text } = Typography;
 const { RangePicker } = DatePicker;
 
-import { useQuery } from '@tanstack/react-query';
-import axiosClient from '../../core/api/axiosClient';
+// Types
+interface RevenueRecord {
+  date: string;
+  vehicleType: string;
+  gateName: string;
+  revenueSource: string;
+  paymentMethod: string;
+  totalRevenue: number;
+  totalTransactions: number;
+}
 
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042'];
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
-export const RevenueDashboardScreen = () => {
-  const [dateRange, setDateRange] = useState<any>([dayjs().subtract(7, 'day'), dayjs()]);
-  const [compareMode, setCompareMode] = useState('vehicle');
+const RevenueDashboardScreen: React.FC = () => {
+  // State for Global Control Panel
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().subtract(7, 'days'), dayjs()]);
+  const [appliedDateRange, setAppliedDateRange] = useState<[string, string]>([
+    dayjs().subtract(7, 'days').format('YYYY-MM-DD'),
+    dayjs().format('YYYY-MM-DD')
+  ]);
+  
+  // State for Toggle Comparison Chart
+  const [comparisonMode, setComparisonMode] = useState<'vehicleType' | 'revenueSource' | 'paymentMethod' | 'gateName'>('vehicleType');
 
-  const { data: dashboardData } = useQuery({
-    queryKey: ['revenueDashboard', dateRange[0]?.format('YYYY-MM-DD'), dateRange[1]?.format('YYYY-MM-DD')],
+  // Fetch Master Dataset
+  const { data: masterData = [], isLoading } = useQuery({
+    queryKey: ['revenue-dashboard', appliedDateRange],
     queryFn: async () => {
-      const res = await axiosClient.get(`/dashboard/revenue?startDate=${dateRange[0].format('YYYY-MM-DD')} 00:00:00&endDate=${dateRange[1].format('YYYY-MM-DD')} 23:59:59`);
-      return res.data.data;
-    },
-    enabled: !!dateRange[0] && !!dateRange[1]
+      const res = await axiosClient.get(`/revenue/dashboard?startDate=${appliedDateRange[0]}&endDate=${appliedDateRange[1]}`);
+      return res.data.data as RevenueRecord[];
+    }
   });
 
-  const masterData = dashboardData?.dailyRevenue || [];
-  const overview = dashboardData?.overview || { totalRevenue: 0, totalTransactions: 0 };
+  // Calculate KPIs
+  const kpis = useMemo(() => {
+    return masterData.reduce((acc, curr) => {
+      acc.totalRevenue += curr.totalRevenue;
+      acc.totalTransactions += curr.totalTransactions;
+      return acc;
+    }, { totalRevenue: 0, totalTransactions: 0 });
+  }, [masterData]);
 
-  const handleApply = () => {
-    // Handled by useQuery dependency
+  const arpu = kpis.totalTransactions > 0 ? kpis.totalRevenue / kpis.totalTransactions : 0;
+
+  // Process data for Hero Chart (Group by Date)
+  const heroChartData = useMemo(() => {
+    const map = new Map<string, number>();
+    masterData.forEach(r => {
+      map.set(r.date, (map.get(r.date) || 0) + r.totalRevenue);
+    });
+    return Array.from(map.entries()).map(([date, total]) => ({ date, total })).sort((a, b) => a.date.localeCompare(b.date));
+  }, [masterData]);
+
+  // Helper for Pie Charts
+  const processPieData = (key: keyof RevenueRecord) => {
+    const map = new Map<string, number>();
+    masterData.forEach(r => {
+      const val = String(r[key]);
+      map.set(val, (map.get(val) || 0) + Number(r.totalRevenue));
+    });
+    return Array.from(map.entries()).map(([name, value]) => ({ name, value })).filter(d => d.value > 0);
   };
 
-  const handleExportCSV = () => {
-    let csvContent = "Date;Total Revenue\n";
-    masterData.forEach((row: any) => {
-      csvContent += `${row.date};${row.revenue}\n`;
-    });
+  const paymentData = useMemo(() => processPieData('paymentMethod'), [masterData]);
+  const sourceData = useMemo(() => processPieData('revenueSource'), [masterData]);
+  const vehicleData = useMemo(() => processPieData('vehicleType'), [masterData]);
+  const gateData = useMemo(() => processPieData('gateName'), [masterData]);
+
+  // Process data for Toggle Comparison Chart
+  const comparisonChartData = useMemo(() => {
+    const dates = Array.from(new Set(masterData.map(d => d.date))).sort();
+    // Collect ALL unique category values across ALL dates first
+    const allCategories = Array.from(new Set(masterData.map(r => String(r[comparisonMode]))));
     
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    return dates.map(date => {
+      // Pre-fill ALL categories with 0 so every line has a point on every date
+      const row: any = { date };
+      allCategories.forEach(cat => { row[cat] = 0; });
+      
+      // Then add actual values
+      masterData.filter(d => d.date === date).forEach(r => {
+        const category = String(r[comparisonMode]);
+        row[category] = (row[category] || 0) + Number(r.totalRevenue);
+      });
+      return row;
+    });
+  }, [masterData, comparisonMode]);
+
+  // Extract unique keys for lines in Comparison Chart
+  const comparisonKeys = useMemo(() => {
+    const keys = new Set<string>();
+    masterData.forEach(r => keys.add(String(r[comparisonMode])));
+    return Array.from(keys);
+  }, [masterData, comparisonMode]);
+
+  // Export CSV
+  const handleExportCSV = () => {
+    if (!masterData.length) return;
+    const headers = ['Day', 'Vehicle Type', 'Gate', 'Revenue source', 'Payment method', 'Total amount', 'Total turn'];
+    const rows = masterData.map(r => [
+      r.date,
+      r.vehicleType,
+      r.gateName,
+      r.revenueSource,
+      r.paymentMethod,
+      r.totalRevenue.toString(),
+      r.totalTransactions.toString()
+    ]);
+    
+    // CSV string using semicolon separator
+    const csvContent = [
+      headers.join(';'),
+      ...rows.map(e => e.join(';'))
+    ].join('\n');
+    
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' }); // BOM for UTF-8
     const link = document.createElement("a");
     const url = URL.createObjectURL(blob);
     link.setAttribute("href", url);
-    link.setAttribute("download", "revenue_report.csv");
+    link.setAttribute("download", `bao-cao-doanh-thu-${appliedDateRange[0]}-to-${appliedDateRange[1]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Aggregations
-  const totalRevenue = overview.totalRevenue || 0;
-  const totalTransactions = overview.totalTransactions || 0;
-  const arpu = totalTransactions > 0 ? Math.round(totalRevenue / totalTransactions) : 0;
-
-  const vehiclePieData = dashboardData?.byVehicle || [];
-  const sourcePieData = dashboardData?.bySource || [];
-  const paymentPieData = dashboardData?.byPayment || [];
-
-
-
-  const columns = [
-    { title: 'Ngày', dataIndex: 'date', key: 'date' },
-    { title: 'Doanh Thu (VNĐ)', dataIndex: 'revenue', key: 'revenue', render: (val: number) => val.toLocaleString() },
-    { title: 'Lượt GD', dataIndex: 'transactions', key: 'transactions' },
-    { title: 'ARPU (VNĐ)', key: 'arpu', render: (_: any, record: any) => Math.round(record.revenue / record.transactions).toLocaleString() },
-  ];
-
-  const formatYAxis = (tickItem: number) => {
-    if (tickItem >= 1000000) return (tickItem / 1000000).toFixed(1) + 'M';
-    return tickItem.toString();
+  // Custom Tooltip for Currency
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-white p-3 border border-gray-200 shadow-md rounded">
+          <p className="font-bold mb-2">{label}</p>
+          {payload.map((entry: any, index: number) => (
+            <p key={index} style={{ color: entry.color }}>
+              {entry.name}: {entry.value.toLocaleString()} ₫
+            </p>
+          ))}
+        </div>
+      );
+    }
+    return null;
   };
 
   return (
-    <div className="h-full overflow-y-auto bg-gray-50 p-6 pb-24">
-      {/* Global Control Panel */}
-      <Card className="mb-6 shadow-sm">
-        <div className="flex justify-between items-center">
-          <Title level={3} className="m-0">Báo cáo Doanh thu</Title>
-          <div className="flex space-x-4 items-center">
-            <RangePicker value={dateRange} onChange={setDateRange} format="DD/MM/YYYY" />
-            <Button type="primary" icon={<FilterOutlined />} onClick={handleApply}>Áp dụng</Button>
-          </div>
+    <div className="h-full overflow-y-auto p-6 bg-slate-50 pb-24">
+      {/* Global Control Panel (Sticky) */}
+      <div className="sticky top-0 z-10 bg-white/80 backdrop-blur-md p-4 rounded-xl shadow-sm border border-slate-200 mb-6 flex justify-between items-center">
+        <div>
+          <Title level={4} className="m-0 text-slate-800">Report Revenue</Title>
+          <Text type="secondary">Multi-dimensional analysis by day, vehicle type and revenue source</Text>
         </div>
-      </Card>
+        <Space size="large">
+          <RangePicker 
+            size="large"
+            value={dateRange}
+            onChange={(dates) => dates && setDateRange([dates[0]!, dates[1]!])}
+            format="DD/MM/YYYY"
+          />
+          <Button 
+            type="primary" 
+            size="large" 
+            icon={<SearchOutlined />}
+            onClick={() => setAppliedDateRange([dateRange[0].format('YYYY-MM-DD'), dateRange[1].format('YYYY-MM-DD')])}
+            loading={isLoading}
+            className="bg-blue-600"
+          >
+            
+                                  Apply
+                                </Button>
+        </Space>
+      </div>
 
-      {/* KPI Cards (Row 1) */}
-      <Row gutter={16} className="mb-6">
+      {/* KPI Cards */}
+      <Row gutter={24} className="mb-6">
         <Col span={8}>
-          <Card className="shadow-sm">
-            <Statistic title="Tổng Doanh Thu" value={totalRevenue} suffix="VNĐ" valueStyle={{ color: '#3f8600', fontWeight: 'bold' }} />
+          <Card className="shadow-sm rounded-xl" style={{ background: 'linear-gradient(135deg, #3b82f6, #2563eb)', border: 'none' }}>
+            <Statistic 
+              title={<span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Revenue</span>}
+              value={kpis.totalRevenue} 
+              precision={0} 
+              suffix="₫"
+              styles={{ content: { color: '#fff', fontWeight: 'bold', fontSize: '2rem' } }}
+              prefix={<DollarOutlined style={{ color: 'rgba(255,255,255,0.8)' }} />}
+            />
           </Card>
         </Col>
         <Col span={8}>
-          <Card className="shadow-sm">
-            <Statistic title="Tổng Giao Dịch" value={totalTransactions} valueStyle={{ color: '#1890ff', fontWeight: 'bold' }} />
+          <Card className="shadow-sm rounded-xl" style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none' }}>
+            <Statistic 
+              title={<span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Transactions</span>}
+              value={kpis.totalTransactions} 
+              styles={{ content: { color: '#fff', fontWeight: 'bold', fontSize: '2rem' } }}
+              prefix={<TransactionOutlined style={{ color: 'rgba(255,255,255,0.8)' }} />}
+            />
           </Card>
         </Col>
         <Col span={8}>
-          <Card className="shadow-sm">
-            <Statistic title="Doanh thu TB / Giao dịch (ARPU)" value={arpu} suffix="VNĐ" valueStyle={{ color: '#cf1322', fontWeight: 'bold' }} />
+          <Card className="shadow-sm rounded-xl" style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', border: 'none' }}>
+            <Statistic 
+              title={<span style={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>aRPU (Revenue TB/Turn)</span>}
+              value={arpu} 
+              precision={0}
+              suffix="₫"
+              styles={{ content: { color: '#fff', fontWeight: 'bold', fontSize: '2rem' } }}
+              prefix={<AreaChartOutlined style={{ color: 'rgba(255,255,255,0.8)' }} />}
+            />
           </Card>
         </Col>
       </Row>
 
-      {/* Hero & Sidebar 70/30 (Row 2) */}
-      <Row gutter={16} className="mb-6">
+      {/* Hero & Sidebar */}
+      <Row gutter={24} className="mb-6">
+        {/* Left 70%: Hero Chart */}
         <Col span={16}>
-          <Card title="Xu hướng Doanh Thu" className="shadow-sm h-full">
+          <Card className="shadow-sm border-slate-200 rounded-xl h-full" title="TOTAL REVENUE BY YEAR">
             <div style={{ height: 400 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={masterData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="date" />
-                  <YAxis tickFormatter={formatYAxis} />
-                  <Tooltip formatter={(value: number) => new Intl.NumberFormat('vi-VN').format(value) + ' VNĐ'} />
-                  <Legend />
-                  <Bar dataKey="revenue" name="Doanh Thu" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                <BarChart data={heroChartData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                  <XAxis dataKey="date" tick={{fill: '#666'}} tickLine={false} axisLine={false} />
+                  <YAxis tickFormatter={(val) => `${val / 1000}k`} tick={{fill: '#666'}} tickLine={false} axisLine={false} />
+                  <RechartsTooltip content={<CustomTooltip />} />
+                  <Bar dataKey="total" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={60} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </Card>
         </Col>
+        
+        {/* Right 30%: Sidebar Pies */}
         <Col span={8}>
-          <Card className="shadow-sm h-full flex flex-col justify-between">
-            <div className="mb-4">
-              <Text strong className="block text-center mb-2">Cơ cấu Phương Tiện</Text>
-              <ResponsiveContainer width="100%" height={100}>
-                <PieChart>
-                  <Pie data={vehiclePieData} innerRadius={30} outerRadius={45} dataKey="value" stroke="none">
-                    {vehiclePieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => value.toLocaleString()} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="mb-4">
-              <Text strong className="block text-center mb-2">Nguồn Khách Hàng</Text>
-              <ResponsiveContainer width="100%" height={100}>
-                <PieChart>
-                  <Pie data={sourcePieData} innerRadius={30} outerRadius={45} dataKey="value" stroke="none">
-                    {sourcePieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => value.toLocaleString()} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div>
-              <Text strong className="block text-center mb-2">Phương Thức Thanh Toán</Text>
-              <ResponsiveContainer width="100%" height={100}>
-                <PieChart>
-                  <Pie data={paymentPieData} innerRadius={30} outerRadius={45} dataKey="value" stroke="none">
-                    {paymentPieData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => value.toLocaleString()} />
-                </PieChart>
-              </ResponsiveContainer>
+          <Card className="shadow-sm border-slate-200 rounded-xl h-full flex flex-col">
+            <Title level={5} className="mb-4 text-slate-700 text-center">Revenue STRUCTURE</Title>
+            
+            <div className="flex-1 flex flex-col justify-around">
+              {/* Pie 1: Payment Method */}
+              <div className="h-32 mb-4">
+                <Text strong className="block text-center text-xs text-slate-500 mb-1">Payment method</Text>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={paymentData} cx="50%" cy="50%" innerRadius={30} outerRadius={45} dataKey="value" paddingAngle={2}>
+                      {paymentData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                    </Pie>
+                    <RechartsTooltip formatter={(val: any) => `${val.toLocaleString()} ₫`} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '10px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Pie 2: Revenue Source */}
+              <div className="h-32 mb-4">
+                <Text strong className="block text-center text-xs text-slate-500 mb-1">Revenue source</Text>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={sourceData} cx="50%" cy="50%" innerRadius={30} outerRadius={45} dataKey="value" paddingAngle={2}>
+                      {sourceData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[(index+2) % COLORS.length]} />)}
+                    </Pie>
+                    <RechartsTooltip formatter={(val: any) => `${val.toLocaleString()} ₫`} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '10px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Pie 3: Vehicle Type */}
+              <div className="h-32">
+                <Text strong className="block text-center text-xs text-slate-500 mb-1">Vehicle Type</Text>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={vehicleData} cx="50%" cy="50%" innerRadius={30} outerRadius={45} dataKey="value" paddingAngle={2}>
+                      {vehicleData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[(index+4) % COLORS.length]} />)}
+                    </Pie>
+                    <RechartsTooltip formatter={(val: any) => `${val.toLocaleString()} ₫`} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '10px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Pie 4: Gate */}
+              <div className="h-32">
+                <Text strong className="block text-center text-xs text-slate-500 mb-1">Gate</Text>
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={gateData} cx="50%" cy="50%" innerRadius={30} outerRadius={45} dataKey="value" paddingAngle={2}>
+                      {gateData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[(index+1) % COLORS.length]} />)}
+                    </Pie>
+                    <RechartsTooltip formatter={(val: any) => `${val.toLocaleString()} ₫`} />
+                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '10px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           </Card>
         </Col>
       </Row>
 
+      <Card 
+        className="shadow-sm border-slate-200 rounded-xl mb-6" 
+        title="Detail Fluctuations OVER TIME"
+        extra={
+          <Radio.Group value={comparisonMode} onChange={e => setComparisonMode(e.target.value)} buttonStyle="solid">
+            <Radio.Button value="vehicleType">Compare Vehicle Types</Radio.Button>
+            <Radio.Button value="gateName">Compare Gates</Radio.Button>
+            <Radio.Button value="revenueSource">Compare Revenue Sources</Radio.Button>
+            <Radio.Button value="paymentMethod">Compare Methods</Radio.Button>
+          </Radio.Group>
+        }
+      >
+        {comparisonKeys.length <= 1 ? (
+          // Only 1 category → show a simple bar chart with note
+          <div style={{ height: 400 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={comparisonChartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                <XAxis dataKey="date" tick={{fill: '#666'}} tickLine={false} axisLine={false} />
+                <YAxis tickFormatter={(val) => `${(val/1000).toFixed(0)}k`} tick={{fill: '#666'}} tickLine={false} axisLine={false} />
+                <RechartsTooltip content={<CustomTooltip />} />
+                <Legend />
+                {comparisonKeys.map((key, index) => (
+                  <Bar key={key} dataKey={key} fill={COLORS[index % COLORS.length]} radius={[4,4,0,0]} maxBarSize={60} />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+            {comparisonKeys.length <= 1 && (
+              <p style={{ textAlign: 'center', color: '#aaa', fontSize: 12, marginTop: 8 }}>
+                
+                                              💡 There is only 1 group in this direction. Try switching to "Compare Revenue Sources" to see more directions.
+                                            </p>
+            )}
+          </div>
+        ) : (
+          // Multiple categories → show multi-line chart
+          <div style={{ height: 400 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={comparisonChartData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#eee" />
+                <XAxis dataKey="date" tick={{fill: '#666'}} tickLine={false} axisLine={false} />
+                <YAxis tickFormatter={(val) => `${(val/1000).toFixed(0)}k`} tick={{fill: '#666'}} tickLine={false} axisLine={false} />
+                <RechartsTooltip content={<CustomTooltip />} />
+                <Legend />
+                {comparisonKeys.map((key, index) => (
+                  <Line 
+                    key={key} 
+                    type="monotone" 
+                    dataKey={key} 
+                    name={key}
+                    stroke={COLORS[index % COLORS.length]} 
+                    strokeWidth={3}
+                    dot={{ r: 5 }}
+                    activeDot={{ r: 7 }} 
+                    connectNulls
+                  />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </Card>
 
-
-      {/* DataTable & Export */}
-      <Card title="Dữ Liệu Chi Tiết" className="shadow-sm" extra={
-        <Button type="primary" icon={<DownloadOutlined />} onClick={handleExportCSV}>Export CSV</Button>
-      }>
+      {/* Data Table & Export */}
+      <Card 
+        className="shadow-sm border-slate-200 rounded-xl"
+        title="GENERAL DATA TABLE Detail"
+        extra={
+          <Button 
+            type="primary" 
+            icon={<DownloadOutlined />} 
+            onClick={handleExportCSV}
+            className="bg-green-600 hover:bg-green-700 border-none"
+          >
+            
+                            Export Excel (CSV)
+                          </Button>
+        }
+      >
         <Table 
-          columns={columns} 
-          dataSource={masterData.map((d: any, i: number) => ({ ...d, key: i }))} 
-          pagination={{ pageSize: 5 }} 
-        />
+          dataSource={masterData} 
+          rowKey={(r, i) => `${r.date}-${i}`}
+          loading={isLoading}
+          pagination={{ pageSize: 10 }}
+          bordered
+          size="middle"
+        >
+          <Table.Column title="Day" dataIndex="date" render={(_, r: any) => <strong>{dayjs(r.date).format('DD/MM/YYYY')}</strong>} />
+          <Table.Column title="Vehicle Type" dataIndex="vehicleType" />
+          <Table.Column title="Gate" dataIndex="gateName" render={(val) => <span className="text-gray-600 font-medium">{val || 'N/A'}</span>} />
+          <Table.Column title="Revenue source" dataIndex="revenueSource" />
+          <Table.Column title="Method" dataIndex="paymentMethod" />
+          <Table.Column 
+            title="Total Revenue" 
+            dataIndex="totalRevenue" 
+            align="right"
+            render={(val) => <span className="font-bold text-blue-600">{val.toLocaleString()} ₫</span>}
+          />
+          <Table.Column title="Number of transactions" dataIndex="totalTransactions" align="center" />
+        </Table>
       </Card>
     </div>
   );
 };
+
+export { RevenueDashboardScreen };

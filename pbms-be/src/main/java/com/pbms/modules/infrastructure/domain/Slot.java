@@ -32,3 +32,4 @@ public class Slot {
     @Version
     private Integer version = 1;
 }
+

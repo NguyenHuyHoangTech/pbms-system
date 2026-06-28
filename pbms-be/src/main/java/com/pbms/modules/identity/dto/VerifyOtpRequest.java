@@ -16,3 +16,4 @@ public class VerifyOtpRequest {
     @NotBlank(message = "Purpose is required")
     private String purpose; // REGISTER, FORGOT_PASSWORD
 }
+

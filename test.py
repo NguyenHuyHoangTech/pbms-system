@@ -1,0 +1,1 @@
+import requests; print(requests.post(" http://localhost:8080/api/v1/iot/gates/checkin\, json={\gateId\:3, \plateNumber\:\29A-12345\, \vehicleType\:\CAR\, \rfid\:\CARD001\, \imageBase64\:\base64\, \lprImageBase64\:\base64\}).text)

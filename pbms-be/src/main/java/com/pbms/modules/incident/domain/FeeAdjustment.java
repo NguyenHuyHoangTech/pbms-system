@@ -31,3 +31,4 @@ public class FeeAdjustment extends BaseEntity {
     @Column(nullable = false, columnDefinition = "VARCHAR(MAX)")
     private String reason;
 }
+

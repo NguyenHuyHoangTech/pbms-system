@@ -22,7 +22,8 @@ public class AuditLogController {
     public ResponseEntity<ApiResponse<List<AuditLog>>> getRecentLogs() {
         return ResponseEntity.ok(ApiResponse.success(
                 auditLogService.getRecentLogs(),
-                "Lấy danh sách audit log thành công"
+                "Read the audit log list as well"
         ));
     }
 }
+

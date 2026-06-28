@@ -4,6 +4,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -55,6 +58,7 @@ public class DashboardService {
                     WHEN mt.id IS NOT NULL THEN 'MONTHLY_PASS'
                     WHEN ps.id IS NOT NULL AND ps.reservation_id IS NOT NULL THEN 'PRE_BOOKING'
                     WHEN ps.id IS NOT NULL THEN 'WALK_IN'
+                    WHEN t.transaction_reference LIKE 'PENALTY-RES-%' THEN 'PENALTY_FEE'
                     ELSE 'OTHER'
                 END as name, 
                 SUM(t.amount) as value 
@@ -67,6 +71,7 @@ public class DashboardService {
                     WHEN mt.id IS NOT NULL THEN 'MONTHLY_PASS'
                     WHEN ps.id IS NOT NULL AND ps.reservation_id IS NOT NULL THEN 'PRE_BOOKING'
                     WHEN ps.id IS NOT NULL THEN 'WALK_IN'
+                    WHEN t.transaction_reference LIKE 'PENALTY-RES-%' THEN 'PENALTY_FEE'
                     ELSE 'OTHER'
                 END
         """;
@@ -92,32 +97,295 @@ public class DashboardService {
     }
 
     public Map<String, Object> getOperationalOverview() {
-        String activeSessionsQuery = """
-            SELECT COUNT(id) as activeCount 
+        // Car Occupied
+        String carOccQuery = """
+            SELECT COUNT(p.id) 
+            FROM parking_sessions p
+            JOIN vehicle_types v ON p.vehicle_type_id = v.id
+            WHERE p.status = 'ACTIVE' AND v.category = 'FOUR_WHEEL'
+        """;
+        Integer carOccupied = jdbcTemplate.queryForObject(carOccQuery, Integer.class);
+
+        // Moto Occupied
+        String motoOccQuery = """
+            SELECT COUNT(p.id) 
+            FROM parking_sessions p
+            JOIN vehicle_types v ON p.vehicle_type_id = v.id
+            WHERE p.status = 'ACTIVE' AND v.category = 'TWO_WHEEL'
+        """;
+        Integer motoOccupied = jdbcTemplate.queryForObject(motoOccQuery, Integer.class);
+
+        // Check-ins today
+        String checkInQuery = """
+            SELECT COUNT(id) 
             FROM parking_sessions 
-            WHERE status IN ('ACTIVE', 'BOOKED')
+            WHERE CAST(time_in AS DATE) = CAST(GETDATE() AS DATE)
         """;
-        Integer activeCount = jdbcTemplate.queryForObject(activeSessionsQuery, Integer.class);
+        Integer checkIns = jdbcTemplate.queryForObject(checkInQuery, Integer.class);
 
-        String violationQuery = """
-            SELECT COUNT(id) as violationCount 
-            FROM incident_tickets 
-            WHERE status = 'PENDING'
+        // Check-outs today
+        String checkOutQuery = """
+            SELECT COUNT(id) 
+            FROM parking_sessions 
+            WHERE CAST(time_out AS DATE) = CAST(GETDATE() AS DATE) AND status = 'COMPLETED'
         """;
-        Integer violationCount = jdbcTemplate.queryForObject(violationQuery, Integer.class);
+        Integer checkOuts = jdbcTemplate.queryForObject(checkOutQuery, Integer.class);
 
-        String typeQuery = """
-            SELECT vehicle_type, COUNT(id) as count
-            FROM parking_sessions
-            WHERE status IN ('ACTIVE', 'BOOKED')
-            GROUP BY vehicle_type
-        """;
-        List<Map<String, Object>> byVehicleType = jdbcTemplate.queryForList(typeQuery);
+        Map<String, Object> liveData = Map.of(
+            "car", Map.of("capacity", 200, "occupied", carOccupied != null ? carOccupied : 0),
+            "moto", Map.of("capacity", 500, "occupied", motoOccupied != null ? motoOccupied : 0),
+            "checkIns", checkIns != null ? checkIns : 0,
+            "checkOuts", checkOuts != null ? checkOuts : 0
+        );
 
         return Map.of(
-            "activeSessions", activeCount != null ? activeCount : 0,
-            "pendingViolations", violationCount != null ? violationCount : 0,
-            "byVehicleType", byVehicleType
+            "liveData", liveData
+        );
+    }
+
+    /**
+     * TÃ­nh sá»‘ lÆ°á»£ng xe Ä‘ang trong bÃ£i (occupancy) táº¡i má»—i khung giá» trong ngÃ y.
+     * CÅ©ng bao gá»“m sá»‘ check-in vÃ  check-out theo giá».
+     */
+    public List<Map<String, Object>> getHourlyOccupancy(LocalDate date) {
+        List<Map<String, Object>> result = new ArrayList<>();
+
+        // Query check-in count per hour
+        String checkInQuery = """
+            SELECT DATEPART(HOUR, time_in) AS hour, COUNT(*) AS cnt
+            FROM parking_sessions
+            WHERE CAST(time_in AS DATE) = ?
+            GROUP BY DATEPART(HOUR, time_in)
+        """;
+        List<Map<String, Object>> checkIns = jdbcTemplate.queryForList(checkInQuery, date.toString());
+
+        // Query check-out count per hour  
+        String checkOutQuery = """
+            SELECT DATEPART(HOUR, time_out) AS hour, COUNT(*) AS cnt
+            FROM parking_sessions
+            WHERE CAST(time_out AS DATE) = ? AND status = 'COMPLETED'
+            GROUP BY DATEPART(HOUR, time_out)
+        """;
+        List<Map<String, Object>> checkOuts = jdbcTemplate.queryForList(checkOutQuery, date.toString());
+
+        // Build maps for easy lookup
+        int[] inByHour = new int[24];
+        int[] outByHour = new int[24];
+        for (Map<String, Object> row : checkIns) {
+            int h = ((Number) row.get("hour")).intValue();
+            inByHour[h] = ((Number) row.get("cnt")).intValue();
+        }
+        for (Map<String, Object> row : checkOuts) {
+            int h = ((Number) row.get("hour")).intValue();
+            outByHour[h] = ((Number) row.get("cnt")).intValue();
+        }
+
+        // Count sessions that were already active BEFORE this date (carried-over)
+        String priorActiveQuery = """
+            SELECT COUNT(*) FROM parking_sessions
+            WHERE time_in < ? AND (time_out IS NULL OR CAST(time_out AS DATE) >= ?)
+        """;
+        Integer priorActive = jdbcTemplate.queryForObject(priorActiveQuery, Integer.class,
+                date.toString(), date.toString());
+        
+        int cumulative = priorActive != null ? priorActive : 0;
+
+        for (int h = 0; h < 24; h++) {
+            cumulative += inByHour[h];
+            cumulative -= outByHour[h];
+            if (cumulative < 0) cumulative = 0;
+
+            Map<String, Object> row = new HashMap<>();
+            row.put("hour", String.format("%02d:00", h));
+            row.put("occupied", cumulative);
+            row.put("checkIn", inByHour[h]);
+            row.put("checkOut", outByHour[h]);
+            result.add(row);
+        }
+
+        return result;
+    }
+
+    /**
+     * Láº¥y dá»¯ liá»‡u lÆ°u lÆ°á»£ng vÃ o/ra theo tá»«ng giá» trong 1 ngÃ y cá»¥ thá»ƒ (DÃ nh cho Khu vá»±c 4)
+     * PhÃ¢n tÃ¡ch riÃªng biá»‡t Ã” tÃ´ (FOUR_WHEEL) vÃ  Xe mÃ¡y (TWO_WHEEL).
+     */
+    public List<Map<String, Object>> getHourlyFlow(LocalDate date) {
+        String query = """
+            SELECT 
+                DATEPART(HOUR, p.time_in) AS hour_in,
+                v.category,
+                COUNT(p.id) AS in_count
+            FROM parking_sessions p
+            JOIN vehicle_types v ON p.vehicle_type_id = v.id
+            WHERE CAST(p.time_in AS DATE) = ?
+            GROUP BY DATEPART(HOUR, p.time_in), v.category
+        """;
+        List<Map<String, Object>> inData = jdbcTemplate.queryForList(query, date.toString());
+
+        String outQuery = """
+            SELECT 
+                DATEPART(HOUR, p.time_out) AS hour_out,
+                v.category,
+                COUNT(p.id) AS out_count
+            FROM parking_sessions p
+            JOIN vehicle_types v ON p.vehicle_type_id = v.id
+            WHERE CAST(p.time_out AS DATE) = ? AND p.status = 'COMPLETED'
+            GROUP BY DATEPART(HOUR, p.time_out), v.category
+        """;
+        List<Map<String, Object>> outData = jdbcTemplate.queryForList(outQuery, date.toString());
+
+        // Gom dá»¯ liá»‡u 24h
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (int h = 0; h < 24; h++) {
+            int fourWheelIn = 0;
+            int fourWheelOut = 0;
+            int twoWheelIn = 0;
+            int twoWheelOut = 0;
+
+            for (Map<String, Object> row : inData) {
+                if (((Number) row.get("hour_in")).intValue() == h) {
+                    if ("FOUR_WHEEL".equals(row.get("category"))) {
+                        fourWheelIn = ((Number) row.get("in_count")).intValue();
+                    } else if ("TWO_WHEEL".equals(row.get("category"))) {
+                        twoWheelIn = ((Number) row.get("in_count")).intValue();
+                    }
+                }
+            }
+
+            for (Map<String, Object> row : outData) {
+                if (((Number) row.get("hour_out")).intValue() == h) {
+                    if ("FOUR_WHEEL".equals(row.get("category"))) {
+                        fourWheelOut = ((Number) row.get("out_count")).intValue();
+                    } else if ("TWO_WHEEL".equals(row.get("category"))) {
+                        twoWheelOut = ((Number) row.get("out_count")).intValue();
+                    }
+                }
+            }
+
+            result.add(Map.of(
+                "hour", String.format("%02d:00", h),
+                "fourWheelIn", fourWheelIn,
+                "fourWheelOut", fourWheelOut,
+                "twoWheelIn", twoWheelIn,
+                "twoWheelOut", twoWheelOut
+            ));
+        }
+
+        return result;
+    }
+
+    /**
+     * Láº¥y dá»¯ liá»‡u vÄ© mÃ´ (Macro Trends) cho 1 khoáº£ng ngÃ y (DÃ nh cho Khu vá»±c 5)
+     */
+    public Map<String, Object> getMacroTrends(String startDate, String endDate, String category) {
+        boolean hasCategory = category != null && !category.isEmpty() && !"ALL".equalsIgnoreCase(category);
+        String categoryFilter = hasCategory ? " AND v.category = ? " : "";
+
+        // 5.1 Daily Net Flow
+        String dailyInQuery = """
+            SELECT CAST(p.time_in AS DATE) as d, COUNT(p.id) as cnt
+            FROM parking_sessions p
+            JOIN vehicle_types v ON p.vehicle_type_id = v.id
+            WHERE CAST(p.time_in AS DATE) >= ? AND CAST(p.time_in AS DATE) <= ?
+        """ + categoryFilter + """
+            GROUP BY CAST(p.time_in AS DATE)
+            ORDER BY d ASC
+        """;
+        List<Map<String, Object>> dailyIn = hasCategory 
+            ? jdbcTemplate.queryForList(dailyInQuery, startDate, endDate, category)
+            : jdbcTemplate.queryForList(dailyInQuery, startDate, endDate);
+
+        String dailyOutQuery = """
+            SELECT CAST(p.time_out AS DATE) as d, COUNT(p.id) as cnt
+            FROM parking_sessions p
+            JOIN vehicle_types v ON p.vehicle_type_id = v.id
+            WHERE CAST(p.time_out AS DATE) >= ? AND CAST(p.time_out AS DATE) <= ? AND p.status = 'COMPLETED'
+        """ + categoryFilter + """
+            GROUP BY CAST(p.time_out AS DATE)
+            ORDER BY d ASC
+        """;
+        List<Map<String, Object>> dailyOut = hasCategory
+            ? jdbcTemplate.queryForList(dailyOutQuery, startDate, endDate, category)
+            : jdbcTemplate.queryForList(dailyOutQuery, startDate, endDate);
+
+        Map<String, Map<String, Object>> dailyMap = new HashMap<>();
+        for (Map<String, Object> row : dailyIn) {
+            String dStr = row.get("d").toString();
+            Map<String, Object> map = dailyMap.computeIfAbsent(dStr, k -> new HashMap<>(Map.of("date", dStr, "totalIn", 0, "totalOut", 0)));
+            map.put("totalIn", ((Number) row.get("cnt")).intValue());
+        }
+        for (Map<String, Object> row : dailyOut) {
+            String dStr = row.get("d").toString();
+            Map<String, Object> map = dailyMap.computeIfAbsent(dStr, k -> new HashMap<>(Map.of("date", dStr, "totalIn", 0, "totalOut", 0)));
+            map.put("totalOut", ((Number) row.get("cnt")).intValue());
+        }
+        List<Map<String, Object>> dailyNetFlow = new ArrayList<>(dailyMap.values());
+        dailyNetFlow.sort((a, b) -> a.get("date").toString().compareTo(b.get("date").toString()));
+
+        // 5.2 Vehicle Type Ratio
+        String vehicleRatioQuery = """
+            SELECT v.category, COUNT(p.id) as cnt
+            FROM parking_sessions p
+            JOIN vehicle_types v ON p.vehicle_type_id = v.id
+            WHERE CAST(p.time_in AS DATE) >= ? AND CAST(p.time_in AS DATE) <= ?
+        """ + categoryFilter + """
+            GROUP BY v.category
+        """;
+        List<Map<String, Object>> vehicleRatio = hasCategory
+            ? jdbcTemplate.queryForList(vehicleRatioQuery, startDate, endDate, category)
+            : jdbcTemplate.queryForList(vehicleRatioQuery, startDate, endDate);
+        
+        int fourWheelCount = 0;
+        int twoWheelCount = 0;
+        for (Map<String, Object> row : vehicleRatio) {
+            if ("FOUR_WHEEL".equals(row.get("category"))) fourWheelCount = ((Number) row.get("cnt")).intValue();
+            else if ("TWO_WHEEL".equals(row.get("category"))) twoWheelCount = ((Number) row.get("cnt")).intValue();
+        }
+
+        // 5.3 Customer Segment Ratio (WALK_IN vs BOOKING vs MONTHLY)
+        String customerRatioQuery = """
+            SELECT segment, COUNT(id) as cnt
+            FROM (
+                SELECT 
+                    p.id,
+                    CASE 
+                        WHEN p.reservation_id IS NOT NULL THEN 'BOOKING'
+                        WHEN EXISTS (SELECT 1 FROM monthly_tickets mt WHERE mt.plate = p.plate AND mt.status = 'ACTIVE' AND p.time_in BETWEEN mt.valid_from AND mt.valid_until) THEN 'MONTHLY'
+                        ELSE 'WALK_IN' 
+                    END as segment
+                FROM parking_sessions p
+                JOIN vehicle_types v ON p.vehicle_type_id = v.id
+                WHERE CAST(p.time_in AS DATE) >= ? AND CAST(p.time_in AS DATE) <= ?
+            """ + categoryFilter + """
+            ) as sub
+            GROUP BY segment
+        """;
+        List<Map<String, Object>> customerRatio = hasCategory
+            ? jdbcTemplate.queryForList(customerRatioQuery, startDate, endDate, category)
+            : jdbcTemplate.queryForList(customerRatioQuery, startDate, endDate);
+            
+        int walkInCount = 0;
+        int bookingCount = 0;
+        int monthlyCount = 0;
+        for (Map<String, Object> row : customerRatio) {
+            if ("WALK_IN".equals(row.get("segment"))) walkInCount = ((Number) row.get("cnt")).intValue();
+            else if ("BOOKING".equals(row.get("segment"))) bookingCount = ((Number) row.get("cnt")).intValue();
+            else if ("MONTHLY".equals(row.get("segment"))) monthlyCount = ((Number) row.get("cnt")).intValue();
+        }
+
+        return Map.of(
+            "dailyNetFlow", dailyNetFlow,
+            "vehicleTypeRatio", List.of(
+                Map.of("name", "FOUR_WHEEL", "value", fourWheelCount),
+                Map.of("name", "TWO_WHEEL", "value", twoWheelCount)
+            ),
+            "customerSegmentRatio", List.of(
+                Map.of("name", "WALK_IN", "value", walkInCount),
+                Map.of("name", "BOOKING", "value", bookingCount),
+                Map.of("name", "MONTHLY", "value", monthlyCount)
+            )
         );
     }
 }
+

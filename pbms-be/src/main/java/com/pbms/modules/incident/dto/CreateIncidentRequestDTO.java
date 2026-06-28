@@ -11,3 +11,4 @@ public class CreateIncidentRequestDTO {
     private String description;
     private BigDecimal baseFee;
 }
+

@@ -24,3 +24,4 @@ public class GateResponseDTO {
     // For Check-out
     private BigDecimal checkoutFee;
 }
+

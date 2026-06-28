@@ -8,3 +8,4 @@ public class GoogleAuthRequest {
     @NotBlank(message = "Google ID Token is required")
     private String googleIdToken;
 }
+

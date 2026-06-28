@@ -56,7 +56,7 @@ public class IotIntegrationService {
                 log.warn("ZONE VIOLATION DETECTED in Zone {}! Occupied: {}, Monthly Inside: {}", 
                         zone.getZoneName(), occupiedMonthlySlots, monthlyCarsInside);
                 
-                String alertMsg = String.format("Phát hiện đỗ sai Zone: Khu vé tháng %s đang có %d xe đỗ, nhưng chỉ có %d xe vé tháng trong bãi. Vui lòng đối chiếu và xử lý vi phạm!", 
+                String alertMsg = String.format("Resulting in the wrong Zone: The %s area currently has %d cars, but there are no %s of cars in the zone. Please. It's a crime!", 
                         zone.getZoneName(), occupiedMonthlySlots, monthlyCarsInside);
 
                 messagingTemplate.convertAndSend("/topic/alerts", alertMsg);
@@ -64,3 +64,4 @@ public class IotIntegrationService {
         }
     }
 }
+

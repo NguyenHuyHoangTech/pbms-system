@@ -24,6 +24,7 @@ public class MonthlyTicketService {
 
     private final MonthlyTicketRepository monthlyTicketRepository;
     private final VehicleTypeRepository vehicleTypeRepository;
+    private final com.pbms.modules.operation.repository.ParkingSessionRepository parkingSessionRepository;
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     @Transactional(readOnly = true)
@@ -42,6 +43,8 @@ public class MonthlyTicketService {
                 }
             }
 
+            boolean hasBeenUsed = parkingSessionRepository.existsByPlateAndTimeInGreaterThanEqual(ticket.getPlate(), ticket.getValidFrom());
+
             return MonthlyTicketDTO.builder()
                     .id("MP-" + ticket.getId())
                     .user(ticket.getUser() != null ? ticket.getUser().getFullName() : "Guest")
@@ -49,34 +52,46 @@ public class MonthlyTicketService {
                     .phone("") // phone doesn't exist on User
                     .plate(ticket.getPlate())
                     .type(ticket.getVehicleType() != null ? ticket.getVehicleType().getTypeName() : "N/A")
+                    .vehicleTypeId(ticket.getVehicleType() != null ? ticket.getVehicleType().getId() : null)
                     .status(derivedStatus)
                     .startDate(ticket.getValidFrom().format(FORMATTER))
                     .endDate(ticket.getValidUntil().format(FORMATTER))
+                    .hasBeenUsed(hasBeenUsed)
                     .build();
         }).collect(Collectors.toList());
     }
 
     @Scheduled(cron = "0 0 1 * * ?") // Runs at 1:00 AM every day
+    @org.springframework.context.event.EventListener(com.pbms.common.event.TimeFastForwardedEvent.class)
     @Transactional
     public void expireMonthlyTickets() {
         log.info("Running expireMonthlyTickets cronjob...");
-        List<MonthlyTicket> allTickets = monthlyTicketRepository.findAll();
         LocalDateTime now = com.pbms.common.utils.TimeProvider.now();
-
-        for (MonthlyTicket ticket : allTickets) {
-            if ("ACTIVE".equals(ticket.getStatus()) && ticket.getValidUntil().isBefore(now)) {
-                ticket.setStatus("EXPIRED");
-                monthlyTicketRepository.save(ticket);
-                log.info("Monthly Ticket ID {} (Plate: {}) has been marked as EXPIRED", ticket.getId(), ticket.getPlate());
-            }
-        }
+        int expiredCount = monthlyTicketRepository.expirePastTickets(now);
+        log.info("Expired {} monthly tickets.", expiredCount);
     }
 
     @Transactional
     public MonthlyTicketDTO createTicket(Map<String, Object> payload) {
         String plate = (String) payload.get("plateNumber");
-        String vehicleTypeId = (String) payload.get("vehicleTypeId"); // Could be CAR or MOTORBIKE or numeric
+        Long vehicleTypeId = payload.get("vehicleTypeId") != null ? Long.parseLong(payload.get("vehicleTypeId").toString()) : null;
         int months = payload.get("duration") != null ? Integer.parseInt(payload.get("duration").toString()) : 1;
+        
+        com.pbms.modules.operation.domain.VehicleType vt = null;
+        if (vehicleTypeId != null) {
+            vt = vehicleTypeRepository.findById(vehicleTypeId).orElse(null);
+        }
+
+        // Get Current User
+        com.pbms.modules.identity.domain.User currentUser = null;
+        try {
+            org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.getPrincipal() instanceof com.pbms.modules.identity.domain.User) {
+                currentUser = (com.pbms.modules.identity.domain.User) auth.getPrincipal();
+            }
+        } catch (Exception e) {
+            log.warn("Could not get current user context", e);
+        }
         
         MonthlyTicket ticket = MonthlyTicket.builder()
                 .plate(plate)
@@ -84,9 +99,10 @@ public class MonthlyTicketService {
                 .validUntil(com.pbms.common.utils.TimeProvider.now().plusMonths(months))
                 .status("ACTIVE")
                 .autoRenew(false)
+                .vehicleType(vt)
+                .user(currentUser)
                 .build();
                 
-        // Fetch vehicleType if needed (simplification for mock data removal)
         monthlyTicketRepository.save(ticket);
         
         return MonthlyTicketDTO.builder()
@@ -101,7 +117,7 @@ public class MonthlyTicketService {
     @Transactional
     public MonthlyTicketDTO renewTicket(Long id, int durationMonths) {
         MonthlyTicket ticket = monthlyTicketRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy vé tháng"));
+                .orElseThrow(() -> new RuntimeException("Do not take advantage of this and often"));
                 
         LocalDateTime newEndDate;
         if (ticket.getValidUntil().isAfter(com.pbms.common.utils.TimeProvider.now())) {
@@ -122,4 +138,61 @@ public class MonthlyTicketService {
                 .endDate(ticket.getValidUntil().format(FORMATTER))
                 .build();
     }
+
+    @Transactional
+    public MonthlyTicketDTO updateTicketPlate(Long id, String newPlate) {
+        MonthlyTicket ticket = monthlyTicketRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Monthly ticket not found"));
+
+        if (newPlate == null || newPlate.isBlank()) {
+            throw new IllegalArgumentException("New plate cannot be empty");
+        }
+
+        boolean hasBeenUsed = parkingSessionRepository.existsByPlateAndTimeInGreaterThanEqual(ticket.getPlate(), ticket.getValidFrom());
+        if (hasBeenUsed) {
+            throw new IllegalStateException("This pass has already been used and cannot be modified");
+        }
+
+        ticket.setPlate(newPlate);
+        monthlyTicketRepository.save(ticket);
+
+        return MonthlyTicketDTO.builder()
+                .id("MP-" + ticket.getId())
+                .plate(ticket.getPlate())
+                .status(ticket.getStatus())
+                .startDate(ticket.getValidFrom().format(FORMATTER))
+                .endDate(ticket.getValidUntil().format(FORMATTER))
+                .build();
+    }
+
+    @Transactional
+    public MonthlyTicketDTO assignRfidCard(Long ticketId, String rfidCode, com.pbms.modules.infrastructure.repository.RfidCardRepository rfidCardRepository) {
+        MonthlyTicket ticket = monthlyTicketRepository.findById(ticketId)
+                .orElseThrow(() -> new RuntimeException("Do not take advantage of this and often"));
+
+        com.pbms.modules.infrastructure.domain.RfidCard card = rfidCardRepository.findByCardCode(rfidCode)
+                .orElseGet(() -> {
+                    com.pbms.modules.infrastructure.domain.RfidCard newCard = com.pbms.modules.infrastructure.domain.RfidCard.builder()
+                            .cardCode(rfidCode)
+                            .status("IN_USE")
+                            .build();
+                    return rfidCardRepository.save(newCard);
+                });
+
+        card.setStatus("IN_USE");
+        card.setAssignedPlate(ticket.getPlate());
+        rfidCardRepository.save(card);
+
+        ticket.setRfidCard(card);
+        monthlyTicketRepository.save(ticket);
+
+        return MonthlyTicketDTO.builder()
+                .id("MP-" + ticket.getId())
+                .plate(ticket.getPlate())
+                .status(ticket.getStatus())
+                .startDate(ticket.getValidFrom().format(FORMATTER))
+                .endDate(ticket.getValidUntil().format(FORMATTER))
+                .build();
+    }
 }
+

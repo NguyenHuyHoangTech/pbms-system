@@ -31,4 +31,18 @@ public class IncidentTicketDTO {
     private String time;
     private String uploadedCardUrl;
     private BigDecimal baseFee;
+    
+    // Session detail fields for Phase 2 UI
+    private String sessionTimeIn;
+    private String sessionPicInPanorama;
+    private BigDecimal sessionParkingFee;
+    private String sessionVehicleType;
+    private Long sessionId;
+    
+    // Phase 2 specifics
+    private LocalDateTime feePausedAt;
+    private String uploadedPicOutUrl;
+    private String sessionPicOutPanorama;
+    private String sessionSuggestedZone;
 }
+

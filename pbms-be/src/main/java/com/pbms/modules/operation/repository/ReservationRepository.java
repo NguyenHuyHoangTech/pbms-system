@@ -12,4 +12,6 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
     long countByZoneIdAndStatus(Long zoneId, String status);
     List<Reservation> findByVehicle_PlateNumberAndStatus(String plateNumber, String status);
     List<Reservation> findByStatus(String status);
+    List<Reservation> findByZoneIdAndStatus(Long zoneId, String status);
 }
+

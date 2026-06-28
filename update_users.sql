@@ -1,0 +1,1 @@
+﻿ALTER TABLE users ALTER COLUMN full_name NVARCHAR(255); UPDATE users SET full_name = N'Nguyễn Huy Hoàng' WHERE id = 7; UPDATE users SET full_name = N'Tập Học' WHERE id = 9; UPDATE users SET full_name = N'Huy Hoàng Nguyễn (ZP Media)' WHERE id = 13;

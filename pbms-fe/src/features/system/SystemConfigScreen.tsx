@@ -17,18 +17,12 @@ export const SystemConfigScreen = () => {
   const [smtpEmail, setSmtpEmail] = useState('');
   const [smtpPassword, setSmtpPassword] = useState('');
 
-  // PayOS Configs
-  const [payosClientId, setPayosClientId] = useState('');
-  const [payosApiKey, setPayosApiKey] = useState('');
-  const [payosChecksumKey, setPayosChecksumKey] = useState('');
-
   // PayPal Configs
   const [paypalClientId, setPaypalClientId] = useState('');
   const [paypalSecret, setPaypalSecret] = useState('');
 
   // Statuses
   const [testEmailStatus, setTestEmailStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-  const [testPayosStatus, setTestPayosStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testPaypalStatus, setTestPaypalStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
 
   const { data: configs = [], isLoading } = useQuery({
@@ -49,38 +43,31 @@ export const SystemConfigScreen = () => {
       
       setSmtpEmail(getVal('SMTP_EMAIL'));
       setSmtpPassword(getVal('SMTP_APP_PASSWORD'));
-      setPayosClientId(getVal('PAYOS_CLIENT_ID'));
-      setPayosApiKey(getVal('PAYOS_API_KEY'));
-      setPayosChecksumKey(getVal('PAYOS_CHECKSUM_KEY'));
       setPaypalClientId(getVal('PAYPAL_CLIENT_ID'));
       setPaypalSecret(getVal('PAYPAL_SECRET'));
     }
   }, [configs]);
 
   const testConnectionMutation = useMutation({
-    mutationFn: async (type: 'EMAIL' | 'PAYOS' | 'PAYPAL') => {
+    mutationFn: async (type: 'EMAIL' | 'PAYPAL') => {
       if (type === 'EMAIL') {
         await axiosClient.post('/system/configs/test-email', { email: smtpEmail, password: smtpPassword });
-      } else {
-        // Other tests can be implemented similarly if backend supports
-        return new Promise<void>(resolve => setTimeout(() => resolve(), 1000));
+      } else if (type === 'PAYPAL') {
+        await axiosClient.post('/system/configs/test-paypal', { clientId: paypalClientId, secret: paypalSecret });
       }
     },
     onMutate: (type) => {
       if (type === 'EMAIL') setTestEmailStatus('testing');
-      if (type === 'PAYOS') setTestPayosStatus('testing');
       if (type === 'PAYPAL') setTestPaypalStatus('testing');
     },
     onSuccess: (_, type) => {
-      message.success('Kết nối thành công!');
+      message.success('Connect Success!');
       if (type === 'EMAIL') setTestEmailStatus('success');
-      if (type === 'PAYOS') setTestPayosStatus('success');
       if (type === 'PAYPAL') setTestPaypalStatus('success');
     },
     onError: (_, type) => {
-      message.error('Kết nối thất bại.');
+      message.error('Failed connection');
       if (type === 'EMAIL') setTestEmailStatus('error');
-      if (type === 'PAYOS') setTestPayosStatus('error');
       if (type === 'PAYPAL') setTestPaypalStatus('error');
     }
   });
@@ -88,7 +75,7 @@ export const SystemConfigScreen = () => {
   const saveConfigMutation = useMutation({
     mutationFn: async () => {
       // In a real scenario, we'd update each config
-      const promises = [];
+      const promises: Promise<any>[] = [];
       const updateIfChanged = (key: string, value: string) => {
         const config = configs.find((c: any) => c.configKey === key);
         if (config && config.configValue !== value) {
@@ -100,9 +87,6 @@ export const SystemConfigScreen = () => {
       
       updateIfChanged('SMTP_EMAIL', smtpEmail);
       updateIfChanged('SMTP_APP_PASSWORD', smtpPassword);
-      updateIfChanged('PAYOS_CLIENT_ID', payosClientId);
-      updateIfChanged('PAYOS_API_KEY', payosApiKey);
-      updateIfChanged('PAYOS_CHECKSUM_KEY', payosChecksumKey);
       updateIfChanged('PAYPAL_CLIENT_ID', paypalClientId);
       updateIfChanged('PAYPAL_SECRET', paypalSecret);
 
@@ -110,10 +94,10 @@ export const SystemConfigScreen = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['system-configs'] });
-      message.success('Đã lưu cấu hình hệ thống!');
+      message.success('System configuration saved!');
     },
     onError: () => {
-      message.error('Lưu cấu hình thất bại.');
+      message.error('Save the Failede configuration');
     }
   });
 
@@ -122,8 +106,8 @@ export const SystemConfigScreen = () => {
       <div className="max-w-4xl mx-auto">
         <div className="flex justify-between items-center mb-8 bg-white p-6 rounded-xl shadow-sm border border-gray-200">
           <div>
-            <Title level={2} className="m-0 text-gray-800">Cấu hình Hệ thống</Title>
-            <Text type="secondary">Quản lý tham số kết nối cho toàn bộ hệ thống PBMS.</Text>
+            <Title level={2} className="m-0 text-gray-800">System Config</Title>
+            <Text type="secondary">Manage connection parameters for the entire System PBMSe</Text>
           </div>
           <div className="flex items-center space-x-4">
              <span className={`px-2 py-1 rounded text-xs font-medium ${connected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
@@ -168,47 +152,6 @@ export const SystemConfigScreen = () => {
               </div>
             </Card>
 
-            {/* PAYOS CONFIG */}
-            <Card title={<span className="text-blue-700"><ApiOutlined className="mr-2"/>PayOS Configuration</span>} className="shadow-sm border-gray-200 rounded-xl">
-              <div className="grid grid-cols-1 gap-4 mb-4">
-                <div>
-                  <Text strong className="block mb-1 text-gray-600">Client ID</Text>
-                  <Input 
-                    value={payosClientId} 
-                    onChange={e => { setPayosClientId(e.target.value); setTestPayosStatus('idle'); }} 
-                    size="large"
-                  />
-                </div>
-                <div>
-                  <Text strong className="block mb-1 text-gray-600">API Key</Text>
-                  <Input.Password
-                    value={payosApiKey}
-                    onChange={e => { setPayosApiKey(e.target.value); setTestPayosStatus('idle'); }}
-                    iconRender={(visible) => (visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />)}
-                    size="large"
-                  />
-                </div>
-                <div>
-                  <Text strong className="block mb-1 text-gray-600">Checksum Key</Text>
-                  <Input.Password
-                    value={payosChecksumKey}
-                    onChange={e => { setPayosChecksumKey(e.target.value); setTestPayosStatus('idle'); }}
-                    iconRender={(visible) => (visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />)}
-                    size="large"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-between items-center border-t pt-4 mt-4">
-                <Button 
-                  loading={testConnectionMutation.isPending && testConnectionMutation.variables === 'PAYOS'} 
-                  onClick={() => testConnectionMutation.mutate('PAYOS')}
-                >
-                  Test Connection
-                </Button>
-                {testPayosStatus === 'success' && <Text type="success">Verified</Text>}
-              </div>
-            </Card>
-
             {/* PAYPAL CONFIG */}
             <Card title={<span className="text-green-700"><ApiOutlined className="mr-2"/>PayPal Configuration</span>} className="shadow-sm border-gray-200 rounded-xl">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -249,12 +192,12 @@ export const SystemConfigScreen = () => {
                 loading={saveConfigMutation.isPending}
                 onClick={() => saveConfigMutation.mutate()}
                 className="bg-blue-600"
-                disabled={testEmailStatus !== 'success' || testPayosStatus !== 'success' || testPaypalStatus !== 'success'}
+                disabled={testEmailStatus !== 'success' || testPaypalStatus !== 'success'}
               >
                 Save All Configurations
               </Button>
             </div>
-            { (testEmailStatus !== 'success' || testPayosStatus !== 'success' || testPaypalStatus !== 'success') && (
+            { (testEmailStatus !== 'success' || testPaypalStatus !== 'success') && (
               <div className="text-right mt-2 text-xs text-red-500">
                 * You must successfully test all connections before saving.
               </div>

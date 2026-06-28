@@ -22,3 +22,4 @@ public class ZoneController {
         return ResponseEntity.ok(ApiResponse.success(zoneService.getMapZones(), "Fetched map zones"));
     }
 }
+

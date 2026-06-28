@@ -18,7 +18,7 @@ public class MapConfigurationController {
     public ResponseEntity<ApiResponse<MapConfigDTO>> getMapConfig() {
         return ResponseEntity.ok(ApiResponse.success(
                 mapConfigurationService.getMapConfiguration(),
-                "Lấy cấu hình sơ đồ bãi đỗ thành công"
+                "Successfully retrieved parking configuration"
         ));
     }
 
@@ -26,10 +26,11 @@ public class MapConfigurationController {
     public ResponseEntity<ApiResponse<String>> saveMapConfig(@RequestBody MapConfigDTO mapConfigDTO) {
         try {
             mapConfigurationService.saveMapConfiguration(mapConfigDTO);
-            return ResponseEntity.ok(ApiResponse.success("Lưu cấu hình thành công", "Cấu hình sơ đồ bãi đỗ đã được lưu."));
+            return ResponseEntity.ok(ApiResponse.success("What are the results?", "The results"));
         } catch (Exception e) {
             e.printStackTrace();
             return ResponseEntity.badRequest().body(ApiResponse.error(400, e.getMessage()));
         }
     }
 }
+

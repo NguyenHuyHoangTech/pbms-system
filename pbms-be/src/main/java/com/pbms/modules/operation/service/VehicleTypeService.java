@@ -60,3 +60,4 @@ public class VehicleTypeService {
         repository.deleteById(id);
     }
 }
+

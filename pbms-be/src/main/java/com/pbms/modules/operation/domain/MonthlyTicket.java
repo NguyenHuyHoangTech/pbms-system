@@ -48,3 +48,4 @@ public class MonthlyTicket extends BaseEntity {
     @Column(name = "auto_renew")
     private Boolean autoRenew = false;
 }
+

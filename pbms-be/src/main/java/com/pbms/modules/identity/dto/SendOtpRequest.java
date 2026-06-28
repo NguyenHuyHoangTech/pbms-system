@@ -12,3 +12,4 @@ public class SendOtpRequest {
 
     private String purpose = "REGISTER";
 }
+

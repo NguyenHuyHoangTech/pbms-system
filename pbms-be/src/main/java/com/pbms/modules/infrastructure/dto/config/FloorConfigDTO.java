@@ -16,3 +16,4 @@ public class FloorConfigDTO {
     private Integer mapCols;
     private Integer mapRows;
 }
+

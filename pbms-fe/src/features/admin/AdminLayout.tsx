@@ -10,6 +10,8 @@ import {
 } from '@ant-design/icons';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../core/store/useAuthStore';
+import { UserProfileSettingsModal } from '../shared/components/UserProfileSettingsModal';
+import { SystemClock } from '../shared/components/SystemClock';
 
 const { Header, Sider, Content } = Layout;
 const { Text } = Typography;
@@ -20,6 +22,7 @@ export const AdminLayout = () => {
   const location = useLocation();
   const logout = useAuthStore((state) => state.logout);
   const email = useAuthStore((state) => state.email);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -30,26 +33,32 @@ export const AdminLayout = () => {
     {
       key: '/admin/users',
       icon: <UserOutlined />,
-      label: 'Quản lý Tài khoản',
+      label: 'User Management',
     },
     {
       key: '/admin/system-configs',
       icon: <SettingOutlined />,
-      label: 'Cấu hình Hệ thống',
+      label: 'System Config',
     },
     {
       key: '/admin/audit-logs',
       icon: <HistoryOutlined />,
-      label: 'Nhật ký Hoạt động',
+      label: 'Active Log',
     },
   ];
 
-  const userMenu = {
+  const userMenu: any = {
     items: [
+      {
+        key: 'settings',
+        icon: <SettingOutlined />,
+        label: 'Account Settings',
+        onClick: () => setIsSettingsOpen(true),
+      },
       {
         key: 'logout',
         icon: <LogoutOutlined />,
-        label: 'Đăng xuất',
+        label: 'Logout',
         onClick: handleLogout,
         danger: true,
       },
@@ -90,6 +99,7 @@ export const AdminLayout = () => {
           </div>
           
           <div className="flex items-center gap-4">
+            <SystemClock />
             <Dropdown menu={userMenu} placement="bottomRight" arrow>
               <div className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 px-2 py-1 rounded transition-colors">
                 <Avatar icon={<UserOutlined />} className="bg-blue-600" />
@@ -104,6 +114,7 @@ export const AdminLayout = () => {
           <Outlet />
         </Content>
       </Layout>
+      <UserProfileSettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </Layout>
   );
 };

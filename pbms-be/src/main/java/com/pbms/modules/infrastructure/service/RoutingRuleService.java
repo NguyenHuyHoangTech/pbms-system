@@ -42,7 +42,7 @@ public class RoutingRuleService {
             }
             RoutingRuleDTO dto = RoutingRuleDTO.builder()
                     .timeFrameId("tf_" + UUID.randomUUID().toString().substring(0, 8))
-                    .name("Các khung giờ khác")
+                    .name("Other price brackets")
                     .startTime(null)
                     .endTime(null)
                     .isDefault(true)
@@ -66,7 +66,7 @@ public class RoutingRuleService {
             
             RoutingRuleDTO dto = RoutingRuleDTO.builder()
                     .timeFrameId("tf_" + UUID.randomUUID().toString().substring(0, 8))
-                    .name(firstRule.getIsDefault() ? "Các khung giờ khác" : ("Khung giờ " + firstRule.getStartTime() + " - " + firstRule.getEndTime()))
+                    .name(firstRule.getIsDefault() ? "Default rules" : ("Timeframe " + firstRule.getStartTime() + " - " + firstRule.getEndTime()))
                     .startTime(firstRule.getStartTime() != null ? firstRule.getStartTime().toString() : null)
                     .endTime(firstRule.getEndTime() != null ? firstRule.getEndTime().toString() : null)
                     .isDefault(firstRule.getIsDefault())
@@ -185,3 +185,4 @@ public class RoutingRuleService {
         return getRoutingRulesByVehicleType(request.getVehicleTypeName());
     }
 }
+

@@ -25,14 +25,14 @@ public class RfidCardService {
                         .uid(card.getCardCode())
                         .visualId("CARD-VL-" + String.format("%03d", card.getId()))
                         .status(card.getStatus())
-                        .location(card.getStatus().equals("IN_USE") ? "Trong bãi" : (card.getStatus().equals("AVAILABLE") ? "Nằm trống" : "Không xác định"))
+                        .location(card.getStatus().equals("IN_USE") ? "In Session" : (card.getStatus().equals("AVAILABLE") ? "Gate Staff" : "Unknown"))
                         .build())
                 .collect(Collectors.toList());
     }
 
     public void updateStatus(String uid, String newStatus) {
         RfidCard card = rfidCardRepository.findByCardCode(uid)
-                .orElseThrow(() -> new RuntimeException("Không tìm thấy thẻ " + uid));
+                .orElseThrow(() -> new RuntimeException("RFID Card not found: " + uid));
         card.setStatus(newStatus);
         rfidCardRepository.save(card);
     }
@@ -57,8 +57,9 @@ public class RfidCardService {
                 }
             }
         } catch (Exception e) {
-            throw new RuntimeException("Lỗi xử lý file CSV", e);
+            throw new RuntimeException("Error processing CSV file", e);
         }
         return count;
     }
 }
+

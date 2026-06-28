@@ -26,6 +26,22 @@ public class SystemConfigService {
     }
 
     @Transactional
+    public SystemConfig saveOrUpdateConfigValue(String key, String value) {
+        SystemConfig config = repository.findByConfigKey(key).orElse(null);
+        if (config == null) {
+            config = SystemConfig.builder()
+                .configKey(key)
+                .configValue(value)
+                .description("Default system configuration")
+                .build();
+            return repository.save(config);
+        } else {
+            config.setConfigValue(value);
+            return repository.save(config);
+        }
+    }
+
+    @Transactional
     public SystemConfig createConfig(SystemConfig config) {
         if (repository.findByConfigKey(config.getConfigKey()).isPresent()) {
             throw new IllegalArgumentException("Config key already exists: " + config.getConfigKey());
@@ -73,4 +89,23 @@ public class SystemConfigService {
             throw new IllegalArgumentException("SMTP Connection failed: " + e.getMessage());
         }
     }
+    public void testPaypalConnection(String clientId, String secret) {
+        org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.setBasicAuth(clientId, secret);
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED);
+
+        org.springframework.http.HttpEntity<String> request = new org.springframework.http.HttpEntity<>("grant_type=client_credentials", headers);
+
+        try {
+            org.springframework.http.ResponseEntity<String> response = restTemplate.postForEntity(
+                    "https://api-m.sandbox.paypal.com/v1/oauth2/token", request, String.class);
+            if (!response.getStatusCode().is2xxSuccessful()) {
+                throw new IllegalArgumentException("PayPal Connection failed: Invalid credentials");
+            }
+        } catch (Exception e) {
+            throw new IllegalArgumentException("PayPal Connection failed: " + e.getMessage());
+        }
+    }
 }
+

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { Card, Typography, Select, Input, Button, Form, Table, Tag, message, Alert } from 'antd';
+import { Card, Typography, Select, Input, Button, Form, Table, Tag, message, Alert, Upload } from 'antd';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axiosClient from '../../core/api/axiosClient';
 import { 
   CameraOutlined, 
   CustomerServiceOutlined, 
@@ -21,20 +23,30 @@ const { TextArea } = Input;
 
 
 const columns = [
-  { title: 'Mã Ticket', dataIndex: 'id', key: 'id', render: (text: string) => <Text strong>{text || 'NEW'}</Text> },
-  { title: 'Phân loại', dataIndex: 'category', key: 'category' },
-  { title: 'Biển số', dataIndex: 'plateNumber', key: 'plateNumber' },
-  { title: 'Mô tả', dataIndex: 'description', key: 'description' },
-  { title: 'Thời gian tạo', dataIndex: 'reportedAt', key: 'reportedAt' },
+  { title: 'Ticket code', dataIndex: 'id', key: 'id', render: (text: string) => <Text strong>{text || 'NEW'}</Text> },
+  { title: 'Classify', dataIndex: 'type', key: 'type' },
+  { title: 'License Plate', dataIndex: 'plate', key: 'plate' },
+  { title: 'Describe', dataIndex: 'description', key: 'description' },
+  { title: 'Time created', dataIndex: 'time', key: 'time' },
   { 
-    title: 'Trạng thái', 
+    title: 'Resolution note', 
+    dataIndex: 'resolutionNotes', 
+    key: 'resolutionNotes',
+    render: (text: string) => <Text type="secondary" italic>{text || '-'}</Text> 
+  },
+  { 
+    title: 'Status', 
     dataIndex: 'status', 
     key: 'status',
-    render: (status: string) => (
-      <Tag color={status === 'OPEN' ? 'warning' : status === 'CLOSED' ? 'success' : 'error'}>
-        {status === 'OPEN' ? 'Đang xử lý' : status === 'CLOSED' ? 'Đã đóng' : 'Bị từ chối'}
-      </Tag>
-    )
+    render: (status: string) => {
+      let color = 'default';
+      let label = status;
+      if (status === 'PENDING') { color = 'warning'; label = 'Pending'; }
+      else if (status === 'WAITING_CHECKOUT') { color = 'processing'; label = 'Processing'; }
+      else if (status === 'RESOLVED') { color = 'success'; label = 'Resolved'; }
+      else if (status === 'REJECTED') { color = 'error'; label = 'Rejected'; }
+      return <Tag color={color}>{label}</Tag>;
+    }
   }
 ];
 
@@ -43,6 +55,8 @@ export const HelpdeskScreen = () => {
   
   const queryClient = useQueryClient();
   const [selectedCategory, setSelectedCategory] = useState<string>('');
+  const [isPlateVerified, setIsPlateVerified] = useState<boolean>(false);
+  const [isCheckingPlate, setIsCheckingPlate] = useState<boolean>(false);
   const [systemMessage, setSystemMessage] = useState<{ type: 'success' | 'warning' | 'info'; title: string; desc: string } | null>(null);
 
   const { data: tickets = [] } = useQuery({
@@ -59,7 +73,17 @@ export const HelpdeskScreen = () => {
 
   const createIncidentMutation = useMutation({
     mutationFn: async (payload: any) => {
-      const res = await axiosClient.post('/incidents', payload);
+      let res;
+      if (payload.issueType === 'LOST_CARD') {
+        res = await axiosClient.post('/incidents/lost-card', { 
+          plate: payload.plate, 
+          fee: 200000, 
+          description: payload.description,
+          uploadedDocUrl: payload.uploadedDocUrl
+        });
+      } else {
+        res = await axiosClient.post('/incidents', payload);
+      }
       return res.data;
     },
     onSuccess: () => {
@@ -67,69 +91,141 @@ export const HelpdeskScreen = () => {
     }
   });
 
+  const handleCheckPlate = async () => {
+    const plate = form.getFieldValue('plate');
+    if (!plate) {
+      message.warning('Please enter vehicle License Plate to check');
+      return;
+    }
+    
+    const isLostOrDamaged = selectedCategory === 'LOST_CARD' || selectedCategory === 'DAMAGED_CARD';
+    let rfid = '';
+    if (!isLostOrDamaged) {
+      rfid = form.getFieldValue('code');
+      if (!rfid) {
+        message.warning('Please enter card code to check');
+        return;
+      }
+    }
+
+    setIsCheckingPlate(true);
+    try {
+      let res;
+      if (isLostOrDamaged) {
+        res = await axiosClient.get(`/incidents/check-plate?plate=${encodeURIComponent(plate)}`);
+      } else {
+        res = await axiosClient.get(`/incidents/check-plate-rfid?plate=${encodeURIComponent(plate)}&rfid=${encodeURIComponent(rfid)}`);
+      }
+      
+      if (res.data?.data) {
+        setIsPlateVerified(true);
+        message.success('authentication successfullye Please provide Detail Incident belowe');
+      } else {
+        setIsPlateVerified(false);
+        message.error(isLostOrDamaged ? 'No vehicles with this License Plate found in the lot!' : 'License Plate and Card Code do not match or not found in the yard!');
+      }
+    } catch (err) {
+      setIsPlateVerified(false);
+      message.error('Error when checking vehicle information!');
+    } finally {
+      setIsCheckingPlate(false);
+    }
+  };
+
+  const [uploadedFile, setUploadedFile] = useState<any>(null);
+  const [uploadedFile2, setUploadedFile2] = useState<any>(null);
+
+  const getBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    });
+
   const handleIncidentSubmit = async (values: any) => {
     setSystemMessage(null);
+    let mockUrl = '';
     
     try {
+      if (values.category === 'DAMAGED_CARD') {
+        const urls = [];
+        if (uploadedFile) urls.push(await getBase64(uploadedFile));
+        // Omit default URLs in production
+        
+        if (uploadedFile2) urls.push(await getBase64(uploadedFile2));
+        // Omit default URLs in production
+        
+        mockUrl = urls.join('|');
+      } else {
+        if (uploadedFile) {
+          mockUrl = await getBase64(uploadedFile);
+        }
+      }
+
       await createIncidentMutation.mutateAsync({
-        category: values.category,
-        plateNumber: values.plate,
-        description: values.description,
-        status: 'OPEN'
+        issueType: values.category,
+        plate: values.plate,
+        description: `BKS: ${values.plate} - ${values.description || ''}`,
+        priority: values.category === 'LOST_CARD' ? 'HIGH' : 'MEDIUM',
+        uploadedDocUrl: mockUrl
       });
 
       switch (values.category) {
         case 'SLOT_OCCUPIED':
           setSystemMessage({
-            type: 'success',
-            title: 'Sự cố đã ghi nhận & Xử lý tự động',
-            desc: `Hệ thống đã KHÓA ô đỗ bị chiếm dụng. Đã cấp ngay cho phương tiện [${values.plate}] ô đỗ mới: ZONE B - B02. Vui lòng di chuyển xe sang vị trí mới.`
+            type: 'warning',
+            title: 'Record Report - Please move to Waiting Zone',
+            desc: `The System has received the Incident Slote Report. Please move the vehicle to the Temporary Waiting Zonee Staff will verify and regulate the new location and send the results via the tracking table belowe`
           });
           const bg = document.getElementById('helpdesk-container');
           if (bg) {
-            bg.classList.add('bg-green-50');
-            setTimeout(() => bg.classList.remove('bg-green-50'), 2000);
+            bg.classList.add('bg-orange-50');
+            setTimeout(() => bg.classList.remove('bg-orange-50'), 2000);
           }
           break;
         case 'FIND_CAR':
           setSystemMessage({
             type: 'info',
-            title: 'Hệ thống đã điều phối nhân viên',
-            desc: `Vui lòng giữ nguyên vị trí và chúng tôi sẽ cử nhân viên đến hỗ trợ bạn.`
+            title: 'System coordinated Staff',
+            desc: `Please stay where you are and we will send staff to assist you`
           });
           break;
         case 'LOST_CARD':
           setSystemMessage({
             type: 'warning',
-            title: 'Khóa cổng Check-OUT khẩn cấp',
-            desc: `Phiên đỗ của phương tiện [${values.plate}] đã được đưa vào DANH SÁCH ĐỎ chống trộm. Hệ thống đã lưu lại ảnh bằng chứng của bạn. Vui lòng ra quầy hỗ trợ lúc Check-out để nhân viên xác minh thủ công.`
+            title: 'Lock gate Emergency Check-OUT',
+            desc: `Parking session for Vehicle [${values.plate}] has been added to RED LIST for theft prevention. System logged. Please provide evidence to staff at check-out.`
           });
           break;
         case 'DAMAGED_CARD':
           setSystemMessage({
             type: 'info',
-            title: 'Đã tiếp nhận báo cáo thẻ hỏng',
-            desc: `Hệ thống đã ghi nhận thẻ của xe [${values.plate}] bị lỗi vật lý. Vui lòng mang thẻ lỗi ra quầy hỗ trợ lúc Check-out để nhân viên đối chiếu ảnh chụp và thanh toán.`
+            title: 'Report of damaged card has been received',
+            desc: `System logged card for vehicle [${values.plate}] as physically damaged. Please bring to counter at check-out for verification.`
           });
           break;
         case 'FEE_DISPUTE':
           setSystemMessage({
             type: 'info',
-            title: 'Yêu cầu kiểm tra cước phí đã được gửi',
-            desc: 'Ticket đã được chuyển lên Quản lý để đối soát. Lưu ý: Cước phí vẫn đang được tính cho đến khi Quản lý ra quyết định đóng băng hoặc giảm trừ.'
+            title: 'Fee check request has been sent',
+            desc: 'Tickets have been transferred to Management for review. Note: Fees are still being calculated until Management decides to freeze or reduce them.'
           });
           break;
         default:
           setSystemMessage({
             type: 'success',
-            title: 'Cảm ơn bạn đã góp ý',
-            desc: 'Phản hồi của bạn đã được gửi đến Ban quản lý để cải thiện dịch vụ.'
+            title: 'Thank you for your comments',
+            desc: 'Your feedback has been sent to the Management Board for service improvement'
           });
       }
       
       form.resetFields(['description', 'plate', 'code']);
+      setUploadedFile(null);
+      setUploadedFile2(null);
+      setIsPlateVerified(false);
     } catch (error) {
-      message.error('Lỗi khi gửi yêu cầu hỗ trợ.');
+      message.error('Error when sending support request');
     }
   };
 
@@ -144,13 +240,13 @@ export const HelpdeskScreen = () => {
               <CustomerServiceOutlined className="text-2xl text-white" />
             </div>
             <div>
-              <Title level={2} className="m-0 text-gray-800 tracking-tight">Hỗ Trợ Sự Cố</Title>
-              <Text type="secondary" className="text-gray-500">Trung tâm tiếp nhận và xử lý ngoại lệ tự động</Text>
+              <Title level={2} className="m-0 text-gray-800 tracking-tight">Incident Support</Title>
+              <Text type="secondary" className="text-gray-500">Center for receiving and processing exceptions automatically</Text>
             </div>
           </div>
         </div>
 
-        {/* Form Yêu Cầu */}
+        {/* Request Form */}
         <Card className="rounded-2xl border-0 shadow-sm bg-white overflow-hidden">
           {systemMessage ? (
             <div className="animate-fade-in-up p-4">
@@ -163,8 +259,9 @@ export const HelpdeskScreen = () => {
                 className="rounded-xl border-2 py-4 px-5 shadow-sm"
                 action={
                   <Button onClick={() => setSystemMessage(null)} type="link" className="font-medium">
-                    Tạo Yêu Cầu Mới
-                  </Button>
+                    
+                                            Create New Request
+                                          </Button>
                 }
               />
             </div>
@@ -172,21 +269,21 @@ export const HelpdeskScreen = () => {
             <Form form={form} layout="vertical" onFinish={handleIncidentSubmit} className="animate-fade-in p-2">
               <Form.Item 
                 name="category" 
-                label={<span className="font-medium text-gray-700 text-base">Bạn đang gặp vấn đề gì?</span>}
-                rules={[{ required: true, message: 'Vui lòng chọn loại sự cố' }]}
+                label={<span className="font-medium text-gray-700 text-base">What problem are you having?</span>}
+                rules={[{ required: true, message: 'Please select Incident type' }]}
               >
                 <Select 
                   size="large"
-                  placeholder="Chọn loại sự cố..."
+                  placeholder="Select Incidenteee type"
                   onChange={(val) => setSelectedCategory(val)}
                   className="h-14 font-medium"
                   options={[
-                    { value: 'LOST_CARD', label: 'Báo Mất Thẻ (Yêu cầu khóa xe)', icon: <LockOutlined className="text-red-500" /> },
-                    { value: 'DAMAGED_CARD', label: 'Báo Hư Thẻ / Không đọc được', icon: <WarningOutlined className="text-orange-500" /> },
-                    { value: 'SLOT_OCCUPIED', label: 'Ô đỗ đặt trước bị chiếm dụng', icon: <CarOutlined className="text-blue-500" /> },
-                    { value: 'FIND_CAR', label: 'Không tìm thấy xe', icon: <SearchOutlined className="text-green-500" /> },
-                    { value: 'FEE_DISPUTE', label: 'Sai lệch cước phí', icon: <ClockCircleOutlined className="text-purple-500" /> },
-                    { value: 'OTHER_FEEDBACK', label: 'Góp ý chất lượng dịch vụ', icon: <MessageOutlined className="text-gray-500" /> },
+                    { value: 'LOST_CARD', label: 'Report Lost Card (requires locked vehicle)', icon: <LockOutlined className="text-red-500" /> },
+                    { value: 'DAMAGED_CARD', label: 'Report Damaged Card / Unreadable', icon: <WarningOutlined className="text-orange-500" /> },
+                    { value: 'SLOT_OCCUPIED', label: 'The reservation slot is occupied', icon: <CarOutlined className="text-blue-500" /> },
+                    { value: 'FIND_CAR', label: 'Car not found', icon: <SearchOutlined className="text-green-500" /> },
+                    { value: 'FEE_DISPUTE', label: 'Fee discrepancies', icon: <ClockCircleOutlined className="text-purple-500" /> },
+                    { value: 'OTHER_FEEDBACK', label: 'Comment on service quality', icon: <MessageOutlined className="text-gray-500" /> },
                   ]}
                   optionRender={(option) => (
                     <div className="flex items-center gap-3 text-base">
@@ -202,52 +299,105 @@ export const HelpdeskScreen = () => {
                 {selectedCategory && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 bg-slate-50 p-4 md:p-6 rounded-xl border border-slate-200 mb-6 animate-fade-in-up">
                     
-                    {/* BIỂN SỐ XE - Always required */}
+                    {/* License Plate XE - Always required */}
                     <Form.Item 
-                      name="plate" 
-                      label="Biển số xe thực tế"
-                      rules={[{ required: true, message: 'Vui lòng nhập biển số xe' }]}
-                      className="mb-0"
+                      label="Actual vehicle License Plate"
+                      required
+                      className={`mb-0 col-span-1 ${selectedCategory === 'LOST_CARD' || selectedCategory === 'DAMAGED_CARD' ? 'md:col-span-2' : ''}`}
                     >
-                      <Input size="large" prefix={<CarOutlined className="text-gray-400 mr-2" />} placeholder="VD: 51G-123.45" className="h-12 font-mono uppercase" />
+                      <div className="flex gap-2">
+                        <Form.Item name="plate" rules={[{ required: true, message: 'Please enter vehicle License Plate' }]} noStyle>
+                          <Input size="large" prefix={<CarOutlined className="text-gray-400 mr-2" />} placeholder="VD: 51G-123.45" className="h-12 font-mono uppercase" disabled={isCheckingPlate} onChange={() => setIsPlateVerified(false)} />
+                        </Form.Item>
+                        {(selectedCategory === 'LOST_CARD' || selectedCategory === 'DAMAGED_CARD') && (
+                          <Button type="primary" size="large" className="h-12" loading={isCheckingPlate} onClick={handleCheckPlate}>
+                            
+                                                                                      Check
+                                                                                    </Button>
+                        )}
+                      </div>
                     </Form.Item>
 
-                    {/* MÃ THẺ / BOOKING - Required for OTHERS, Hidden for LOST/DAMAGED */}
+                    {/* CARD ID / BOOKING ID - Required */}
                     {(selectedCategory !== 'LOST_CARD' && selectedCategory !== 'DAMAGED_CARD') && (
                       <Form.Item 
-                        name="code" 
-                        label="Mã thẻ / Mã Booking"
-                        rules={[{ required: true, message: 'Vui lòng nhập mã thẻ để xác thực' }]}
-                        className="mb-0"
+                        label="Card code / Booking code"
+                        required
+                        className="mb-0 col-span-1"
                       >
-                        <Input size="large" prefix={<QrcodeOutlined className="text-gray-400 mr-2" />} placeholder="Nhập mã in trên thẻ..." className="h-12" />
+                        <div className="flex gap-2">
+                          <Form.Item name="code" rules={[{ required: true, message: 'Please enter card code for authentication' }]} noStyle>
+                            <Input size="large" prefix={<QrcodeOutlined className="text-gray-400 mr-2" />} placeholder="Enter the code printed on the cardeee" className="h-12" disabled={isCheckingPlate} onChange={() => setIsPlateVerified(false)} />
+                          </Form.Item>
+                          <Button type="primary" size="large" className="h-12" loading={isCheckingPlate} onClick={handleCheckPlate}>
+                            
+                                                                                      Check
+                                                                                    </Button>
+                        </div>
                       </Form.Item>
                     )}
 
-                    {/* ẢNH BẰNG CHỨNG - Displayed for ALL categories */}
-                    <Form.Item label={`Tải lên hình ảnh đính kèm (${
-                      selectedCategory === 'SLOT_OCCUPIED' ? 'Xe vi phạm' : 
-                      selectedCategory === 'FEE_DISPUTE' ? 'Minh chứng sai cước' : 
-                      selectedCategory === 'FIND_CAR' ? 'Ảnh khu vực đang đứng' : 
-                      selectedCategory === 'OTHER_FEEDBACK' ? 'Ảnh góp ý nếu có' : 
-                      'Cà-vẹt / Hình thẻ lỗi'
-                    })`} className="mb-0 col-span-2">
-                        <div className="w-full h-32 border-2 border-dashed border-blue-300 rounded-lg flex flex-col items-center justify-center bg-white text-blue-500 hover:bg-blue-50 hover:border-blue-500 cursor-pointer transition-colors group">
-                          <CameraOutlined className="text-3xl mb-2 group-hover:scale-110 transition-transform" />
-                          <span className="text-sm font-medium">Click mở Camera / Tải ảnh lên</span>
-                        </div>
-                    </Form.Item>
+                    {isPlateVerified && (
+                      <>
 
-                    {/* MÔ TẢ CHI TIẾT */}
+                    {/* PROOF IMAGE */}
+                    {selectedCategory === 'DAMAGED_CARD' ? (
+                      <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <Form.Item label="Upload photo Card is damaged" className="mb-0">
+                            <Upload maxCount={1} beforeUpload={(file) => { setUploadedFile(file); return false; }} onRemove={() => setUploadedFile(null)} className="w-full block" listType="picture">
+                              <div className="w-full h-32 border-2 border-dashed border-orange-300 rounded-lg flex flex-col items-center justify-center bg-white text-orange-500 hover:bg-orange-50 hover:border-orange-500 cursor-pointer transition-colors group">
+                                <CameraOutlined className="text-3xl mb-2 group-hover:scale-110 transition-transform" />
+                                <span className="text-sm font-medium">Click to open Camera / Download card photo</span>
+                              </div>
+                            </Upload>
+                        </Form.Item>
+                        <Form.Item label="Upload a photo of the vehicle owner's ID card" className="mb-0">
+                            <Upload maxCount={1} beforeUpload={(file) => { setUploadedFile2(file); return false; }} onRemove={() => setUploadedFile2(null)} className="w-full block" listType="picture">
+                              <div className="w-full h-32 border-2 border-dashed border-orange-300 rounded-lg flex flex-col items-center justify-center bg-white text-orange-500 hover:bg-orange-50 hover:border-orange-500 cursor-pointer transition-colors group">
+                                <CameraOutlined className="text-3xl mb-2 group-hover:scale-110 transition-transform" />
+                                <span className="text-sm font-medium">Click to open Camera / Download CCCD</span>
+                              </div>
+                            </Upload>
+                        </Form.Item>
+                      </div>
+                    ) : (
+                      <Form.Item label={`Upload attached images (${
+                        selectedCategory === 'SLOT_OCCUPIED' ? 'Violation vehicle' : 
+                        selectedCategory === 'FEE_DISPUTE' ? 'Proof of wrong charges' : 
+                        selectedCategory === 'FIND_CAR' ? 'Photo of Zone standing' : 
+                        selectedCategory === 'OTHER_FEEDBACK' ? 'Photo comments if available' : 
+                        'Parrot / Picture card error'
+                      })`} className="mb-0 col-span-2">
+                          <Upload 
+                            maxCount={1} 
+                            beforeUpload={(file) => {
+                              setUploadedFile(file);
+                              return false;
+                            }}
+                            onRemove={() => setUploadedFile(null)}
+                            className="w-full block" 
+                            listType="picture"
+                          >
+                            <div className="w-full h-32 border-2 border-dashed border-blue-300 rounded-lg flex flex-col items-center justify-center bg-white text-blue-500 hover:bg-blue-50 hover:border-blue-500 cursor-pointer transition-colors group">
+                              <CameraOutlined className="text-3xl mb-2 group-hover:scale-110 transition-transform" />
+                              <span className="text-sm font-medium">Click to open Camera / Upload photo</span>
+                            </div>
+                          </Upload>
+                      </Form.Item>
+                    )}
+
+                    {/* Description Details */}
                     <Form.Item 
                       name="description" 
-                      label={selectedCategory === 'FIND_CAR' ? "Manh mối vị trí (Tầng, Gần cột nào...)" : "Mô tả chi tiết sự cố"} 
-                      rules={[{ required: true, message: 'Vui lòng nhập mô tả' }]}
+                      label={selectedCategory === 'FIND_CAR' ? "Location clue (Floor, Near any columneee)" : "Description of Detail Incident"} 
+                      rules={[{ required: true, message: 'Please enter a description' }]}
                       className="mb-0 col-span-2 mt-2"
                     >
-                      <TextArea rows={3} placeholder={selectedCategory === 'FIND_CAR' ? "VD: Tôi đang đứng gần thang máy khu C..." : "Giải thích rõ nguyên nhân để nhân viên hỗ trợ nhanh nhất..."} className="rounded-lg text-base p-3" />
+                      <TextArea rows={3} placeholder={selectedCategory === 'FIND_CAR' ? "Example: I'm standing near the Ceee area elevator" : "Explain clearly the reason so that Staff can support you as quickly as possible"} className="rounded-lg text-base p-3" />
                     </Form.Item>
 
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -256,7 +406,7 @@ export const HelpdeskScreen = () => {
                 type="primary" 
                 htmlType="submit" 
                 loading={createIncidentMutation.isPending}
-                disabled={!selectedCategory}
+                disabled={!selectedCategory || ((selectedCategory === 'LOST_CARD' || selectedCategory === 'DAMAGED_CARD') && !isPlateVerified)}
                 className={`w-full h-14 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center ${
                   selectedCategory === 'LOST_CARD' ? 'bg-red-600 hover:bg-red-700' :
                   selectedCategory === 'SLOT_OCCUPIED' ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 border-0' :
@@ -264,17 +414,17 @@ export const HelpdeskScreen = () => {
                 }`}
                 icon={selectedCategory === 'LOST_CARD' ? <SafetyCertificateOutlined /> : undefined}
               >
-                {selectedCategory === 'LOST_CARD' ? 'GỬI YÊU CẦU & KHÓA XE KHẨN CẤP' : 
-                 selectedCategory === 'SLOT_OCCUPIED' ? 'BÁO CÁO & ĐỔI CHỖ NGAY' : 
-                 'GỬI YÊU CẦU XỬ LÝ'}
+                {selectedCategory === 'LOST_CARD' ? 'SEND o REQUEST & EMERGENCY VEHICLE LOCK' : 
+                 selectedCategory === 'SLOT_OCCUPIED' ? 'Report & CHANGE PLACE' : 
+                 'SEND o REQUEST FOR PROCESSING'}
               </Button>
             </Form>
           )}
         </Card>
 
-        {/* Lịch sử Ticket */}
+        {/* Ticket History */}
         <Card className="rounded-2xl border-0 shadow-sm bg-white overflow-hidden mt-6 md:mt-8">
-          <Title level={5} className="mb-4 text-gray-600 uppercase text-xs tracking-wider font-bold">Lịch sử Yêu cầu Gần đây</Title>
+          <Title level={5} className="mb-4 text-gray-600 uppercase text-xs tracking-wider font-bold">Recent Request History</Title>
           <div className="overflow-x-auto">
             <Table 
               dataSource={tickets} 
@@ -289,7 +439,7 @@ export const HelpdeskScreen = () => {
                     <div className="bg-red-50 p-3 rounded border border-red-100 flex items-start space-x-2">
                       <WarningOutlined className="text-red-500 mt-1" />
                       <div>
-                        <Text strong className="text-red-700 block">Lý do từ chối từ Quản lý:</Text>
+                        <Text strong className="text-red-700 block">Reason Reject from Management:</Text>
                         <Text className="text-red-600">{record.reason}</Text>
                       </div>
                     </div>

@@ -15,3 +15,4 @@ public class SlotConfigDTO {
     private String name;
     private String status;
 }
+

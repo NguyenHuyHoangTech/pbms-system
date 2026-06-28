@@ -44,39 +44,38 @@ public class AuthService {
         String otpCode;
         long expiryTime;
         int attempts;
+        RegisterRequest registerRequest; // Only for REGISTER purpose
 
         OtpData(String otpCode, long expiryTime) {
             this.otpCode = otpCode;
             this.expiryTime = expiryTime;
             this.attempts = 0;
         }
+
+        OtpData(String otpCode, long expiryTime, RegisterRequest registerRequest) {
+            this.otpCode = otpCode;
+            this.expiryTime = expiryTime;
+            this.attempts = 0;
+            this.registerRequest = registerRequest;
+        }
     }
 
     @Transactional
     public void register(RegisterRequest request) {
-        if (userRepository.findByEmail(request.getEmail()).isPresent()) {
+        Optional<User> existingUserOpt = userRepository.findByEmail(request.getEmail());
+        if (existingUserOpt.isPresent() && existingUserOpt.get().getIsVerified()) {
             throw new IllegalArgumentException("Email already exists");
         }
 
-        User user = User.builder()
-                .email(request.getEmail())
-                .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .fullName(request.getFullName())
-                .role("CUSTOMER")
-                .isVerified(false)
-                .status("ACTIVE")
-                .build();
-        userRepository.save(user);
-
         String otp = generateOtp();
         String cacheKey = "OTP:REGISTER:" + request.getEmail();
-        long expiryTime = System.currentTimeMillis() + (OTP_TTL_MINUTES * 60 * 1000);
+        long expiryTime = System.currentTimeMillis() + (15 * 60 * 1000); // 15 mins for registration
         
-        // Save OTP to in-memory store
-        otpStore.put(cacheKey, new OtpData(otp, expiryTime));
+        // Save OTP and registration details to in-memory store instead of DB
+        otpStore.put(cacheKey, new OtpData(otp, expiryTime, request));
 
         // Send Email
-        String htmlContent = "<h3>Your PBMS Verification Code</h3><p>Your OTP is: <b>" + otp + "</b>. It will expire in 5 minutes.</p>";
+        String htmlContent = "<h3>Your PBMS Verification Code</h3><p>Your OTP is: <b>" + otp + "</b>. It will expire in 15 minutes.</p>";
         emailService.sendHtmlEmail(request.getEmail(), "PBMS Account Verification", htmlContent);
         
         log.info("Generated OTP for {} is {}", request.getEmail(), otp);
@@ -106,16 +105,37 @@ public class AuthService {
         // OTP is correct
         otpStore.remove(cacheKey);
 
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-
-        if ("INACTIVE".equals(user.getStatus())) {
-            throw new IllegalArgumentException("Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.");
+        User user;
+        if ("REGISTER".equals(request.getPurpose())) {
+            if (otpData.registerRequest == null) {
+                throw new IllegalArgumentException("Registration details expired. Please register again.");
+            }
+            
+            Optional<User> existingUserOpt = userRepository.findByEmail(request.getEmail());
+            if (existingUserOpt.isPresent()) {
+                user = existingUserOpt.get();
+                user.setPasswordHash(passwordEncoder.encode(otpData.registerRequest.getPassword()));
+                user.setFullName(otpData.registerRequest.getFullName());
+                user.setIsVerified(true);
+                user.setStatus("ACTIVE");
+            } else {
+                user = User.builder()
+                        .email(otpData.registerRequest.getEmail())
+                        .passwordHash(passwordEncoder.encode(otpData.registerRequest.getPassword()))
+                        .fullName(otpData.registerRequest.getFullName())
+                        .role("CUSTOMER")
+                        .isVerified(true)
+                        .status("ACTIVE")
+                        .build();
+            }
+            userRepository.save(user);
+        } else {
+            user = userRepository.findByEmail(request.getEmail())
+                    .orElseThrow(() -> new IllegalArgumentException("User not found"));
         }
 
-        if ("REGISTER".equals(request.getPurpose())) {
-            user.setIsVerified(true);
-            userRepository.save(user);
+        if ("INACTIVE".equals(user.getStatus())) {
+            throw new IllegalArgumentException("I'm going to lock you up, you're welcome");
         }
 
         // Normalize role: avoid double ROLE_ prefix
@@ -137,13 +157,13 @@ public class AuthService {
 
     public AuthResponse login(LoginRequest request) {
         User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new IllegalArgumentException("Email hoáº·c máº­t kháº©u khÃ´ng Ä‘Ãºng"));
+                .orElseThrow(() -> new IllegalArgumentException("Email or email address"));
 
         if (!user.getIsVerified()) {
             // Allow SUPER_ADMIN seed accounts to bypass email verification
             boolean isSuperAdmin = user.getRole().equals("ROLE_SUPER_ADMIN") || user.getRole().equals("SUPER_ADMIN");
             if (!isSuperAdmin) {
-                throw new IllegalArgumentException("Tài khoản chưa được xác thực. Vui lòng kiểm tra email và nhập mã OTP.");
+                throw new IllegalArgumentException("I'm locked to check the email address and click on the OTPe code.");
             }
             // Auto-verify for admin accounts
             user.setIsVerified(true);
@@ -151,11 +171,11 @@ public class AuthService {
         }
 
         if ("INACTIVE".equals(user.getStatus())) {
-            throw new IllegalArgumentException("TÃ i khoáº£n Ä‘Ã£ bá»‹ khÃ³a. Vui lÃ²ng liÃªn há»‡ quáº£n trá»‹ viÃªn.");
+            throw new IllegalArgumentException("An error occurred");
         }
 
         if (user.getPasswordHash() == null || !passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-            throw new IllegalArgumentException("Email hoáº·c máº­t kháº©u khÃ´ng Ä‘Ãºng");
+            throw new IllegalArgumentException("Email or email address");
         }
 
         // Normalize role: avoid double ROLE_ prefix
@@ -191,7 +211,7 @@ public class AuthService {
             user = existingUserOpt.get();
 
             if ("INACTIVE".equals(user.getStatus())) {
-                throw new IllegalArgumentException("Tài khoản đã bị khóa. Vui lòng liên hệ quản trị viên.");
+                throw new IllegalArgumentException("I'm going to lock you up, you're welcome");
             }
 
             // Update Google ID if not set
@@ -260,10 +280,18 @@ public class AuthService {
         String cacheKey = "OTP:" + (purpose != null ? purpose : "REGISTER") + ":" + email;
         long expiryTime = System.currentTimeMillis() + (OTP_TTL_MINUTES * 60 * 1000);
         
-        otpStore.put(cacheKey, new OtpData(otp, expiryTime));
+        OtpData existingData = otpStore.get(cacheKey);
+        RegisterRequest savedRequest = null;
+        if (existingData != null && "REGISTER".equals(purpose != null ? purpose : "REGISTER")) {
+            savedRequest = existingData.registerRequest;
+            // Extend registration expiry by 15 mins from now
+            expiryTime = System.currentTimeMillis() + (15 * 60 * 1000);
+        }
+        
+        otpStore.put(cacheKey, new OtpData(otp, expiryTime, savedRequest));
 
-        String htmlContent = "<h3>M\u00e3 X\u00e1c Nh\u1eadn PBMS</h3><p>M\u00e3 OTP c\u1ee7a b\u1ea1n l\u00e0: <b style='font-size:24px;letter-spacing:4px'>" + otp + "</b></p><p>M\u00e3 s\u1ebd h\u1ebft h\u1ea1n sau 5 ph\u00fat.</p>";
-        emailService.sendHtmlEmail(email, "[PBMS] M\u00e3 X\u00e1c Th\u1ef1c", htmlContent);
+        String htmlContent = "<h3>PBMS Verification Code</h3><p>Your OTP code is: <b style='font-size:24px;letter-spacing:4px'>" + otp + "</b></p><p>This code will expire in 5 minutes.</p>";
+        emailService.sendHtmlEmail(email, "[PBMS] Verification Code", htmlContent);
         
         log.info("Generated OTP for {} is {}", email, otp);
     }
@@ -271,10 +299,10 @@ public class AuthService {
     @Transactional
     public void forgotPassword(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("Kh\u00f4ng t\u00ecm th\u1ea5y t\u00e0i kho\u1ea3n v\u1edbi email n\u00e0y."));
+                .orElseThrow(() -> new IllegalArgumentException("Account not found with this email."));
 
         if (!user.getIsVerified()) {
-            throw new IllegalArgumentException("T\u00e0i kho\u1ea3n ch\u01b0a \u0111\u01b0\u1ee3c x\u00e1c th\u1ef1c.");
+            throw new IllegalArgumentException("Account is not verified yet.");
         }
 
         String otp = generateOtp();
@@ -294,15 +322,15 @@ public class AuthService {
 
         if (otpData == null || System.currentTimeMillis() > otpData.expiryTime) {
             otpStore.remove(cacheKey);
-            throw new IllegalArgumentException("M\u00e3 OTP \u0111\u00e3 h\u1ebft h\u1ea1n ho\u1eb7c kh\u00f4ng h\u1ee3p l\u1ec7.");
+            throw new IllegalArgumentException("OTP code is expired or invalid.");
         }
         if (!otpData.otpCode.equals(otp)) {
             otpData.attempts++;
             if (otpData.attempts >= MAX_OTP_ATTEMPTS) {
                 otpStore.remove(cacheKey);
-                throw new IllegalArgumentException("S\u1ed1 l\u1ea7n nh\u1eadp sai v\u01b0\u1ee3t qu\u00e1 gi\u1edbi h\u1ea1n. Vui l\u00f2ng y\u00eau c\u1ea7u m\u00e3 m\u1edbi.");
+                throw new IllegalArgumentException("Maximum attempts exceeded. Please request a new code.");
             }
-            throw new IllegalArgumentException("M\u00e3 OTP kh\u00f4ng \u0111\u00fang. C\u00f2n " + (MAX_OTP_ATTEMPTS - otpData.attempts) + " l\u1ea7n th\u1eed.");
+            throw new IllegalArgumentException("Incorrect OTP. You have " + (MAX_OTP_ATTEMPTS - otpData.attempts) + " attempts left.");
         }
 
         otpStore.remove(cacheKey);
@@ -317,7 +345,7 @@ public class AuthService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
         if (newPassword == null || newPassword.length() < 6) {
-            throw new IllegalArgumentException("M\u1eadt kh\u1ea9u ph\u1ea3i c\u00f3 \u00edt nh\u1ea5t 6 k\u00fd t\u1ef1.");
+            throw new IllegalArgumentException("Password must be at least 6 characters long.");
         }
         user.setPasswordHash(passwordEncoder.encode(newPassword));
         userRepository.save(user);
@@ -354,4 +382,5 @@ public class AuthService {
         return otpData != null ? otpData.otpCode : "NOT_FOUND";
     }
 }
+
 

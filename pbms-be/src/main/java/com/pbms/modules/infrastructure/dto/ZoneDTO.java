@@ -12,6 +12,7 @@ public class ZoneDTO {
     private String name;
     private Integer capacity; // Maps to total_slots calculated from count
     private Integer availableSlots; // Calculated from COUNT(slots where status = AVAILABLE)
+    private Long vehicleTypeId;
     private String vehicleType; // CAR or MOTORBIKE
     private Integer vehicleMatrixWidth;
     private Integer vehicleMatrixHeight;
@@ -21,3 +22,4 @@ public class ZoneDTO {
     private Integer rotation;
     private List<SlotDTO> slots;
 }
+

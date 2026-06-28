@@ -7,3 +7,4 @@ public class IotSlotUpdateRequest {
     private Long slotId;
     private String status; // OCCUPIED, EMPTY
 }
+

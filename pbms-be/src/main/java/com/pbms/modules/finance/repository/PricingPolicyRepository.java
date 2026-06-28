@@ -10,3 +10,4 @@ import java.util.Optional;
 public interface PricingPolicyRepository extends JpaRepository<PricingPolicy, Long> {
     Optional<PricingPolicy> findByVehicleTypeIdAndStatus(Long vehicleTypeId, String status);
 }
+

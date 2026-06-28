@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.web.bind.annotation.*;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/infrastructure/slots")
@@ -43,9 +44,29 @@ public class SlotController {
         return ResponseEntity.ok(ApiResponse.success("Slot updated", "Success"));
     }
 
+    @PutMapping("/{id}/status")
+    public ResponseEntity<ApiResponse<String>> updateSlotStatus(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        Slot slot = slotRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Slot not found"));
+        
+        String status = body.get("status");
+        if (status == null || (!status.equals("EMPTY") && !status.equals("DISABLED"))) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Invalid status"));
+        }
+        
+        slot.setStatus(status);
+        slotRepository.save(slot);
+        
+        // Broadcast to WebSocket so staff consoles update
+        messagingTemplate.convertAndSend("/topic/map-updates", slot);
+        
+        return ResponseEntity.ok(ApiResponse.success("White light bulbs", "Success"));
+    }
+
     @Data
     public static class IotUpdateRequest {
         private Long slotId;
         private String status;
     }
 }
+

@@ -31,3 +31,4 @@ public class PricingBlock {
     @Column(nullable = false, precision = 18, scale = 2)
     private BigDecimal fee;
 }
+

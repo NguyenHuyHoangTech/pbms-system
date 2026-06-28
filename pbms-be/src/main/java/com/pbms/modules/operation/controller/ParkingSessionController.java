@@ -12,6 +12,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+import com.pbms.common.utils.TimeProvider;
+import com.pbms.modules.finance.service.PricingCalculatorService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 @RestController
 @RequestMapping("/api/v1/parking-sessions")
@@ -19,10 +27,11 @@ import java.util.stream.Collectors;
 public class ParkingSessionController {
 
     private final ParkingSessionRepository parkingSessionRepository;
+    private final PricingCalculatorService pricingCalculatorService;
 
     /**
      * GET /api/v1/parking-sessions/my-active
-     * Khách hàng xem xe đang đỗ qua biển số (truyền qua query param)
+     * KhÃ¡ch hÃ ng xem xe Ä‘ang Ä‘á»— qua biá»ƒn sá»‘ (truyá»n qua query param)
      */
     @GetMapping("/my-active")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMyActiveSession(
@@ -32,26 +41,35 @@ public class ParkingSessionController {
         ParkingSession session = null;
 
         if (plate != null && !plate.isBlank()) {
-            session = parkingSessionRepository.findByPlateAndStatus(plate.trim().toUpperCase(), "ACTIVE").orElse(null);
+            java.util.List<ParkingSession> list = parkingSessionRepository.findByPlateOrderByTimeInDesc(plate.trim().toUpperCase());
+            for (ParkingSession s : list) {
+                if ("ACTIVE".equals(s.getStatus()) || "LOCKED".equals(s.getStatus())) {
+                    session = s;
+                    break;
+                }
+            }
         } else if (rfid != null && !rfid.isBlank()) {
             session = parkingSessionRepository.findByRfidCard_CardCodeAndStatus(rfid.trim(), "ACTIVE").orElse(null);
+            if (session == null) {
+                session = parkingSessionRepository.findByRfidCard_CardCodeAndStatus(rfid.trim(), "LOCKED").orElse(null);
+            }
         }
 
         if (session == null) {
             Map<String, Object> empty = new HashMap<>();
             empty.put("found", false);
-            empty.put("message", "Không tìm thấy phiên đỗ xe đang hoạt động");
-            return ResponseEntity.ok(ApiResponse.success(empty, "Không có xe đang đỗ"));
+            empty.put("message", "No active session found for this vehicle");
+            return ResponseEntity.ok(ApiResponse.success(empty, "Success"));
         }
 
         Map<String, Object> result = toSessionMap(session);
         result.put("found", true);
-        return ResponseEntity.ok(ApiResponse.success(result, "Tìm thấy phiên đỗ xe"));
+        return ResponseEntity.ok(ApiResponse.success(result, "Session found"));
     }
 
     /**
      * GET /api/v1/parking-sessions/history?plate=...
-     * Lịch sử đỗ xe theo biển số
+     * Lá»‹ch sá»­ Ä‘á»— xe theo biá»ƒn sá»‘
      */
     @GetMapping("/history")
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getHistory(
@@ -66,6 +84,31 @@ public class ParkingSessionController {
         return ResponseEntity.ok(ApiResponse.success(history, "Fetched parking history"));
     }
 
+    /**
+     * GET /api/v1/parking-sessions/all
+     * Láº¥y toÃ n bá»™ lá»‹ch sá»­ Ä‘á»— xe (cÃ³ phÃ¢n trang)
+     */
+    @GetMapping("/all")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getAllSessions(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size) {
+        
+        PageRequest pageRequest = PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "timeIn"));
+        Page<ParkingSession> sessionPage = parkingSessionRepository.findAll(pageRequest);
+        
+        List<Map<String, Object>> content = sessionPage.getContent().stream()
+                .map(this::toSessionMap)
+                .collect(Collectors.toList());
+                
+        Map<String, Object> result = new HashMap<>();
+        result.put("content", content);
+        result.put("totalPages", sessionPage.getTotalPages());
+        result.put("totalElements", sessionPage.getTotalElements());
+        result.put("currentPage", page);
+        
+        return ResponseEntity.ok(ApiResponse.success(result, "Fetched all sessions"));
+    }
+
     private Map<String, Object> toSessionMap(ParkingSession ps) {
         Map<String, Object> map = new HashMap<>();
         map.put("id", ps.getId());
@@ -76,8 +119,19 @@ public class ParkingSessionController {
         map.put("timeOut", ps.getTimeOut());
         map.put("gateInName", ps.getGateIn() != null ? ps.getGateIn().getGateName() : null);
         map.put("gateOutName", ps.getGateOut() != null ? ps.getGateOut().getGateName() : null);
-        map.put("totalFee", ps.getTotalFee());
+        
+        BigDecimal currentFee = ps.getTotalFee();
+        if (currentFee == null && ps.getVehicleType() != null && ps.getTimeIn() != null && 
+            ("ACTIVE".equals(ps.getStatus()) || "LOCKED".equals(ps.getStatus()))) {
+            currentFee = pricingCalculatorService.calculateTotalFee(
+                    ps.getVehicleType().getId(), 
+                    ps.getTimeIn(), 
+                    TimeProvider.now());
+        }
+        
+        map.put("totalFee", currentFee);
         map.put("status", ps.getStatus());
         return map;
     }
 }
+

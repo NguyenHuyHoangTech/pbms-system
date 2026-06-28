@@ -11,4 +11,6 @@ public interface IncidentTicketRepository extends JpaRepository<IncidentTicket, 
     List<IncidentTicket> findByIssueType(String issueType);
     List<IncidentTicket> findByIssueTypeAndStatus(String issueType, String status);
     List<IncidentTicket> findAllByOrderByIdDesc();
+    List<IncidentTicket> findByUserEmailOrderByIdDesc(String email);
 }
+

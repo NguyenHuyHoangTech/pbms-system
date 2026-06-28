@@ -8,3 +8,4 @@ public class ZoneLayoutDTO {
     private Double layoutY;
     private Double rotation;
 }
+

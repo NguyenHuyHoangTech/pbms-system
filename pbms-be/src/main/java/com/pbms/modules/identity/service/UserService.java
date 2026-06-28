@@ -7,11 +7,11 @@ import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.mail.MailException;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import com.pbms.common.service.EmailService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,13 +24,13 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final JavaMailSender javaMailSender;
+    private final EmailService emailService;
     private final SimpMessagingTemplate messagingTemplate;
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, JavaMailSender javaMailSender, SimpMessagingTemplate messagingTemplate) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder, EmailService emailService, SimpMessagingTemplate messagingTemplate) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
-        this.javaMailSender = javaMailSender;
+        this.emailService = emailService;
         this.messagingTemplate = messagingTemplate;
     }
 
@@ -108,12 +108,9 @@ public class UserService {
         broadcastUserUpdate("CREATE", user.getId());
 
         try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setTo(request.getEmail());
-            message.setSubject("Your PBMS Account Created");
-            message.setText("Your account has been created.\nEmail: " + request.getEmail() + "\nPassword: " + rawPassword + "\nPlease change it after logging in.");
-            javaMailSender.send(message);
-        } catch (MailException e) {
+            String htmlContent = "<p>Your account has been created.</p><p>Email: <b>" + request.getEmail() + "</b></p><p>Password: <b>" + rawPassword + "</b></p><p>Please change it after logging in.</p>";
+            emailService.sendHtmlEmail(request.getEmail(), "Your PBMS Account Created", htmlContent);
+        } catch (Exception e) {
             System.err.println("Failed to send welcome email: " + e.getMessage());
         }
     }
@@ -125,7 +122,7 @@ public class UserService {
         // Validate role value
         String normalizedRole = normalizeRole(request.getRole());
         if (!isValidRole(normalizedRole)) {
-            throw new IllegalArgumentException("Vai trò không hợp lệ: " + request.getRole());
+            throw new IllegalArgumentException("Error occurred: " + request.getRole());
         }
 
         user.setFullName(request.getName());
@@ -140,7 +137,7 @@ public class UserService {
 
         // Prevent self-lock
         if (!activate && user.getEmail().equalsIgnoreCase(currentUserEmail)) {
-            throw new IllegalArgumentException("Bạn không thể tự khóa tài khoản của chính mình.");
+            throw new IllegalArgumentException("You don't know if I can lock you personally.");
         }
 
         user.setStatus(activate ? "ACTIVE" : "INACTIVE");
@@ -168,13 +165,11 @@ public class UserService {
         broadcastUserUpdate("RESET_PASSWORD", user.getId());
 
         try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setTo(user.getEmail());
-            message.setSubject("Your PBMS Password Reset");
-            message.setText("Your password has been reset by the Admin.\nNew Password: " + rawPassword + "\nPlease change it after logging in.");
-            javaMailSender.send(message);
-        } catch (MailException e) {
+            String htmlContent = "<p>Your password has been reset by the Admin.</p><p>New Password: <b>" + rawPassword + "</b></p><p>Please change it after logging in.</p>";
+            emailService.sendHtmlEmail(user.getEmail(), "Your PBMS Password Reset", htmlContent);
+        } catch (Exception e) {
             System.err.println("Failed to send reset password email: " + e.getMessage());
         }
     }
 }
+

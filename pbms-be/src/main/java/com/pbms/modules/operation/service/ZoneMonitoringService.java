@@ -55,10 +55,11 @@ public class ZoneMonitoringService {
                 Map<String, Object> alertPayload = new HashMap<>();
                 alertPayload.put("zoneId", zone.getId());
                 alertPayload.put("zoneName", zone.getZoneName());
-                alertPayload.put("message", "Phát hiện có xe đỗ sai vào Zone Tháng " + zone.getZoneName() + ". Vui lòng đi kiểm tra!");
+                alertPayload.put("message", "High occupancy alert for zone: " + zone.getZoneName() + ". Please check it out!");
                 
                 eventPublisher.broadcastCriticalEvent("/topic/incidents/alerts", "ZONE_VIOLATION", alertPayload);
             }
         }
     }
 }
+

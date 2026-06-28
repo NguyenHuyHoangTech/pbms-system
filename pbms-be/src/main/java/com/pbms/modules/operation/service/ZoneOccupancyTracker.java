@@ -2,17 +2,17 @@ package com.pbms.modules.operation.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class ZoneOccupancyTracker {
 
-    private final StringRedisTemplate redisTemplate;
+    private final ConcurrentHashMap<String, String> redisTemplate = new ConcurrentHashMap<>();
     
     private static final String REDIS_PREFIX = "pbms:high-water-mark:zone:";
 
@@ -21,15 +21,15 @@ public class ZoneOccupancyTracker {
      */
     public void updateOccupancy(Long zoneId, BigDecimal currentOccupancy) {
         String key = REDIS_PREFIX + zoneId;
-        String storedValue = redisTemplate.opsForValue().get(key);
+        String storedValue = redisTemplate.get(key);
         
         if (storedValue == null) {
-            redisTemplate.opsForValue().set(key, currentOccupancy.toString());
+            redisTemplate.put(key, currentOccupancy.toString());
             log.debug("Initialized peak occupancy for zone {} to {}", zoneId, currentOccupancy);
         } else {
             BigDecimal peakOccupancy = new BigDecimal(storedValue);
             if (currentOccupancy.compareTo(peakOccupancy) > 0) {
-                redisTemplate.opsForValue().set(key, currentOccupancy.toString());
+                redisTemplate.put(key, currentOccupancy.toString());
                 log.debug("Updated peak occupancy for zone {} to {}", zoneId, currentOccupancy);
             }
         }
@@ -41,10 +41,10 @@ public class ZoneOccupancyTracker {
      */
     public BigDecimal getAndResetPeakOccupancy(Long zoneId, BigDecimal currentOccupancy) {
         String key = REDIS_PREFIX + zoneId;
-        String storedValue = redisTemplate.opsForValue().get(key);
+        String storedValue = redisTemplate.get(key);
         
         // Reset to current occupancy for the new hour
-        redisTemplate.opsForValue().set(key, currentOccupancy.toString());
+        redisTemplate.put(key, currentOccupancy.toString());
         
         if (storedValue == null) {
             return currentOccupancy;
@@ -53,3 +53,4 @@ public class ZoneOccupancyTracker {
         return new BigDecimal(storedValue);
     }
 }
+

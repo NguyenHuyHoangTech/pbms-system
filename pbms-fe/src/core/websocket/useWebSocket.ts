@@ -33,6 +33,15 @@ export const useWebSocket = () => {
       console.error('Additional details: ' + frame.body);
     };
 
+    client.onWebSocketError = (event) => {
+      console.error('WebSocket Transport Error:', event);
+    };
+
+    client.onWebSocketClose = (event) => {
+      console.warn('WebSocket Connection Closed:', event);
+      setConnected(false);
+    };
+
     client.activate();
     setStompClient(client);
 

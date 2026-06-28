@@ -10,4 +10,7 @@ public class CheckInRequestDTO {
     private String rfid;
     private String imageBase64;
     private String lprImageBase64;
+    private String suggestedZoneName;
+    private String customerType; // "GUEST", "PREBOOKED", "MONTHLY"
 }
+

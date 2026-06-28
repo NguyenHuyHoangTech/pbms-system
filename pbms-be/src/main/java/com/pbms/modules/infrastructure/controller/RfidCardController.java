@@ -22,7 +22,7 @@ public class RfidCardController {
     public ResponseEntity<ApiResponse<List<RfidCardDTO>>> getAllCards() {
         return ResponseEntity.ok(ApiResponse.success(
                 rfidCardService.getAllCards(),
-                "Lấy danh sách thẻ thành công"
+                "This is a list of books as well"
         ));
     }
 
@@ -32,12 +32,13 @@ public class RfidCardController {
             @RequestBody Map<String, String> requestBody) {
         String status = requestBody.get("status");
         rfidCardService.updateStatus(uid, status);
-        return ResponseEntity.ok(ApiResponse.success(null, "Cập nhật trạng thái thẻ thành công"));
+        return ResponseEntity.ok(ApiResponse.success(null, "Thai white light bulbs"));
     }
 
     @PostMapping("/import")
     public ResponseEntity<ApiResponse<Integer>> importCards(@RequestParam("file") MultipartFile file) {
         int importedCount = rfidCardService.importCardsFromCsv(file);
-        return ResponseEntity.ok(ApiResponse.success(importedCount, "Nhập lô thẻ thành công"));
+        return ResponseEntity.ok(ApiResponse.success(importedCount, "It's the same thing"));
     }
 }
+

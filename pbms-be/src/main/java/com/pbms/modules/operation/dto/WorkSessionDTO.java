@@ -9,3 +9,4 @@ public class WorkSessionDTO {
     private BigDecimal declaredCash;
     private String varianceReason;
 }
+

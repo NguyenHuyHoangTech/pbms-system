@@ -15,9 +15,17 @@ import com.pbms.modules.infrastructure.repository.GateRepository;
 import com.pbms.modules.infrastructure.repository.FloorRepository;
 import com.pbms.modules.infrastructure.repository.ZoneRepository;
 import com.pbms.modules.operation.repository.VehicleTypeRepository;
+import com.pbms.modules.operation.repository.MonthlyTicketRepository;
+import org.springframework.context.ApplicationEventPublisher;
+import com.pbms.common.event.TimeFastForwardedEvent;
+import com.pbms.modules.system.service.SystemConfigService;
 import com.pbms.modules.infrastructure.repository.RfidCardRepository;
+import com.pbms.modules.operation.repository.StaffWorkSessionRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -38,7 +46,13 @@ public class IotHardwareController {
     private final RfidCardRepository rfidCardRepository;
     private final FloorRepository floorRepository;
     private final ZoneRepository zoneRepository;
+    private final StaffWorkSessionRepository staffWorkSessionRepository;
+    private final MonthlyTicketRepository monthlyTicketRepository;
+    private final SystemConfigService systemConfigService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final SimpMessagingTemplate messagingTemplate;
 
+    @Autowired
     public IotHardwareController(ZoneMonitoringService zoneMonitoringService,
                                  GateOperationService gateOperationService,
                                  SlotRepository slotRepository,
@@ -48,7 +62,12 @@ public class IotHardwareController {
                                  VehicleTypeRepository vehicleTypeRepository,
                                  RfidCardRepository rfidCardRepository,
                                  FloorRepository floorRepository,
-                                 ZoneRepository zoneRepository) {
+                                 ZoneRepository zoneRepository,
+                                 StaffWorkSessionRepository staffWorkSessionRepository,
+                                 MonthlyTicketRepository monthlyTicketRepository,
+                                 SystemConfigService systemConfigService,
+                                 ApplicationEventPublisher eventPublisher,
+                                 SimpMessagingTemplate messagingTemplate) {
         this.zoneMonitoringService = zoneMonitoringService;
         this.gateOperationService = gateOperationService;
         this.slotRepository = slotRepository;
@@ -59,6 +78,11 @@ public class IotHardwareController {
         this.rfidCardRepository = rfidCardRepository;
         this.floorRepository = floorRepository;
         this.zoneRepository = zoneRepository;
+        this.staffWorkSessionRepository = staffWorkSessionRepository;
+        this.monthlyTicketRepository = monthlyTicketRepository;
+        this.systemConfigService = systemConfigService;
+        this.eventPublisher = eventPublisher;
+        this.messagingTemplate = messagingTemplate;
     }
 
     @PostMapping("/sensors/update")
@@ -67,7 +91,23 @@ public class IotHardwareController {
         return ResponseEntity.ok(ApiResponse.success("Processed", "Sensor update processed successfully"));
     }
 
-    @PostMapping("/time/fast-forward")
+    @GetMapping("/debug-session")
+    @Transactional(readOnly = true)
+    public ResponseEntity<Map<String, Object>> debugSession() {
+        Map<String, Object> debug = new HashMap<>();
+        com.pbms.modules.operation.domain.ParkingSession s = sessionRepository.findById(20L).orElse(null);
+        if (s != null) {
+            debug.put("plate", s.getPlate());
+            debug.put("hasVehicleType", s.getVehicleType() != null);
+            if (s.getVehicleType() != null) debug.put("vehicleTypeId", s.getVehicleType().getId());
+            debug.put("hasRfidCard", s.getRfidCard() != null);
+            if (s.getRfidCard() != null) debug.put("rfidCardId", s.getRfidCard().getId());
+            if (s.getRfidCard() != null) debug.put("rfidCardCode", s.getRfidCard().getCardCode());
+        }
+        return ResponseEntity.ok(debug);
+    }
+
+@PostMapping("/time/fast-forward")
     public ResponseEntity<ApiResponse<String>> fastForwardTime(@RequestBody Map<String, String> payload) {
         String targetTimeStr = payload.get("targetTime");
         if (targetTimeStr == null) {
@@ -76,6 +116,19 @@ public class IotHardwareController {
         LocalDateTime targetTime = LocalDateTime.parse(targetTimeStr);
         try {
             TimeProvider.fastForwardTo(targetTime);
+            
+            // Save offset to DB
+            long offsetSeconds = TimeProvider.getSimulatedOffset().getSeconds();
+            systemConfigService.saveOrUpdateConfigValue("TIME_SIMULATED_OFFSET_SECONDS", String.valueOf(offsetSeconds));
+            
+            // Broadcast offset via WebSocket
+            Map<String, Object> wsPayload = new HashMap<>();
+            wsPayload.put("offsetSeconds", offsetSeconds);
+            messagingTemplate.convertAndSend("/topic/time-sync", (Object) wsPayload);
+
+            // Publish Event to trigger cronjobs
+            eventPublisher.publishEvent(new TimeFastForwardedEvent(this, TimeProvider.now()));
+            
             return ResponseEntity.ok(ApiResponse.success("Current Time: " + TimeProvider.now(), "Time fast-forwarded successfully"));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(400, e.getMessage()));
@@ -84,17 +137,18 @@ public class IotHardwareController {
 
     @PostMapping("/gates/checkin")
     public ResponseEntity<ApiResponse<GateResponseDTO>> simulateCheckIn(@RequestBody CheckInRequestDTO request) {
-        GateResponseDTO response = gateOperationService.processCheckIn(request);
+        GateResponseDTO response = gateOperationService.triggerScanCheckIn(request);
         return ResponseEntity.ok(ApiResponse.success(response, "Check-in triggered"));
     }
 
     @PostMapping("/gates/checkout")
     public ResponseEntity<ApiResponse<GateResponseDTO>> simulateCheckOut(@RequestBody CheckOutRequestDTO request) {
-        GateResponseDTO response = gateOperationService.processCheckOut(request);
+        GateResponseDTO response = gateOperationService.triggerScanCheckOut(request);
         return ResponseEntity.ok(ApiResponse.success(response, "Check-out triggered"));
     }
 
     @GetMapping("/data-sync")
+    @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<Map<String, Object>>> syncData() {
         Map<String, Object> data = new HashMap<>();
         
@@ -116,13 +170,27 @@ public class IotHardwareController {
         
         // 3. Active Sessions (Mapped to avoid infinite recursion)
         data.put("activeSessions", sessionRepository.findAll().stream()
-                .filter(s -> "ACTIVE".equals(s.getStatus()))
+                .filter(s -> "ACTIVE".equals(s.getStatus()) || "LOCKED".equals(s.getStatus()))
                 .map(s -> {
                     Map<String, Object> map = new HashMap<>();
                     map.put("id", s.getId());
                     map.put("plate", s.getPlate());
                     map.put("timeIn", s.getTimeIn());
                     map.put("status", s.getStatus());
+                    map.put("suggestedZoneName", s.getSuggestedZoneName());
+                    map.put("picInPanorama", s.getPicInPanorama());
+                    map.put("picInFace", s.getPicInFace());
+                    if (s.getGateIn() != null && s.getGateIn().getFloor() != null) {
+                        map.put("floorId", s.getGateIn().getFloor().getId());
+                    }
+                    if (s.getVehicleType() != null) {
+                        map.put("vehicleTypeId", s.getVehicleType().getId());
+                    }
+                    if (s.getRfidCard() != null) {
+                        Map<String, Object> rfidMap = new HashMap<>();
+                        rfidMap.put("cardCode", s.getRfidCard().getCardCode());
+                        map.put("rfidCard", rfidMap);
+                    }
                     if (s.getSlot() != null) {
                         Map<String, Object> slotMap = new HashMap<>();
                         slotMap.put("id", s.getSlot().getId());
@@ -152,12 +220,21 @@ public class IotHardwareController {
                         Map<String, Object> vMap = new HashMap<>();
                         vMap.put("id", r.getVehicle().getId());
                         vMap.put("plateNumber", r.getVehicle().getPlateNumber());
+                        if (r.getVehicle().getVehicleType() != null) {
+                            Map<String, Object> vtMap = new HashMap<>();
+                            vtMap.put("id", r.getVehicle().getVehicleType().getId());
+                            vtMap.put("typeName", r.getVehicle().getVehicleType().getTypeName());
+                            vMap.put("vehicleType", vtMap);
+                        }
                         map.put("vehicle", vMap);
                     }
                     if (r.getZone() != null) {
                         Map<String, Object> zMap = new HashMap<>();
                         zMap.put("id", r.getZone().getId());
                         zMap.put("zoneName", r.getZone().getZoneName());
+                        if (r.getZone().getFloor() != null) {
+                            zMap.put("floorId", r.getZone().getFloor().getId());
+                        }
                         map.put("zone", zMap);
                     }
                     return map;
@@ -175,11 +252,36 @@ public class IotHardwareController {
             }
             if (g.getFloor() != null) {
                 map.put("floorType", g.getFloor().getFloorType());
+                map.put("floorId", g.getFloor().getId());
             }
+            boolean hasStaff = staffWorkSessionRepository.findByGateIdAndStatus(g.getId(), "ACTIVE").isPresent();
+            map.put("hasStaff", hasStaff);
             return map;
         }).toList());
 
-        // 6. Vehicle Types (Mapped)
+        // 6. Monthly Tickets
+        data.put("monthlyTickets", monthlyTicketRepository.findAll().stream()
+                .filter(m -> "ACTIVE".equals(m.getStatus()))
+                .map(m -> {
+                    Map<String, Object> map = new HashMap<>();
+                    map.put("id", m.getId());
+                    map.put("plate", m.getPlate());
+                    if (m.getUser() != null) {
+                        map.put("customerName", m.getUser().getFullName());
+                    }
+                    map.put("validFrom", m.getValidFrom());
+                    map.put("validUntil", m.getValidUntil());
+                    map.put("status", m.getStatus());
+                    if (m.getVehicleType() != null) {
+                        Map<String, Object> vMap = new HashMap<>();
+                        vMap.put("id", m.getVehicleType().getId());
+                        vMap.put("typeName", m.getVehicleType().getTypeName());
+                        map.put("vehicleType", vMap);
+                    }
+                    return map;
+                }).toList());
+
+        // 7. Vehicle Types (Mapped)
         data.put("vehicleTypes", vehicleTypeRepository.findAll().stream().map(v -> {
             Map<String, Object> map = new HashMap<>();
             map.put("id", v.getId());
@@ -215,6 +317,7 @@ public class IotHardwareController {
             map.put("layoutX", z.getLayoutX());
             map.put("layoutY", z.getLayoutY());
             map.put("rotation", z.getRotation());
+            map.put("functionType", z.getFunctionType());
             if (z.getVehicleType() != null) {
                 map.put("vehicleTypeId", z.getVehicleType().getId());
             }
@@ -224,3 +327,4 @@ public class IotHardwareController {
         return ResponseEntity.ok(ApiResponse.success(data, "Synced"));
     }
 }
+

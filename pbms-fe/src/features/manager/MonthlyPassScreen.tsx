@@ -50,9 +50,9 @@ export const MonthlyPassScreen = () => {
   };
 
   const columns = [
-    { title: 'Biển số xe', dataIndex: 'plate', key: 'plate', render: (text: string) => <Tag color="blue" className="text-base font-bold">{text}</Tag> },
+    { title: 'License Plate xe', dataIndex: 'plate', key: 'plate', render: (text: string) => <Tag color="blue" className="text-base font-bold">{text}</Tag> },
     { 
-      title: 'Chủ sở hữu', 
+      title: 'Owner', 
       key: 'owner', 
       render: (_: any, record: MonthlyPass) => (
         <div>
@@ -61,24 +61,24 @@ export const MonthlyPassScreen = () => {
         </div>
       ) 
     },
-    { title: 'Loại xe', dataIndex: 'type', key: 'type', render: (text: string) => <Text>{text}</Text> },
+    { title: 'Vehicle Type', dataIndex: 'type', key: 'type', render: (text: string) => <Text>{text}</Text> },
     { 
-      title: 'Chu kỳ hiện tại', 
+      title: 'Current cycle', 
       key: 'cycle', 
       render: (_: any, record: MonthlyPass) => (
-        <Text className="text-xs">{record.startDate} <br/> {record.endDate !== '-' ? 'đến' : ''} {record.endDate}</Text>
+        <Text className="text-xs">{record.startDate} <br/> {record.endDate !== '-' ? 'arrive' : ''} {record.endDate}</Text>
       )
     },
     { 
-      title: 'Trạng thái', 
+      title: 'Status', 
       dataIndex: 'status', 
       key: 'status',
       render: (status: string) => {
-        if (status === 'ACTIVE') return <Tag color="success" icon={<CheckCircleOutlined />}>Đang Hoạt Động</Tag>;
-        if (status === 'EXPIRING_SOON') return <Tag color="warning" icon={<ExclamationCircleOutlined />}>Sắp Hết Hạn</Tag>;
-        if (status === 'EXPIRED') return <Tag color="error">Đã Hết Hạn</Tag>;
-        if (status === 'CANCELED') return <Tag color="default">Đã Hủy</Tag>;
-        if (status === 'PENDING') return <Tag color="processing">Chờ Duyệt</Tag>;
+        if (status === 'ACTIVE') return <Tag color="success" icon={<CheckCircleOutlined />}>Active</Tag>;
+        if (status === 'EXPIRING_SOON') return <Tag color="warning" icon={<ExclamationCircleOutlined />}>Expiring Soon</Tag>;
+        if (status === 'EXPIRED') return <Tag color="error">Expired</Tag>;
+        if (status === 'CANCELED') return <Tag color="default">Cancel</Tag>;
+        if (status === 'PENDING') return <Tag color="processing">Waiting for Approval</Tag>;
         return <Tag>{status}</Tag>;
       }
     },
@@ -96,31 +96,31 @@ export const MonthlyPassScreen = () => {
 
       <div className="mb-6">
         <Title level={2} className="m-0 text-gray-800 flex items-center">
-          <IdcardOutlined className="mr-3 text-indigo-600" /> Quản lý Khách Hàng Vé Tháng
+          <IdcardOutlined className="mr-3 text-indigo-600" /> Customer Management Monthly Passes
         </Title>
-        <Text type="secondary">Hệ thống CRM quản lý thuê bao, duy trì dòng tiền và kiểm soát dung lượng dài hạn</Text>
+        <Text type="secondary">System CRM Manage subscriptions, maintain cash flow and control long-term capacity</Text>
       </div>
 
       {/* KPI CARDS */}
       <Row gutter={16} className="mb-6">
         <Col span={8}>
           <Card className="shadow-sm border-l-4 border-l-green-500">
-            <Statistic title="Đang Hoạt Động (ACTIVE)" value={activeCount} suffix="Thuê bao" valueStyle={{ color: '#3f8600', fontWeight: 'bold' }} />
+            <Statistic title="Active (aCTIVE)" value={activeCount} suffix="Subscribe" valueStyle={{ color: '#3f8600', fontWeight: 'bold' }} />
           </Card>
         </Col>
         <Col span={8}>
           <Card className="shadow-sm border-l-4 border-l-orange-500 bg-orange-50/30">
             <Statistic 
-              title={<span className="text-orange-600 animate-pulse font-semibold">Sắp Hết Hạn (&lt; 7 Ngày)</span>} 
+              title={<span className="text-orange-600 animate-pulse font-semibold">Expiring Soon (&lt; 7 Days)</span>} 
               value={expiringCount} 
-              suffix="Thuê bao" 
+              suffix="Subscribe" 
               valueStyle={{ color: '#d97706', fontWeight: 'bold' }} 
             />
           </Card>
         </Col>
         <Col span={8}>
           <Card className="shadow-sm border-l-4 border-l-gray-400">
-            <Statistic title="Đã Hết Hạn / Hủy" value={inactiveCount} suffix="Thuê bao" valueStyle={{ color: '#6b7280', fontWeight: 'bold' }} />
+            <Statistic title="Expired / Cancel" value={inactiveCount} suffix="Subscribe" valueStyle={{ color: '#6b7280', fontWeight: 'bold' }} />
           </Card>
         </Col>
       </Row>
@@ -129,20 +129,20 @@ export const MonthlyPassScreen = () => {
       <Card className="shadow-sm mb-6">
         <div className="flex gap-4">
           <Select defaultValue="ALL" className="w-40" options={[
-            {label: 'Tất cả Loại Xe', value: 'ALL'},
-            {label: 'Ô tô', value: 'CAR'},
-            {label: 'Xe máy', value: 'MOTO'}
+            {label: 'all Vehicle Types', value: 'ALL'},
+            {label: 'Car', value: 'CAR'},
+            {label: 'Motorbike', value: 'MOTO'}
           ]} />
           <Select defaultValue="ALL" className="w-48" options={[
-            {label: 'Tất cả Trạng thái', value: 'ALL'},
-            {label: 'Đang hoạt động', value: 'ACTIVE'},
-            {label: 'Sắp hết hạn', value: 'EXPIRING_SOON'},
-            {label: 'Đã hết hạn/Khóa', value: 'EXPIRED'},
-            {label: 'Chờ duyệt', value: 'PENDING'}
+            {label: 'All Status', value: 'ALL'},
+            {label: 'Active', value: 'ACTIVE'},
+            {label: 'About to expire', value: 'EXPIRING_SOON'},
+            {label: 'Expired/Lock', value: 'EXPIRED'},
+            {label: 'Waiting for approval', value: 'PENDING'}
           ]} />
-          <Button type="primary" icon={<FilterOutlined />}>Lọc</Button>
+          <Button type="primary" icon={<FilterOutlined />}>Filter</Button>
           <Input 
-            placeholder="Gõ Biển số xe, Email, Số ĐT..." 
+            placeholder="Type in Vehicle License Plate, Email, Phone Number" 
             prefix={<SearchOutlined />} 
             className="w-80" 
             allowClear
@@ -164,7 +164,7 @@ export const MonthlyPassScreen = () => {
 
       {/* RIGHT DRAWER: CRM DETAIL */}
       <Drawer
-        title={<span className="font-bold text-lg">Hồ Sơ Thuê Bao: {selectedRecord?.id}</span>}
+        title={<span className="font-bold text-lg">Subscriber Profile: {selectedRecord?.id}</span>}
         placement="right"
         width={450}
         onClose={() => setIsDrawerOpen(false)}
@@ -174,23 +174,23 @@ export const MonthlyPassScreen = () => {
           <Tabs defaultActiveKey="1" items={[
             {
               key: '1',
-              label: <span><UserOutlined /> Hồ sơ Khách hàng</span>,
+              label: <span><UserOutlined />  Customer profile</span>,
               children: (
                 <div className="flex flex-col gap-4 mt-2">
                   {selectedRecord.status === 'EXPIRING_SOON' && (
-                    <Alert message="Vé sắp hết hạn! Hãy gọi điện nhắc nhở khách hàng gia hạn để tránh gián đoạn dịch vụ." type="warning" showIcon />
+                    <Alert message="Tickets are about to expire! Please call to remind the Customer to renew to avoid service interruption" type="warning" showIcon />
                   )}
-                  <Card size="small" title="Thông tin Cá nhân" className="bg-slate-50">
+                  <Card size="small" title="Personal Information" className="bg-slate-50">
                     <div className="flex flex-col gap-2">
-                      <div className="flex justify-between"><Text type="secondary">Họ tên:</Text> <Text strong>{selectedRecord.user}</Text></div>
+                      <div className="flex justify-between"><Text type="secondary">Full name:</Text> <Text strong>{selectedRecord.user}</Text></div>
                       <div className="flex justify-between"><Text type="secondary">Email:</Text> <Text strong>{selectedRecord.email}</Text></div>
-                      <div className="flex justify-between"><Text type="secondary">Điện thoại:</Text> <Text strong>{selectedRecord.phone}</Text></div>
+                      <div className="flex justify-between"><Text type="secondary">Phone:</Text> <Text strong>{selectedRecord.phone}</Text></div>
                     </div>
                   </Card>
-                  <Card size="small" title="Thông tin Phương tiện" className="bg-slate-50">
+                  <Card size="small" title="Vehicle information" className="bg-slate-50">
                     <div className="flex flex-col gap-2">
-                      <div className="flex justify-between"><Text type="secondary">Biển số:</Text> <Tag color="blue" className="m-0 font-bold">{selectedRecord.plate}</Tag></div>
-                      <div className="flex justify-between"><Text type="secondary">Loại xe:</Text> <Text strong><CarOutlined className="mr-1"/>{selectedRecord.type}</Text></div>
+                      <div className="flex justify-between"><Text type="secondary">License Plate:</Text> <Tag color="blue" className="m-0 font-bold">{selectedRecord.plate}</Tag></div>
+                      <div className="flex justify-between"><Text type="secondary">Vehicle Type:</Text> <Text strong><CarOutlined className="mr-1"/>{selectedRecord.type}</Text></div>
                     </div>
                   </Card>
                 </div>
@@ -198,12 +198,13 @@ export const MonthlyPassScreen = () => {
             },
             {
               key: '2',
-              label: <span><HistoryOutlined /> Lịch sử Thanh toán</span>,
+              label: <span><HistoryOutlined />  Payment History</span>,
               children: (
                 <div className="mt-4">
                   <div className="text-center py-6 text-gray-400 italic">
-                    (Tính năng xem lịch sử thanh toán đang được phát triển)
-                  </div>
+                    
+                                              (The feature to view payment history is being developed)
+                                            </div>
                 </div>
               )
             }

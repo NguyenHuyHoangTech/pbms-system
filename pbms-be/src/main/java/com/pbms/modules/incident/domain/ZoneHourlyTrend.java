@@ -39,3 +39,4 @@ public class ZoneHourlyTrend {
     @Column(name = "exits_count", nullable = false)
     private Integer exitsCount;
 }
+

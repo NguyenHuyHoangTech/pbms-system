@@ -57,3 +57,4 @@ public class RefundRequest extends BaseEntity {
     @Column(name = "proof_url", length = 500)
     private String proofUrl;
 }
+

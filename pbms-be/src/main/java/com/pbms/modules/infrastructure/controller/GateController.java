@@ -10,6 +10,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
+import java.util.Map;
+import java.util.HashMap;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -21,11 +25,13 @@ public class GateController {
 
     private final GateRepository gateRepository;
     private final StaffWorkSessionRepository staffWorkSessionRepository;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @GetMapping
     @Transactional(readOnly = true)
     public ResponseEntity<ApiResponse<List<GateConfigDTO>>> getAllGates() {
         List<GateConfigDTO> gates = gateRepository.findAll().stream()
+                .filter(g -> !"DELETED".equals(g.getStatus()))
                 .map(this::toDTO)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(ApiResponse.success(gates, "Fetched gates successfully"));
@@ -33,6 +39,7 @@ public class GateController {
 
     private GateConfigDTO toDTO(Gate gate) {
         String staffName = null;
+        String staffEmail = null;
         String mappedStatus = "IDLE";
         
         // Check if gate has an ACTIVE work session
@@ -40,6 +47,7 @@ public class GateController {
         if (activeSessionOpt.isPresent()) {
             mappedStatus = "OCCUPIED";
             staffName = activeSessionOpt.get().getStaff().getFullName();
+            staffEmail = activeSessionOpt.get().getStaff().getEmail();
         } else if ("DELETED".equals(gate.getStatus())) {
             mappedStatus = "MAINTENANCE";
         }
@@ -49,6 +57,7 @@ public class GateController {
                 .floorId(gate.getFloor() != null ? gate.getFloor().getId() : null)
                 .floor(gate.getFloor() != null ? gate.getFloor().getFloorName() : null)
                 .staffName(staffName)
+                .staffEmail(staffEmail)
                 .name(gate.getGateName())
                 .vehicleTypeId(gate.getVehicleType() != null ? gate.getVehicleType().getId() : null)
                 .type(gate.getGateType())

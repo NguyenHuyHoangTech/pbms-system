@@ -8,3 +8,4 @@ public class ParkingSessionDTO {
     private Long gateId;
     private String rfidCardCode;
 }
+

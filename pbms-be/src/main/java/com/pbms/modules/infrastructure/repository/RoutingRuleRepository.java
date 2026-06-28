@@ -10,3 +10,4 @@ import java.util.List;
 public interface RoutingRuleRepository extends JpaRepository<RoutingRule, Long> {
     List<RoutingRule> findAllByZoneIdAndIsActiveTrue(Long zoneId);
 }
+

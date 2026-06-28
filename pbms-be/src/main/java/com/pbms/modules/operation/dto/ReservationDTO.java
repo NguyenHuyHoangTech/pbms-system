@@ -24,6 +24,12 @@ public class ReservationDTO {
     private BigDecimal reservationFee;
     private String qrCode;
     
+    private BigDecimal refundAmount;
+    private String refundStatus;
+    private String refundProofUrl;
+    private String refundRejectReason;
+    
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     private LocalDateTime createdAt;
 }
+

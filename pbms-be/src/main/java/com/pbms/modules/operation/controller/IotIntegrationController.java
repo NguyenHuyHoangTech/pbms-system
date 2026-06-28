@@ -18,9 +18,10 @@ public class IotIntegrationController {
     public ResponseEntity<ApiResponse<String>> updateSlotStatus(@RequestBody IotSlotUpdateRequest request) {
         try {
             iotIntegrationService.updateSlotStatus(request);
-            return ResponseEntity.ok(ApiResponse.success("Success", "Cập nhật Slot thành công"));
+            return ResponseEntity.ok(ApiResponse.success("Success", "Slot characters are also available"));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Lỗi cập nhật: " + e.getMessage()));
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Error: " + e.getMessage()));
         }
     }
 }
+

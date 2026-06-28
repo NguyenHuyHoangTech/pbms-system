@@ -7,3 +7,4 @@ import java.util.List;
 public interface GateRepository extends JpaRepository<Gate, Long> {
     List<Gate> findByFloorId(Long floorId);
 }
+

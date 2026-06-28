@@ -45,4 +45,17 @@ public class GateConsoleController {
             return ResponseEntity.badRequest().body(ApiResponse.error(400, e.getMessage()));
         }
     }
+
+    @GetMapping("/checkout-session-info")
+    public ResponseEntity<ApiResponse<com.pbms.modules.operation.dto.CheckOutSessionInfoDTO>> getCheckOutSessionInfo(
+            @RequestParam(required = false) String rfid,
+            @RequestParam(required = false) String plate) {
+        try {
+            com.pbms.modules.operation.dto.CheckOutSessionInfoDTO info = gateOperationService.getCheckOutSessionInfo(rfid, plate);
+            return ResponseEntity.ok(ApiResponse.success(info, "Fetched session info successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, e.getMessage()));
+        }
+    }
 }
+

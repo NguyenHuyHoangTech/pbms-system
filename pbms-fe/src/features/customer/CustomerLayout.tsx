@@ -15,6 +15,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../core/store/useAuthStore';
 import { useWebSocket } from '../../core/websocket/useWebSocket';
 import { UserProfileSettingsModal } from '../shared/components/UserProfileSettingsModal';
+import { SystemClock } from '../shared/components/SystemClock';
 import { useQuery } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
 
@@ -48,19 +49,19 @@ export const CustomerLayout = () => {
     navigate('/login');
   };
 
-  const menuItems = [
-    { key: '/customer/home', icon: <HomeOutlined />, label: 'Trang Chủ' },
-    { key: '/customer/pre-booking', icon: <CarOutlined />, label: 'Đặt Chỗ' },
-    { key: '/customer/my-parking', icon: <HistoryOutlined />, label: 'Quản Lý Dịch Vụ' },
-    { key: '/customer/monthly-pass', icon: <IdcardOutlined />, label: 'Vé Tháng' },
-    { key: '/customer/helpdesk', icon: <CustomerServiceOutlined />, label: 'Hỗ Trợ' },
+  const menuItems: any[] = [
+    { key: '/customer/home', icon: <HomeOutlined />, label: 'Home' },
+    { key: '/customer/pre-booking', icon: <CarOutlined />, label: 'Reservations' },
+    { key: '/customer/my-parking', icon: <HistoryOutlined />, label: 'Service Management' },
+    { key: '/customer/monthly-pass', icon: <IdcardOutlined />, label: 'Monthly Passes' },
+    { key: '/customer/helpdesk', icon: <CustomerServiceOutlined />, label: 'Support' },
   ];
 
-  const userMenu = {
+  const userMenu: any = {
     items: [
-      { key: 'settings', icon: <SettingOutlined />, label: 'Cài đặt', onClick: () => setIsSettingsOpen(true) },
+      { key: 'settings', icon: <SettingOutlined />, label: 'Setting', onClick: () => setIsSettingsOpen(true) },
       { type: 'divider' },
-      { key: 'logout', icon: <LogoutOutlined />, label: 'Đăng xuất', onClick: handleLogout, danger: true },
+      { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', onClick: handleLogout, danger: true },
     ],
   };
 
@@ -78,7 +79,7 @@ export const CustomerLayout = () => {
               theme="light"
               mode="horizontal"
               selectedKeys={[location.pathname]}
-              items={menuItems}
+              items={menuItems as any}
               onClick={({ key }) => navigate(key)}
               className="border-b-0 flex-1 bg-transparent justify-center"
             />
@@ -86,6 +87,7 @@ export const CustomerLayout = () => {
         </div>
         
         <div className="flex items-center gap-2 md:gap-4 pl-4 shrink-0">
+          <SystemClock />
           <span className={`hidden md:inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${connected ? 'bg-green-50 border-green-200 text-green-700' : 'bg-red-50 border-red-200 text-red-700'}`}>
             <span className={`w-2 h-2 rounded-full mr-1.5 ${connected ? 'bg-green-500' : 'bg-red-500'}`}></span>
             WS: {connected ? 'Live' : 'Offline'}
@@ -108,7 +110,7 @@ export const CustomerLayout = () => {
       </Header>
       
       <Drawer
-        title={<span className="font-bold">Menu Chức Năng</span>}
+        title={<span className="font-bold">Function Menu</span>}
         placement="right"
         onClose={() => setIsMobileMenuOpen(false)}
         open={isMobileMenuOpen}
@@ -127,8 +129,8 @@ export const CustomerLayout = () => {
           items={[
             ...menuItems, 
             { type: 'divider' }, 
-            { key: 'settings', icon: <SettingOutlined className="text-gray-600" />, label: <span className="text-gray-600 font-bold">Cài đặt tài khoản</span> },
-            { key: 'logout', icon: <LogoutOutlined className="text-red-500" />, label: <span className="text-red-500 font-bold">Đăng xuất</span> }
+            { key: 'settings', icon: <SettingOutlined className="text-gray-600" />, label: <span className="text-gray-600 font-bold">Account Settings</span> },
+            { key: 'logout', icon: <LogoutOutlined className="text-red-500" />, label: <span className="text-red-500 font-bold">Logout</span> }
           ]}
           className="border-r-0"
         />
@@ -142,23 +144,23 @@ export const CustomerLayout = () => {
         <div className="max-w-4xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <Text strong className="block mb-2 text-gray-700">{buildingProfile?.name || 'PBMS Parking'}</Text>
-            <Text className="text-gray-500 text-sm block">Hệ thống quản lý bãi đỗ xe thông minh hàng đầu.</Text>
-            <Text className="text-gray-500 text-sm block">An toàn - Nhanh chóng - Tiện lợi.</Text>
+            <Text className="text-gray-500 text-sm block">Top Smart Parking Management System</Text>
+            <Text className="text-gray-500 text-sm block">Safe - Fast - Convenient</Text>
           </div>
           <div>
-            <Text strong className="block mb-2 text-gray-700">Liên hệ</Text>
+            <Text strong className="block mb-2 text-gray-700">Contact</Text>
             <Text className="text-gray-500 text-sm block">Hotline: {buildingProfile?.hotline || '1900 1234'}</Text>
-            <Text className="text-gray-500 text-sm block">Giờ hoạt động: {buildingProfile?.operatingHours || '24/7'}</Text>
+            <Text className="text-gray-500 text-sm block">Active time: {buildingProfile?.operatingHours || '24/7'}</Text>
           </div>
           <div>
-            <Text strong className="block mb-2 text-gray-700">Địa chỉ</Text>
-            <Text className="text-gray-500 text-sm block">{buildingProfile?.address ? buildingProfile.address.split(',')[0] : 'Khu Công Nghệ Cao'}</Text>
-            <Text className="text-gray-500 text-sm block">{buildingProfile?.address ? buildingProfile.address.split(',').slice(1).join(',').trim() : 'Thành phố Thủ Đức, TP.HCM'}</Text>
+            <Text strong className="block mb-2 text-gray-700">Address</Text>
+            <Text className="text-gray-500 text-sm block">{buildingProfile?.address ? buildingProfile.address.split(',')[0] : 'High-Tech Park'}</Text>
+            <Text className="text-gray-500 text-sm block">{buildingProfile?.address ? buildingProfile.address.split(',').slice(1).join(',').trim() : 'Thu Duc City, Ho Chi Minh City'}</Text>
           </div>
         </div>
         <div className="mt-6 pt-4 border-t border-gray-100 text-xs">
-          PBMS © {new Date().getFullYear()} Hệ thống quản lý bãi xe chuyên nghiệp
-        </div>
+          PBMS © {new Date().getFullYear()}  Professional parking management system
+                          </div>
       </Footer>
 
       <UserProfileSettingsModal 

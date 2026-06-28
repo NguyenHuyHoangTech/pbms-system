@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Tabs, Card, Typography, List, Divider, Button, Tag, Spin, message, Input, Space, Popconfirm, Empty, Timeline, Drawer, Alert, Form, Select, Radio, Modal, QRCode } from 'antd';
-import { ClockCircleOutlined, CarOutlined, CreditCardOutlined, SearchOutlined, IdcardOutlined, CloseCircleOutlined, HistoryOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CarOutlined, CreditCardOutlined, SearchOutlined, IdcardOutlined, CloseCircleOutlined, HistoryOutlined, CheckCircleOutlined, EditOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
@@ -24,14 +24,14 @@ export const MyParkingScreen = () => {
   );
 
   const PACKAGES = [
-    { id: 1, name: '1 Tháng', discount: 0 },
-    { id: 3, name: '3 Tháng', discount: 0.05 },
-    { id: 6, name: '6 Tháng', discount: 0.10 },
-    { id: 12, name: '12 Tháng', discount: 0.15 },
+    { id: 1, name: '1 Month', discount: 0 },
+    { id: 3, name: '3 Months', discount: 0.05 },
+    { id: 6, name: '6 Months', discount: 0.10 },
+    { id: 12, name: '12 Months', discount: 0.15 },
   ];
   const VEHICLES = [
-    { id: 'CAR', name: 'Ô tô', pricePerMonth: 1000000 },
-    { id: 'MOTORBIKE', name: 'Xe máy', pricePerMonth: 150000 }
+    { id: 'CAR', name: 'Car', pricePerMonth: 1000000 },
+    { id: 'MOTORBIKE', name: 'Motorbike', pricePerMonth: 150000 }
   ];
   const GATEWAYS = [
     { id: 'PAYPAL', name: 'PayPal Sandbox', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' },
@@ -110,7 +110,7 @@ export const MyParkingScreen = () => {
       setSessionCountdown(60);
     },
     onError: () => {
-      message.error('Lỗi khi tạo giao dịch thanh toán.');
+      message.error('Error creating payment transaction.');
     }
   });
 
@@ -124,7 +124,7 @@ export const MyParkingScreen = () => {
             axiosClient.post('/payments/paypal/capture', { token: sessionPaymentToken })
               .then(res => {
                 if (res.data?.data?.status === 'COMPLETED') {
-                  message.success('Thanh toán thành công!');
+                  message.success('Payment successful!');
                   setIsSessionQRVisible(false);
                   queryClient.invalidateQueries({ queryKey: ['my-active-session'] });
                   queryClient.invalidateQueries({ queryKey: ['my-history'] });
@@ -135,7 +135,7 @@ export const MyParkingScreen = () => {
         }, 1000);
       } else {
         setIsSessionQRVisible(false);
-        message.warning('Hết thời gian chờ thanh toán.');
+        message.warning('Payment timeout.');
       }
     }
     return () => clearTimeout(timer);
@@ -164,7 +164,7 @@ export const MyParkingScreen = () => {
       await axiosClient.put(`/operation/reservations/${id}/cancel`);
     },
     onSuccess: () => {
-      message.success('Đã gửi yêu cầu hủy đặt chỗ và hoàn tiền thành công.');
+      message.success('Cancellation and refund request sent successfully.');
       queryClient.invalidateQueries({ queryKey: ['my-bookings'] });
       setCancelDrawerVisible(false);
       setSelectedBookingToCancel(null);
@@ -180,7 +180,7 @@ export const MyParkingScreen = () => {
   const calculateRefund = (booking: any) => {
     if (!booking) return { refund: 0, penalty: 0, amount: 0, percent: 0 };
     const now = dayjs();
-    const arrTime = dayjs(booking.arrivalTime, 'HH:mm DD/MM/YYYY');
+    const arrTime = dayjs(booking.expectedEntryTime);
     const diffMins = arrTime.diff(now, 'minute');
     let refundPercent = 0;
     
@@ -227,7 +227,7 @@ export const MyParkingScreen = () => {
     onSuccess: () => {
       setRenewCountdown(5);
       setIsRenewSuccess(true);
-      message.success('Gia hạn vé tháng thành công!');
+      message.success('Monthly pass renewed successfully!');
       
       queryClient.invalidateQueries({ queryKey: ['my-passes'] });
 
@@ -237,7 +237,7 @@ export const MyParkingScreen = () => {
       }, 2000);
     },
     onError: () => {
-      message.error('Có lỗi xảy ra khi gia hạn vé tháng');
+      message.error('Error renewing monthly pass');
       setIsRenewQRModalVisible(false);
     }
   });
@@ -256,7 +256,7 @@ export const MyParkingScreen = () => {
       setRenewPaymentToken(urlParams.get('token') || '');
     },
     onError: () => {
-      message.error('Lỗi khi tạo link thanh toán gia hạn.');
+      message.error('Error creating renewal payment link.');
       setIsRenewQRModalVisible(false);
     }
   });
@@ -295,7 +295,7 @@ export const MyParkingScreen = () => {
         }, 1000);
       } else {
         setIsRenewQRModalVisible(false);
-        message.warning('Hết thời gian chờ thanh toán.');
+        message.warning('Payment timeout.');
       }
     }
     return () => clearTimeout(timer);
@@ -308,7 +308,7 @@ export const MyParkingScreen = () => {
       return (
         <div className="py-12 text-center text-gray-500 animate-fade-in">
           <CarOutlined className="text-5xl mb-4 opacity-40" />
-          <Title level={4} className="text-gray-500">Không tìm thấy phương tiện đang gửi</Title>
+          <Title level={4} className="text-gray-500">No parking vehicle found</Title>
         </div>
       );
     }
@@ -323,32 +323,32 @@ export const MyParkingScreen = () => {
             <CarOutlined className="text-5xl text-blue-500 mb-4" />
             <Title level={2} className="m-0 tracking-widest">{session.plateNumber}</Title>
             <Tag color={isBooking ? 'orange' : 'blue'} className="mt-2 text-sm px-3 py-1">
-              {isBooking ? 'ĐÃ ĐẶT TRƯỚC' : 'ĐANG ĐỖ XE'}
+              {isBooking ? 'RESERVED' : 'PARKING'}
             </Tag>
             
             <div className="mt-8 text-center bg-gray-50 p-6 rounded-2xl w-full">
               <ClockCircleOutlined className="text-2xl text-gray-400 mb-2" />
-              <Text className="block text-gray-500 mb-1">{isBooking ? 'Hết hạn giữ chỗ sau:' : 'Thời gian đã đỗ:'}</Text>
+              <Text className="block text-gray-500 mb-1">{isBooking ? 'Reservation expires in:' : 'Parking duration:'}</Text>
               <div className="text-4xl font-mono font-bold text-gray-800 tracking-wider">
                 {isBooking ? (
-                  session.expiryTime ? dayjs(session.expiryTime).diff(dayjs(), 'minute') + ' phút' : '---'
+                  session.expiryTime ? dayjs(session.expiryTime).diff(dayjs(), 'minute') + ' minutes' : '---'
                 ) : (
                   elapsedTime || "00:00:00"
                 )}
               </div>
-              {!isBooking && <Text className="block text-gray-400 mt-2 text-sm">Vào lúc: {dayjs(session.timeIn).format('HH:mm DD/MM/YYYY')}</Text>}
+              {!isBooking && <Text className="block text-gray-400 mt-2 text-sm">In at: {dayjs(session.timeIn).format('HH:mm DD/MM/YYYY')}</Text>}
             </div>
           </div>
         </Card>
 
         <Card className="shadow-sm border-gray-200 bg-gray-50/50 flex flex-col h-full">
-          <Title level={4} className="mb-6"><CreditCardOutlined className="mr-2" />Thanh toán Dịch vụ</Title>
+          <Title level={4} className="mb-6"><CreditCardOutlined className="mr-2" />Service Payment</Title>
           <List
             size="small"
             dataSource={[
-              { label: 'Loại phương tiện', value: session.vehicleType === 'CAR' ? 'Ô Tô' : 'Xe Máy' },
-              { label: 'Vị trí đỗ', value: session.slotId || 'Chưa xếp chỗ' },
-              { label: 'Mức phí cơ sở', value: isBooking ? '50,000 ₫ / lần' : '15,000 ₫ / block' },
+              { label: 'Vehicle Type', value: session.vehicleType === 'CAR' ? 'Car' : 'Motorbike' },
+              { label: 'Parking Location', value: session.slotId || 'Unassigned' },
+              { label: 'Base Fee', value: isBooking ? '50,000 ₫ / turn' : '15,000 ₫ / block' },
             ]}
             renderItem={item => (
               <List.Item className="border-b border-gray-200 py-3">
@@ -359,7 +359,7 @@ export const MyParkingScreen = () => {
           />
           <Divider className="my-4" />
           <div className="flex justify-between items-center mb-6">
-            <Text strong className="text-lg">TỔNG CỘNG:</Text>
+            <Text strong className="text-lg">TOTAL:</Text>
             <Text strong className="text-2xl text-blue-600">{totalFee.toLocaleString()} ₫</Text>
           </div>
 
@@ -380,7 +380,7 @@ export const MyParkingScreen = () => {
             ) : (
               <>
                 <QRCode value={sessionPaymentUrl || '...'} size={120} className="mb-4" />
-                <Text className="text-white/80 text-sm text-center">Đưa mã QR này vào máy quét hoặc thanh toán online.</Text>
+                <Text className="text-white/80 text-sm text-center">Scan this QR code or pay online.</Text>
                 <Button 
                   type="primary" 
                   className="mt-4 bg-green-600 w-full"
@@ -400,18 +400,18 @@ export const MyParkingScreen = () => {
   const renderWalkInTab = () => (
     <div className="animate-fade-in">
       <Card className="bg-blue-50/50 border-blue-100 mb-6 shadow-sm">
-        <Title level={5} className="mb-4 text-blue-800">Tra cứu Xe Vãng Lai (Bảo mật 2FA)</Title>
+        <Title level={5} className="mb-4 text-blue-800">Look up Guest Vehicle (2FA Security)</Title>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input 
             size="large" 
-            placeholder="Nhập Biển số xe" 
+            placeholder="Enter License Plate" 
             prefix={<CarOutlined className="text-gray-400" />} 
             value={plateNumberInput}
             onChange={(e) => setPlateNumberInput(e.target.value)}
           />
           <Input 
             size="large" 
-            placeholder="Nhập Mã thẻ RFID" 
+            placeholder="Enter RFID Card" 
             prefix={<IdcardOutlined className="text-gray-400" />} 
             value={rfidInput}
             onChange={(e) => setRfidInput(e.target.value)}
@@ -452,34 +452,50 @@ export const MyParkingScreen = () => {
                         item.status === 'PENDING_REFUND' ? 'blue' :
                         item.status === 'CANCELLED_REFUNDED' ? 'default' : 'red'
                       } className="m-0 font-bold text-[10px] md:text-xs">
-                        {item.status === 'ACTIVE' ? 'ĐẶT CHỖ TRƯỚC' :
-                         item.status === 'PENDING_REFUND' ? 'ĐANG CHỜ HOÀN TIỀN' :
-                         item.status === 'CANCELLED_REFUNDED' ? 'ĐÃ HỦY & HOÀN TIỀN' :
-                         item.status === 'CANCELLED_NO_REFUND' ? 'ĐÃ HỦY (KHÔNG HOÀN)' : 'ĐÃ HỦY'}
+                        {item.status === 'ACTIVE' ? 'PRE-BOOKING' :
+                         item.status === 'PENDING_REFUND' ? 'PENDING REFUND' :
+                         item.status === 'CANCELLED_REFUNDED' ? 'CANCELLED & REFUNDED' :
+                         item.status === 'CANCELLED_NO_REFUND' ? 'CANCELLED (NO REFUND)' : 'CANCELLED'}
                       </Tag>
                       <Text type="secondary" className="text-[10px] md:text-xs">ID: {item.id}</Text>
                     </div>
                     <Title level={4} className={`m-0 tracking-widest ${item.status !== 'ACTIVE' ? 'text-gray-400 line-through' : ''}`}>{item.plateNumber}</Title>
                     <div className="mt-4 space-y-1">
-                      <Text className={`block ${item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Giờ đến dự kiến: <Text strong className={item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{item.arrivalTime}</Text></Text>
-                      <Text className={`block ${item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Vị trí giữ chỗ: <Text strong className={item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{item.slot}</Text></Text>
+                      <Text className={`block ${item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Expected arrival: <Text strong className={item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{dayjs(item.expectedEntryTime).format('HH:mm DD/MM/YYYY')}</Text></Text>
+                      <Text className={`block ${item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Reserved location: <Text strong className={item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{item.slotName}</Text></Text>
                     </div>
                   </div>
                   <div className="flex flex-col items-start sm:items-end mt-4 sm:mt-0 w-full sm:w-auto">
-                    {item.status === 'ACTIVE' && (
-                      <Button 
-                        danger 
-                        icon={<CloseCircleOutlined />}
-                        onClick={() => {
-                          setSelectedBookingToCancel(item);
-                          setCancelDrawerVisible(true);
-                        }}
-                      >
-                        Hủy Đặt Trước
-                      </Button>
+                    {(item.status === 'ACTIVE' || item.status === 'PENDING') && (
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        {item.status === 'PENDING' && dayjs(item.expectedEntryTime).add(item.expectedDurationMinutes || 0, 'minute').isAfter(dayjs()) && (
+                          <Button 
+                            type="primary"
+                            className="bg-blue-600"
+                            icon={<EditOutlined />}
+                            onClick={() => {
+                              setPlateToEdit({ type: 'reservation', id: item.id, currentPlate: item.plateNumber });
+                              setNewPlate(item.plateNumber);
+                              setIsEditPlateVisible(true);
+                            }}
+                          >
+                            Edit Plate
+                          </Button>
+                        )}
+                        <Button 
+                          danger 
+                          icon={<CloseCircleOutlined />}
+                          onClick={() => {
+                            setSelectedBookingToCancel(item);
+                            setCancelDrawerVisible(true);
+                          }}
+                        >
+                          Cancel Reservation
+                        </Button>
+                      </div>
                     )}
                     {item.status === 'PENDING_REFUND' && (
-                      <Text type="secondary" className="text-sm italic mt-2">Dự kiến xử lý: 1-2 ngày</Text>
+                      <Text type="secondary" className="text-sm italic mt-2">Expected processing: 1-2 days</Text>
                     )}
                   </div>
                 </div>
@@ -489,9 +505,9 @@ export const MyParkingScreen = () => {
         />
       ) : (
         <div className="py-16 text-center">
-          <Empty description={<span className="text-gray-500 font-medium text-lg">Bạn chưa có lịch đặt trước nào</span>} />
+          <Empty description={<span className="text-gray-500 font-medium text-lg">You have no reservations</span>} />
           <Button type="primary" className="mt-4 bg-blue-600" onClick={() => navigate('/customer/pre-booking')}>
-            Tạo Đặt Chỗ Ngay
+            Create Reservation Now
           </Button>
         </div>
       )}
@@ -517,13 +533,28 @@ export const MyParkingScreen = () => {
                         <Title level={4} className="m-0 tracking-widest">{item.plateNumber}</Title>
                         <Tag color="green" className="m-0 font-bold">{item.status}</Tag>
                       </div>
-                      <Text type="secondary">Mã thẻ: {item.id} • {item.type}</Text>
+                      <Text type="secondary">Card ID: {item.id} • {item.type}</Text>
                       <div className="mt-1">
-                        <Text className="text-gray-600">Ngày hết hạn: <Text strong className={dayjs(item.expiryDate, 'DD/MM/YYYY').isBefore(dayjs().add(7, 'day')) ? 'text-red-500' : 'text-gray-800'}>{item.expiryDate}</Text></Text>
+                        <Text className="text-gray-600">Expiry Date: <Text strong className={dayjs(item.expiryDate, 'DD/MM/YYYY').isBefore(dayjs().add(7, 'day')) ? 'text-red-500' : 'text-gray-800'}>{item.expiryDate}</Text></Text>
                       </div>
                     </div>
                   </div>
-                  <Button type="primary" className="bg-green-600 w-full sm:w-auto" onClick={() => handleOpenRenew(item)}>Gia Hạn</Button>
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto mt-4 sm:mt-0">
+                    {!item.hasBeenUsed && (
+                      <Button 
+                        type="default"
+                        icon={<EditOutlined />}
+                        onClick={() => {
+                          setPlateToEdit({ type: 'monthly', id: item.id, currentPlate: item.plateNumber });
+                          setNewPlate(item.plateNumber);
+                          setIsEditPlateVisible(true);
+                        }}
+                      >
+                        Edit Plate
+                      </Button>
+                    )}
+                    <Button type="primary" className="bg-green-600" onClick={() => handleOpenRenew(item)}>Renew</Button>
+                  </div>
                 </div>
               </Card>
             </List.Item>
@@ -531,9 +562,9 @@ export const MyParkingScreen = () => {
         />
       ) : (
         <div className="py-16 text-center">
-          <Empty description={<span className="text-gray-500 font-medium text-lg">Bạn chưa đăng ký vé tháng nào</span>} />
+          <Empty description={<span className="text-gray-500 font-medium text-lg">You have no monthly passes</span>} />
           <Button type="primary" className="mt-4 bg-blue-600" onClick={() => navigate('/customer/monthly-pass')}>
-            Đăng Ký Vé Tháng Mới
+            Register New Monthly Pass
           </Button>
         </div>
       )}
@@ -545,35 +576,35 @@ export const MyParkingScreen = () => {
       <Card className="shadow-sm border border-gray-100 rounded-xl">
         <div className="flex items-center mb-6">
           <HistoryOutlined className="text-2xl text-blue-600 mr-3" />
-          <Title level={4} className="m-0">Lịch sử ra vào bãi</Title>
+          <Title level={4} className="m-0">Parking History</Title>
         </div>
         
         {historyRecords.length > 0 ? (
           <Timeline
             className="mt-4"
             items={historyRecords.map(record => ({
-              color: record.type === 'VÉ THÁNG' ? 'green' : 'orange',
+              color: record.type === 'MONTHLY PASS' ? 'green' : 'orange',
               children: (
                 <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 mb-4 shadow-sm">
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <Title level={5} className="m-0 tracking-widest">{record.plateNumber}</Title>
-                      <Tag color={record.type === 'VÉ THÁNG' ? 'green' : 'orange'} className="mt-1">
+                      <Tag color={record.type === 'MONTHLY PASS' ? 'green' : 'orange'} className="mt-1">
                         {record.type}
                       </Tag>
                     </div>
                     <div className="text-right">
-                      <Text strong className="text-blue-600 text-lg">{record.fee === 0 ? 'Miễn phí' : `${record.fee.toLocaleString()} ₫`}</Text>
+                      <Text strong className="text-blue-600 text-lg">{record.fee === 0 ? 'Free' : `${record.fee.toLocaleString()} ₫`}</Text>
                     </div>
                   </div>
                   <Divider className="my-2" />
                   <div className="grid grid-cols-2 gap-4 text-sm mt-2">
                     <div>
-                      <Text type="secondary" className="block mb-1">Giờ Vào:</Text>
+                      <Text type="secondary" className="block mb-1">Time In:</Text>
                       <Text strong className="text-gray-700"><ClockCircleOutlined className="mr-1"/> {record.timeIn}</Text>
                     </div>
                     <div>
-                      <Text type="secondary" className="block mb-1">Giờ Ra:</Text>
+                      <Text type="secondary" className="block mb-1">Time Out:</Text>
                       <Text strong className="text-gray-700"><ClockCircleOutlined className="mr-1"/> {record.timeOut}</Text>
                     </div>
                   </div>
@@ -583,12 +614,54 @@ export const MyParkingScreen = () => {
           />
         ) : (
           <div className="py-12 text-center">
-            <Empty description={<span className="text-gray-500">Chưa có lịch sử gửi xe nào</span>} />
+            <Empty description={<span className="text-gray-500">No parking history</span>} />
           </div>
         )}
       </Card>
     </div>
   );
+  const [isEditPlateVisible, setIsEditPlateVisible] = useState(false);
+  const [plateToEdit, setPlateToEdit] = useState<{ type: 'reservation' | 'monthly', id: string, currentPlate: string } | null>(null);
+  const [newPlate, setNewPlate] = useState('');
+
+  const editPlateMutation = useMutation({
+    mutationFn: async (payload: { type: 'reservation' | 'monthly', id: string, plate: string }) => {
+      if (payload.type === 'reservation') {
+        await axiosClient.put(`/customer/reservations/${payload.id}/plate`, { plate: payload.plate });
+      } else {
+        await axiosClient.put(`/operation/monthly-tickets/${payload.id.replace('MP-','')}/plate`, { plate: payload.plate });
+      }
+    },
+    onSuccess: (_, variables) => {
+      message.success('Plate updated successfully');
+      setIsEditPlateVisible(false);
+      if (variables.type === 'reservation') {
+        queryClient.invalidateQueries({ queryKey: ['my-bookings'] });
+        if (selectedBookingDetails && selectedBookingDetails.id === variables.id) {
+          setSelectedBookingDetails({ ...selectedBookingDetails, plateNumber: variables.plate });
+        }
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['my-passes'] });
+      }
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || 'Failed to update plate');
+    }
+  });
+
+  const handleEditPlate = () => {
+    if (!newPlate || newPlate.trim() === '') {
+      message.error('Please enter a new plate number');
+      return;
+    }
+    if (plateToEdit) {
+      editPlateMutation.mutate({
+        type: plateToEdit.type,
+        id: plateToEdit.id,
+        plate: newPlate.trim().toUpperCase()
+      });
+    }
+  };
 
   return (
     <>
@@ -613,8 +686,8 @@ export const MyParkingScreen = () => {
       <div className="min-h-screen bg-gray-50 p-4 md:p-6 font-sans">
       <div className="max-w-5xl mx-auto space-y-4 md:space-y-6">
         <div className="mb-8">
-          <Title level={2} className="m-0 text-gray-800">Quản Lý Dịch Vụ</Title>
-          <Text type="secondary">Kiểm tra thông tin thẻ, vé tháng và đặt chỗ của bạn</Text>
+          <Title level={2} className="m-0 text-gray-800">Service Management</Title>
+          <Text type="secondary">Check your card, monthly pass, and reservation info</Text>
         </div>
 
         <div className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
@@ -629,22 +702,22 @@ export const MyParkingScreen = () => {
             items={[
               {
                 key: '1',
-                label: 'Xe Đang Gửi (Vãng Lai)',
+                label: 'Active Parking (Guest)',
                 children: renderWalkInTab(),
               },
               {
                 key: '2',
-                label: 'Quản Lý Đặt Trước',
+                label: 'Reservation Management',
                 children: renderBookingsTab(),
               },
               {
                 key: '3',
-                label: 'Quản Lý Vé Tháng',
+                label: 'Monthly Pass Management',
                 children: renderMonthlyPassTab(),
               },
               {
                 key: '4',
-                label: 'Lịch Sử Gửi Xe',
+                label: 'Parking History',
                 children: renderHistoryTab(),
               }
             ]}
@@ -653,20 +726,20 @@ export const MyParkingScreen = () => {
       </div>
 
       <Drawer
-        title={<span className="text-red-600 font-bold">HỦY ĐẶT CHỖ & HOÀN TIỀN</span>}
+        title={<span className="text-red-600 font-bold">CANCEL RESERVATION & REFUND</span>}
         width={450}
         onClose={() => setCancelDrawerVisible(false)}
         open={cancelDrawerVisible}
         extra={
           <Space>
-            <Button onClick={() => setCancelDrawerVisible(false)}>Giữ Lại</Button>
+            <Button onClick={() => setCancelDrawerVisible(false)}>Keep</Button>
             <Button 
               type="primary" 
               danger 
               onClick={handleCancelBooking} 
               disabled={selectedBookingToCancel && calculateRefund(selectedBookingToCancel).refund > 0 && (!bankName || !accountNumber || !accountName)}
             >
-              Xác Nhận Hủy
+              Xác Nhận Cancel
             </Button>
           </Space>
         }
@@ -676,52 +749,52 @@ export const MyParkingScreen = () => {
           return (
             <div className="space-y-6">
               <Alert
-                message={<span className="font-bold text-red-700">Chính sách Hoàn tiền Đặt trước</span>}
+                message={<span className="font-bold text-red-700">Reservation Refund Policy</span>}
                 description={
                   <ul className="list-disc pl-4 mt-2 text-sm text-red-600">
-                    <li>Hủy trước 30 phút: Hoàn tiền 100%</li>
-                    <li>Hủy trong vòng 30 phút trước giờ đến: Hoàn tiền 50%</li>
-                    <li>Hủy sau giờ đặt đến: Không hoàn tiền (0%)</li>
+                    <li>Cancel 30+ mins before: 100% Refund</li>
+                    <li>Cancel within 30 mins before: 50% Refund</li>
+                    <li>Cancel after arrival time: No Refund (0%)</li>
                   </ul>
                 }
                 type="error"
                 className="bg-red-50 border border-red-200"
               />
 
-              <Card size="small" title="Chi tiết khoản tiền" className="bg-slate-50 border-slate-200">
+              <Card size="small" title="Amount Details" className="bg-slate-50 border-slate-200">
                 <div className="flex justify-between mb-2">
-                  <Text className="text-slate-500">Giờ đến dự kiến:</Text>
-                  <Text strong>{selectedBookingToCancel.arrivalTime}</Text>
+                  <Text className="text-slate-500">Expected arrival:</Text>
+                  <Text strong>{dayjs(selectedBookingToCancel.expectedEntryTime).format('HH:mm DD/MM/YYYY')}</Text>
                 </div>
                 <div className="flex justify-between mb-2 border-b border-dashed border-slate-300 pb-2">
-                  <Text className="text-slate-500">Tiền đặt chỗ ban đầu:</Text>
+                  <Text className="text-slate-500">Initial deposit:</Text>
                   <Text strong>{amount.toLocaleString()} ₫</Text>
                 </div>
                 <div className="flex justify-between mb-2">
-                  <Text className="text-red-500">Phí phạt hủy ({100 - percent}%):</Text>
+                  <Text className="text-red-500">Cancellation fee ({100 - percent}%):</Text>
                   <Text strong className="text-red-600">- {penalty.toLocaleString()} ₫</Text>
                 </div>
                 <div className="flex justify-between mt-2 pt-2 border-t border-slate-300">
-                  <Text strong className="text-green-600">SỐ TIỀN ĐƯỢC HOÀN:</Text>
+                  <Text strong className="text-green-600">REFUND AMOUNT:</Text>
                   <Text strong className="text-xl text-green-600">{refund.toLocaleString()} ₫</Text>
                 </div>
               </Card>
 
               {refund > 0 && (
                 <div className="space-y-4">
-                  <Title level={5}>Nhập thông tin nhận hoàn tiền</Title>
+                  <Title level={5}>Enter refund information</Title>
                   <Alert 
-                    message="Lưu ý quan trọng" 
-                    description="Vui lòng nhập chính xác thông tin Tài khoản Ngân hàng. Quá trình xử lý hoàn tiền có thể mất từ 1-2 ngày làm việc." 
+                    message="Important Note" 
+                    description="Please enter exact Bank Account info. Refund processing takes 1-2 working days." 
                     type="warning" 
                     showIcon 
                     className="text-xs"
                   />
                   
                   <Form layout="vertical">
-                    <Form.Item label="Ngân hàng" required>
+                    <Form.Item label="Bank" required>
                       <Select
-                        placeholder="Chọn ngân hàng"
+                        placeholder="Select Bank"
                         value={bankName}
                         onChange={setBankName}
                         options={[
@@ -733,16 +806,16 @@ export const MyParkingScreen = () => {
                         ]}
                       />
                     </Form.Item>
-                    <Form.Item label="Số tài khoản" required>
+                    <Form.Item label="Account Number" required>
                       <Input 
-                        placeholder="Nhập số tài khoản" 
+                        placeholder="Enter account number" 
                         value={accountNumber}
                         onChange={(e) => setAccountNumber(e.target.value)}
                       />
                     </Form.Item>
-                    <Form.Item label="Tên Chủ tài khoản" required>
+                    <Form.Item label="Account Holder Name" required>
                       <Input 
-                        placeholder="Nhập tên in hoa không dấu" 
+                        placeholder="Enter uppercase name without accents" 
                         value={accountName}
                         onChange={(e) => setAccountName(e.target.value.toUpperCase())}
                       />
@@ -753,8 +826,8 @@ export const MyParkingScreen = () => {
               
               {refund === 0 && (
                 <Alert 
-                  message="Không đủ điều kiện hoàn tiền" 
-                  description="Do đã quá thời gian quy định, khoản tiền đặt chỗ của bạn sẽ không được hoàn lại theo chính sách của hệ thống." 
+                  message="Not eligible for refund" 
+                  description="Due to time limit, your deposit is not refundable according to policy." 
                   type="info" 
                   showIcon 
                 />
@@ -765,14 +838,14 @@ export const MyParkingScreen = () => {
       </Drawer>
 
       <Drawer
-        title={<span className="text-blue-600 font-bold"><IdcardOutlined className="mr-2"/>GIA HẠN VÉ THÁNG</span>}
+        title={<span className="text-blue-600 font-bold"><IdcardOutlined className="mr-2"/>RENEW MONTHLY PASS</span>}
         width={500}
         onClose={() => setRenewDrawerVisible(false)}
         open={renewDrawerVisible}
         className="bg-slate-50"
       >
         {selectedPassToRenew && (() => {
-           const isCar = selectedPassToRenew.type === 'Ô TÔ';
+           const isCar = selectedPassToRenew.type === 'CAR';
            const pricePerMonth = isCar ? 1000000 : 150000;
            const packageConfig = PACKAGES.find(p => p.id === renewDuration);
            const baseFee = pricePerMonth * renewDuration;
@@ -784,21 +857,21 @@ export const MyParkingScreen = () => {
              <div className="space-y-6">
                <Card size="small" className="shadow-sm border-slate-200">
                  <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-3">
-                   <Text className="text-slate-500">Mã thẻ:</Text>
+                   <Text className="text-slate-500">Card ID:</Text>
                    <Text strong className="text-slate-800">{selectedPassToRenew.id}</Text>
                  </div>
                  <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-3">
-                   <Text className="text-slate-500">Biển số xe:</Text>
+                   <Text className="text-slate-500">License Plate:</Text>
                    <Text strong className="text-slate-800 tracking-widest">{selectedPassToRenew.plateNumber}</Text>
                  </div>
                  <div className="flex justify-between items-center">
-                   <Text className="text-slate-500">Ngày hết hạn hiện tại:</Text>
+                   <Text className="text-slate-500">Current Expiry:</Text>
                    <Text strong className={dayjs(selectedPassToRenew.expiryDate, 'DD/MM/YYYY').isBefore(dayjs().add(7, 'day')) ? 'text-red-500' : 'text-slate-800'}>{selectedPassToRenew.expiryDate}</Text>
                  </div>
                </Card>
 
                <div>
-                 <Text className="block font-bold mb-3 text-slate-700">Chọn gói gia hạn:</Text>
+                 <Text className="block font-bold mb-3 text-slate-700">Select renewal package:</Text>
                  <div className="grid grid-cols-2 gap-3">
                    {PACKAGES.map(p => (
                      <div
@@ -820,29 +893,29 @@ export const MyParkingScreen = () => {
                <Card className="shadow-sm border-slate-200 bg-white">
                  <Space direction="vertical" className="w-full">
                    <div className="flex justify-between">
-                     <Text className="text-slate-500">Ngày hết hạn mới:</Text>
+                     <Text className="text-slate-500">New Expiry:</Text>
                      <Text strong className="text-green-600">{newExpiry}</Text>
                    </div>
                    <Divider className="my-2" />
                    <div className="flex justify-between">
-                     <Text className="text-slate-500">Phí cơ bản:</Text>
+                     <Text className="text-slate-500">Base Fee:</Text>
                      <Text strong>{baseFee.toLocaleString()} ₫</Text>
                    </div>
                    {discountAmount > 0 && (
                      <div className="flex justify-between">
-                       <Text className="text-green-500">Chiết khấu ưu đãi:</Text>
+                       <Text className="text-green-500">Discount:</Text>
                        <Text strong className="text-green-600">- {discountAmount.toLocaleString()} ₫</Text>
                      </div>
                    )}
                    <div className="bg-slate-50 p-3 rounded-lg mt-2 flex justify-between items-center border border-slate-200">
-                     <Text strong className="text-slate-600">TỔNG THANH TOÁN:</Text>
+                     <Text strong className="text-slate-600">TOTAL PAYMENT:</Text>
                      <Text className="text-xl font-black text-blue-600">{totalFee.toLocaleString()} ₫</Text>
                    </div>
                  </Space>
                </Card>
 
                <div>
-                 <Text className="block font-bold mb-3 text-slate-700">Phương thức thanh toán:</Text>
+                 <Text className="block font-bold mb-3 text-slate-700">Payment Method:</Text>
                  <Radio.Group 
                    onChange={e => setRenewGateway(e.target.value)} 
                    value={renewGateway}
@@ -888,8 +961,8 @@ export const MyParkingScreen = () => {
         <div className="text-center py-6">
           {!isRenewSuccess ? (
             <>
-              <Title level={4} className="mb-2 text-slate-800">Quét mã QR để thanh toán</Title>
-              <Text className="block mb-6 text-slate-500">Mở ứng dụng Ngân hàng hoặc Ví điện tử</Text>
+              <Title level={4} className="mb-2 text-slate-800">Scan QR to pay</Title>
+              <Text className="block mb-6 text-slate-500">Open Banking app or E-wallet</Text>
               
               <div className="relative inline-block mb-6">
                 <div className="bg-white p-4 border-2 border-dashed border-slate-300 rounded-2xl shadow-sm relative z-10 flex justify-center items-center h-[240px] w-[240px]">
@@ -909,27 +982,48 @@ export const MyParkingScreen = () => {
               
               <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg break-all px-2 text-xs">
                 {renewGateway === 'PAYPAL' ? (
-                  <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Mở PayPal Checkout</a>
+                  <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Open PayPal Checkout</a>
                 ) : (
-                  <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Mở PayOS Checkout</a>
+                  <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Open PayOS Checkout</a>
                 )}
               </Text>
               
               <div className="flex items-center justify-center space-x-2 text-slate-600">
                 <Spin size="small" />
-                <Text>Đang chờ thanh toán ({renewCountdown}s)...</Text>
+                <Text>Waiting for payment ({renewCountdown}s)...</Text>
               </div>
             </>
           ) : (
             <div className="animate-fade-in py-8">
               <CheckCircleOutlined className="text-[80px] text-green-500 mb-6" />
-              <Title level={3} className="text-slate-800">Gia hạn thành công!</Title>
-              <Text className="block text-slate-500 mb-2">Ngày hết hạn vé tháng đã được cập nhật.</Text>
+              <Title level={3} className="text-slate-800">Renewal successful!</Title>
+              <Text className="block text-slate-500 mb-2">Monthly pass expiry date has been updated.</Text>
             </div>
           )}
         </div>
       </Modal>
     </div>
+
+      <Modal
+        title={<span className="text-blue-600 font-bold">Edit License Plate</span>}
+        open={isEditPlateVisible}
+        onCancel={() => setIsEditPlateVisible(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setIsEditPlateVisible(false)}>Cancel</Button>,
+          <Button key="save" type="primary" className="bg-blue-600" loading={editPlateMutation.isPending} onClick={handleEditPlate}>Save Plate</Button>
+        ]}
+      >
+        <div className="py-4">
+          <Text className="block mb-2 text-slate-600">Please enter the new license plate number:</Text>
+          <Input 
+            size="large" 
+            placeholder="e.g. 29A-123.45" 
+            value={newPlate} 
+            onChange={(e) => setNewPlate(e.target.value.toUpperCase())}
+            className="font-bold tracking-widest text-lg"
+          />
+        </div>
+      </Modal>
     </>
   );
 };
