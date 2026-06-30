@@ -317,7 +317,7 @@ export const PreBookingScreen = () => {
                               style={{ width: `${((z.capacity - z.availableSlots) / z.capacity) * 100}%` }}
                             />
                           </div>
-                          <Text className="text-xs font-bold whitespace-nowrap">Drum {z.availableSlots}/{z.capacity}</Text>
+                          <Text className="text-xs font-bold whitespace-nowrap">Available {z.availableSlots}/{z.capacity}</Text>
                         </div>
                       </div>
                     );

@@ -144,7 +144,7 @@ export const HomeScreen = () => {
             <span className="text-4xl font-extrabold">0</span>
           ) : (
             <>
-              <span className="text-sm font-medium uppercase tracking-wider opacity-80">Drum</span>
+              <span className="text-sm font-medium uppercase tracking-wider opacity-80">Available</span>
               <span className={`text-5xl font-black ${isWarning ? 'text-orange-600' : 'text-green-600'}`}>
                 {slot.available}
               </span>
