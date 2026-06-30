@@ -18,7 +18,6 @@ import org.springframework.transaction.annotation.Transactional;
 import com.pbms.modules.incident.dto.IncidentTicketDTO;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -35,6 +34,7 @@ public class IncidentService {
     private final com.pbms.modules.finance.service.PricingCalculatorService pricingCalculatorService;
     private final com.pbms.modules.operation.repository.MonthlyTicketRepository monthlyTicketRepository;
     private final com.pbms.modules.identity.repository.UserRepository userRepository;
+    private final com.pbms.modules.system.service.SystemConfigService systemConfigService;
 
     @Transactional
     public IncidentTicket createIncident(IncidentTicketRequest request, String email) {
@@ -91,6 +91,24 @@ public class IncidentService {
         }
 
         if ("ZONE_VIOLATION".equals(request.getIssueType())) {
+            if (request.getFineAmount() == null) {
+                boolean is2W = false;
+                if (session != null && session.getVehicleType() != null && "TWO_WHEEL".equals(session.getVehicleType().getCategory())) {
+                    is2W = true;
+                }
+                String configKey = is2W ? "PENALTY_ZONE_VIOLATION_2W" : "PENALTY_ZONE_VIOLATION_4W";
+                BigDecimal defaultFine = is2W ? new BigDecimal("50000") : new BigDecimal("100000");
+                try {
+                    defaultFine = new BigDecimal(systemConfigService.getConfigByKey(configKey).getConfigValue());
+                } catch (Exception e) {
+                    log.warn("Could not find {} config, using default", configKey);
+                }
+                ticket.setFineAmount(defaultFine);
+                if (session != null) {
+                    BigDecimal currentPenalty = session.getPenaltyFee() != null ? session.getPenaltyFee() : BigDecimal.ZERO;
+                    session.setPenaltyFee(currentPenalty.add(defaultFine));
+                }
+            }
             if (request.getExpectedZoneId() != null) {
                 ticket.setExpectedZone(zoneRepository.findById(request.getExpectedZoneId()).orElse(null));
             }
@@ -119,7 +137,14 @@ public class IncidentService {
     @Transactional
     public void handleOverstayVehicles() {
         log.info("Starting OVERSTAY checking cronjob...");
-        LocalDateTime cutoff = com.pbms.common.utils.TimeProvider.now().minusHours(72);
+        int hoursLimit = 72;
+        try {
+            hoursLimit = Integer.parseInt(systemConfigService.getConfigByKey("OVERSTAY_HOURS_LIMIT").getConfigValue());
+        } catch (Exception e) {
+            log.warn("OVERSTAY_HOURS_LIMIT config not found, using default 72");
+        }
+        
+        LocalDateTime cutoff = com.pbms.common.utils.TimeProvider.now().minusHours(hoursLimit);
         List<ParkingSession> overstaySessions = sessionRepository.findActiveSessionsOlderThan(cutoff);
 
         for (ParkingSession session : overstaySessions) {
@@ -127,8 +152,8 @@ public class IncidentService {
                     .session(session)
                     .issueType("OVERSTAY")
                     .priority("HIGH")
-                    .description(String.format("The vehicle has overstayed for more than 72 hours (%s: %s)", 
-                            session.getPlate(), session.getTimeIn().toString()))
+                    .description(String.format("The vehicle has overstayed for more than %d hours (%s: %s)", 
+                            hoursLimit, session.getPlate(), session.getTimeIn().toString()))
                     .status("PENDING")
                     .build();
             incidentTicketRepository.save(ticket);
@@ -148,6 +173,25 @@ public class IncidentService {
         return tickets.stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public IncidentTicketDTO moveToOverstay(Long id, String uploadedDocUrl) {
+        IncidentTicket ticket = incidentTicketRepository.findById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Ticket not found"));
+
+        if (!"PENDING".equals(ticket.getStatus()) && !"OVERSTAY".equals(ticket.getIssueType())) {
+            throw new IllegalStateException("Ticket must be PENDING and of type OVERSTAY");
+        }
+
+        ticket.setStatus("RESOLVED");
+        ticket.setResolutionNotes("[OVERSTAY] Vehicle moved to overstay zone");
+        ticket.setResolvedAt(com.pbms.common.utils.TimeProvider.now());
+        if (uploadedDocUrl != null && !uploadedDocUrl.isBlank()) {
+            ticket.setUploadedDocUrl(uploadedDocUrl);
+        }
+        
+        return mapToDTO(incidentTicketRepository.save(ticket));
     }
 
     @Transactional
@@ -347,7 +391,7 @@ public class IncidentService {
      * Staff xu ly mat the: Danh dau the LOST + tinh phat
      */
     @Transactional
-    public IncidentTicketDTO createLostCardIncident(String plate, BigDecimal fee, String description, String uploadedDocUrl) {
+    public IncidentTicketDTO createLostCardIncident(String plate, BigDecimal fee, String description, String uploadedDocUrl, String email) {
         ParkingSession session = sessionRepository.findByPlateAndStatus(plate.trim().toUpperCase(), "ACTIVE")
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Khong tim thay phien do xe ACTIVE cho bien so: " + plate));
@@ -360,12 +404,24 @@ public class IncidentService {
         }
 
         // Cong phi phat vao phien
-        BigDecimal fineAmount = fee != null ? fee : new BigDecimal("200000");
+        BigDecimal defaultFine = new BigDecimal("200000");
+        try {
+            defaultFine = new BigDecimal(systemConfigService.getConfigByKey("PENALTY_LOST_CARD").getConfigValue());
+        } catch (Exception e) {
+            log.warn("Could not find PENALTY_LOST_CARD config, using default 200000");
+        }
+        BigDecimal fineAmount = fee != null ? fee : defaultFine;
         session.setPenaltyFee(fineAmount);
         sessionRepository.save(session);
 
+        com.pbms.modules.identity.domain.User user = null;
+        if (email != null && !email.isBlank()) {
+            user = userRepository.findByEmail(email).orElse(null);
+        }
+
         IncidentTicket ticket = new IncidentTicket();
         ticket.setSession(session);
+        ticket.setUser(user);
         ticket.setIssueType("LOST_CARD");
         ticket.setPriority("HIGH");
         ticket.setDescription(description != null ? description : "Bao mat the, tien phat: " + fineAmount);

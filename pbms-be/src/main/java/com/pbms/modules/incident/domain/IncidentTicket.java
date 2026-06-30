@@ -1,7 +1,6 @@
 package com.pbms.modules.incident.domain;
 
 import com.pbms.common.domain.BaseEntity;
-import com.pbms.modules.identity.domain.StaffWorkSession;
 import com.pbms.modules.identity.domain.User;
 import com.pbms.modules.infrastructure.domain.Zone;
 import jakarta.persistence.*;

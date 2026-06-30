@@ -2,7 +2,6 @@ package com.pbms.modules.operation.domain;
 
 import com.pbms.common.domain.BaseEntity;
 import com.pbms.modules.identity.domain.User;
-import com.pbms.modules.infrastructure.domain.Slot;
 import jakarta.persistence.*;
 import lombok.*;
 

@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
@@ -41,8 +42,9 @@ public class PublicController {
     }
 
     @GetMapping("/vehicle-types")
-    public ResponseEntity<ApiResponse<List<VehicleTypeDTO>>> getVehicleTypes() {
-        return ResponseEntity.ok(ApiResponse.success(vehicleTypeService.getAllVehicleTypes(), "Vehicle types retrieved successfully"));
+    public ResponseEntity<ApiResponse<List<VehicleTypeDTO>>> getVehicleTypes(
+            @RequestParam(required = false, defaultValue = "false") boolean activeOnly) {
+        return ResponseEntity.ok(ApiResponse.success(vehicleTypeService.getAllVehicleTypes(activeOnly), "Vehicle types retrieved successfully"));
     }
 
     @GetMapping("/building-profile")
@@ -54,13 +56,14 @@ public class PublicController {
     public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getParkingStatus() {
         List<Map<String, Object>> statusList = new ArrayList<>();
         
-        List<VehicleTypeDTO> vehicleTypes = vehicleTypeService.getAllVehicleTypes();
+        List<VehicleTypeDTO> vehicleTypes = vehicleTypeService.getAllVehicleTypes(false);
         List<com.pbms.modules.infrastructure.dto.ZoneDTO> zones = zoneService.getMapZones();
         
         for (VehicleTypeDTO type : vehicleTypes) {
             int available = 0;
             for (com.pbms.modules.infrastructure.dto.ZoneDTO zone : zones) {
-                if (zone.getVehicleTypeId() != null && zone.getVehicleTypeId().equals(type.getId())) {
+                if (zone.getVehicleTypeId() != null && zone.getVehicleTypeId().equals(type.getId())
+                        && "WALK_IN".equals(zone.getFunctionType())) {
                     available += zone.getAvailableSlots();
                 }
             }

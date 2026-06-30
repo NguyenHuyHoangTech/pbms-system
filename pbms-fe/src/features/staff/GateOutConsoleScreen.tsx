@@ -8,6 +8,7 @@ import { Card, Button, message, Tag, Typography, Modal, Row, Col, Radio, Input, 
 import { CarOutlined, LockOutlined, UnlockOutlined, CheckCircleOutlined, DollarOutlined, AimOutlined, WarningOutlined, CloseCircleOutlined, QrcodeOutlined, IdcardOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import axiosClient from '../../core/api/axiosClient';
+import { getImageUrl } from '../../core/utils/imageHelper';
 import Konva from 'konva';
 
 const { Title, Text } = Typography;
@@ -32,8 +33,8 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
   const { data: vehicleTypes } = useQuery({
     queryKey: ['vehicleTypes'],
     queryFn: async () => {
-      const res = await axiosClient.get('/operation/vehicle-types');
-      return res.data.data;
+      const res = await axiosClient.get('/operation/vehicle-types?activeOnly=true');
+      return res.data?.data || [];
     }
   });
 
@@ -324,6 +325,8 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
   const renderOutGatePanel = () => {
     const totalFee = scanData?.expectedFee || 0;
     const duration = scanData?.durationMinutes || 0;
+    const isInvalidEntry = scanData?.plateNumberIn === 'UNKNOWN' || scanData?.timeIn === '--:--';
+    const isPlateMismatch = !isInvalidEntry && !!scanData?.plateNumberIn && (editablePlate.trim().toUpperCase() !== scanData.plateNumberIn.trim().toUpperCase());
 
     return (
       <div className="flex h-full overflow-hidden w-full bg-slate-100 rounded-xl shadow-inner gap-4">
@@ -370,7 +373,14 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
                     </div>
                     <div className="flex items-center space-x-2">
                       {scanData.routing && <Tag color="purple" className="m-0 font-bold px-3 py-1 text-sm rounded">{scanData.routing}</Tag>}
-                      <Tag color="cyan" className="m-0 font-bold px-3 py-1 text-sm rounded shadow-sm border border-transparent">
+                      <Tag color="cyan" className="m-0 font-bold px-3 py-1 text-sm rounded shadow-sm border border-transparent flex items-center">
+                        {(() => {
+                           const vt = vehicleTypes?.find((v: any) => v.typeName === scanData.vehicleType);
+                           if (vt && vt.iconUrl) {
+                              return <img src={getImageUrl(vt.iconUrl)} style={{width: 16, height: 16, marginRight: 6, objectFit: 'contain'}}/>;
+                           }
+                           return null;
+                        })()}
                         {scanData.vehicleType}
                       </Tag>
                       <Tag color={scanData.customerType === 'Haunt' ? 'blue' : (scanData.customerType === 'BOOK' ? 'gold' : 'green')} className="m-0 font-bold px-3 py-1 text-sm rounded shadow-sm border border-transparent">
@@ -575,15 +585,23 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
               className={`h-full flex-[2] text-xl font-bold rounded-lg shadow-lg border-b-4 active:border-b-0 active:translate-y-1 transition-all ${
                 (scanData?.status === 'LOCKED') 
                   ? 'bg-red-800 border-red-900 cursor-not-allowed opacity-80'
-                  : (paymentMethod !== 'CASH' && !paymentConfirmed) 
-                    ? 'bg-slate-400 border-slate-500 cursor-not-allowed' 
-                    : 'bg-green-600 hover:bg-green-500 border-green-800 animate-pulse'
+                  : isInvalidEntry || isPlateMismatch
+                    ? 'bg-slate-600 border-slate-700 cursor-not-allowed opacity-80'
+                    : (paymentMethod !== 'CASH' && !paymentConfirmed) 
+                      ? 'bg-slate-400 border-slate-500 cursor-not-allowed' 
+                      : 'bg-green-600 hover:bg-green-500 border-green-800 animate-pulse'
               }`}
-              disabled={(!scanData) || (paymentMethod !== 'CASH' && !paymentConfirmed) || (scanData?.status === 'LOCKED')}
+              disabled={(!scanData) || isInvalidEntry || isPlateMismatch || (paymentMethod !== 'CASH' && !paymentConfirmed) || (scanData?.status === 'LOCKED')}
               loading={isLoading}
               onClick={handleCompletePaymentAndOpen}
             >
-              {scanData?.status === 'LOCKED' ? '🔒 LOCKED VEHICLE - Resolve Incident first' : (paymentMethod === 'CASH' ? 'Collect money & Open the gate' : 'Confirm & Open the gate')}
+              {scanData?.status === 'LOCKED' ? '🔒 LOCKED - Resolve Incident first' : 
+                (isInvalidEntry ? '❌ NO ENTRY RECORD - Use Exception Desk' : 
+                  (isPlateMismatch ? '❌ PLATE MISMATCH - Use Exception Desk' : 
+                    (paymentMethod === 'CASH' ? 'Collect money & Open the gate' : 'Confirm & Open the gate')
+                  )
+                )
+              }
             </Button>
           </div>
         </div>

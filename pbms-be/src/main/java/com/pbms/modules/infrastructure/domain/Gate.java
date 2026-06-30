@@ -33,9 +33,11 @@ public class Gate {
     private String gateType; // ENTRY, EXIT
 
     @Column(name = "live_override_mode", length = 50)
+    @Builder.Default
     private String liveOverrideMode = "NORMAL"; // NORMAL, OPEN_ALL, CLOSE_ALL
 
     @Column(length = 50)
+    @Builder.Default
     private String status = "ACTIVE"; // ACTIVE, INACTIVE
 
     @Column(name = "layout_x")

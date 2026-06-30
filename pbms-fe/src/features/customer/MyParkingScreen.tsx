@@ -6,6 +6,35 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+interface Booking {
+  id: string;
+  status: string;
+  plateNumber: string;
+  expectedEntryTime: string;
+  zoneName: string;
+  slotName: string;
+  expectedDurationMinutes?: number;
+  reservationFee?: number;
+}
+
+interface MonthlyPass {
+  id: string;
+  status: string;
+  plate: string;
+  type: string;
+  endDate: string;
+  hasBeenUsed?: boolean;
+}
+
+interface HistoryRecord {
+  type: string;
+  plateNumber: string;
+  fee: number;
+  timeIn: string;
+  timeOut: string;
+  incidentDetails?: any[];
+}
+
 const { Title, Text } = Typography;
 
 export const MyParkingScreen = () => {
@@ -34,8 +63,7 @@ export const MyParkingScreen = () => {
     { id: 'MOTORBIKE', name: 'Motorbike', pricePerMonth: 150000 }
   ];
   const GATEWAYS = [
-    { id: 'PAYPAL', name: 'PayPal Sandbox', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' },
-    { id: 'PAYOS', name: 'PayOS', icon: 'https://payos.vn/wp-content/uploads/sites/13/2023/07/payos-logo.svg' }
+    { id: 'PAYPAL', name: 'PayPal Sandbox', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' }
   ];
 
   // Strict Walk-in 2FA Lookup
@@ -43,11 +71,18 @@ export const MyParkingScreen = () => {
   const [rfidInput, setRfidInput] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
 
-  const { data: bookings = [], isLoading: isBookingsLoading } = useQuery({
+  const [isEditPlateVisible, setIsEditPlateVisible] = useState(false);
+  const [plateToEdit, setPlateToEdit] = useState<{ type: 'reservation' | 'monthly', id: string, currentPlate: string } | null>(null);
+  const [newPlate, setNewPlate] = useState('');
+
+  const [isHistoryDrawerVisible, setIsHistoryDrawerVisible] = useState(false);
+  const [selectedHistoryPlate, setSelectedHistoryPlate] = useState('');
+
+  const { data: bookings = [], isLoading: isBookingsLoading } = useQuery<Booking[]>({
     queryKey: ['my-bookings'],
     queryFn: async () => {
       try {
-        const res = await axiosClient.get('/operation/reservations');
+        const res = await axiosClient.get('/customer/reservations');
         return res.data.data;
       } catch (err) {
         return [];
@@ -55,7 +90,7 @@ export const MyParkingScreen = () => {
     }
   });
 
-  const { data: monthlyPasses = [], isLoading: isPassesLoading } = useQuery({
+  const { data: monthlyPasses = [], isLoading: isPassesLoading } = useQuery<MonthlyPass[]>({
     queryKey: ['my-passes'],
     queryFn: async () => {
       try {
@@ -67,16 +102,25 @@ export const MyParkingScreen = () => {
     }
   });
 
-  const { data: historyRecords = [], isLoading: isHistoryLoading } = useQuery({
-    queryKey: ['my-history', plateNumberInput],
+  const { data: historyRecords = [], isLoading: isHistoryLoading } = useQuery<HistoryRecord[]>({
+    queryKey: ['my-history', selectedHistoryPlate],
     queryFn: async () => {
       try {
-        const res = await axiosClient.get(`/operation/parking-sessions/history?plate=${plateNumberInput || '30A-123.45'}`);
-        return res.data.data || [];
+        if (!selectedHistoryPlate) return [];
+        const res = await axiosClient.get(`/parking-sessions/history?plate=${selectedHistoryPlate}`);
+        return (res.data.data || []).map((item: any) => ({
+          type: 'MONTHLY PASS',
+          plateNumber: item.plate,
+          fee: item.totalFee || 0,
+          timeIn: item.timeIn ? dayjs(item.timeIn).format('HH:mm DD/MM/YYYY') : '---',
+          timeOut: item.timeOut ? dayjs(item.timeOut).format('HH:mm DD/MM/YYYY') : '---',
+          incidentDetails: item.incidentDetails
+        }));
       } catch (err) {
         return [];
       }
-    }
+    },
+    enabled: isHistoryDrawerVisible && !!selectedHistoryPlate
   });
 
   // We only fetch active session if we have searched in the Walk-in tab
@@ -161,7 +205,7 @@ export const MyParkingScreen = () => {
 
   const cancelBookingMutation = useMutation({
     mutationFn: async (id: string) => {
-      await axiosClient.put(`/operation/reservations/${id}/cancel`);
+      await axiosClient.put(`/customer/reservations/${id}/cancel`);
     },
     onSuccess: () => {
       message.success('Cancellation and refund request sent successfully.');
@@ -177,7 +221,7 @@ export const MyParkingScreen = () => {
     }
   };
 
-  const calculateRefund = (booking: any) => {
+  const calculateRefund = (booking: Booking | null) => {
     if (!booking) return { refund: 0, penalty: 0, amount: 0, percent: 0 };
     const now = dayjs();
     const arrTime = dayjs(booking.expectedEntryTime);
@@ -192,7 +236,7 @@ export const MyParkingScreen = () => {
       refundPercent = 0;
     }
 
-    const amount = booking.amount || 50000;
+    const amount = booking.reservationFee || 50000;
     const refund = amount * refundPercent;
     const penalty = amount - refund;
 
@@ -200,14 +244,14 @@ export const MyParkingScreen = () => {
   };
 
   const [cancelDrawerVisible, setCancelDrawerVisible] = useState(false);
-  const [selectedBookingToCancel, setSelectedBookingToCancel] = useState<any>(null);
+  const [selectedBookingToCancel, setSelectedBookingToCancel] = useState<Booking | null>(null);
   const [bankName, setBankName] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
 
   // Renew Pass States
   const [renewDrawerVisible, setRenewDrawerVisible] = useState(false);
-  const [selectedPassToRenew, setSelectedPassToRenew] = useState<any>(null);
+  const [selectedPassToRenew, setSelectedPassToRenew] = useState<MonthlyPass | null>(null);
   const [renewDuration, setRenewDuration] = useState(1);
   const [renewGateway, setRenewGateway] = useState('PAYPAL');
   
@@ -261,7 +305,7 @@ export const MyParkingScreen = () => {
     }
   });
 
-  const handleOpenRenew = (pass: any) => {
+  const handleOpenRenew = (pass: MonthlyPass) => {
     setSelectedPassToRenew(pass);
     setRenewDuration(1);
     setRenewGateway('PAYPAL');
@@ -448,27 +492,33 @@ export const MyParkingScreen = () => {
                   <div className="w-full sm:w-auto">
                     <div className="flex items-center space-x-2 mb-2">
                       <Tag color={
-                        item.status === 'ACTIVE' ? 'orange' :
-                        item.status === 'PENDING_REFUND' ? 'blue' :
+                        item.status === 'PENDING' ? 'orange' :
+                        item.status === 'ACTIVE' ? 'blue' :
+                        item.status === 'COMPLETED' ? 'green' :
+                        item.status === 'COMPLETED_UNUSED' ? 'default' :
+                        item.status === 'PENDING_REFUND' ? 'purple' :
                         item.status === 'CANCELLED_REFUNDED' ? 'default' : 'red'
                       } className="m-0 font-bold text-[10px] md:text-xs">
-                        {item.status === 'ACTIVE' ? 'PRE-BOOKING' :
+                        {item.status === 'PENDING' ? 'PRE-BOOKING' :
+                         item.status === 'ACTIVE' ? 'IN-PARKING' :
+                         item.status === 'COMPLETED' ? 'COMPLETED' :
+                         item.status === 'COMPLETED_UNUSED' ? 'NO SHOW' :
                          item.status === 'PENDING_REFUND' ? 'PENDING REFUND' :
                          item.status === 'CANCELLED_REFUNDED' ? 'CANCELLED & REFUNDED' :
                          item.status === 'CANCELLED_NO_REFUND' ? 'CANCELLED (NO REFUND)' : 'CANCELLED'}
                       </Tag>
                       <Text type="secondary" className="text-[10px] md:text-xs">ID: {item.id}</Text>
                     </div>
-                    <Title level={4} className={`m-0 tracking-widest ${item.status !== 'ACTIVE' ? 'text-gray-400 line-through' : ''}`}>{item.plateNumber}</Title>
+                    <Title level={4} className={`m-0 tracking-widest ${item.status !== 'PENDING' && item.status !== 'ACTIVE' ? 'text-gray-400 line-through' : ''}`}>{item.plateNumber}</Title>
                     <div className="mt-4 space-y-1">
-                      <Text className={`block ${item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Expected arrival: <Text strong className={item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{dayjs(item.expectedEntryTime).format('HH:mm DD/MM/YYYY')}</Text></Text>
-                      <Text className={`block ${item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Reserved location: <Text strong className={item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{item.slotName}</Text></Text>
+                      <Text className={`block ${item.status !== 'PENDING' && item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Expected arrival: <Text strong className={item.status !== 'PENDING' && item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{dayjs(item.expectedEntryTime).format('HH:mm DD/MM/YYYY')}</Text></Text>
+                      <Text className={`block ${item.status !== 'PENDING' && item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Reserved location: <Text strong className={item.status !== 'PENDING' && item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{item.zoneName || item.slotName}</Text></Text>
                     </div>
                   </div>
                   <div className="flex flex-col items-start sm:items-end mt-4 sm:mt-0 w-full sm:w-auto">
-                    {(item.status === 'ACTIVE' || item.status === 'PENDING') && (
+                    {item.status === 'PENDING' && (
                       <div className="flex flex-col sm:flex-row gap-2">
-                        {item.status === 'PENDING' && dayjs(item.expectedEntryTime).add(item.expectedDurationMinutes || 0, 'minute').isAfter(dayjs()) && (
+                        {dayjs(item.expectedEntryTime).add(item.expectedDurationMinutes || 0, 'minute').isAfter(dayjs()) && (
                           <Button 
                             type="primary"
                             className="bg-blue-600"
@@ -530,12 +580,12 @@ export const MyParkingScreen = () => {
                     </div>
                     <div>
                       <div className="flex items-center space-x-2 mb-1">
-                        <Title level={4} className="m-0 tracking-widest">{item.plateNumber}</Title>
+                        <Title level={4} className="m-0 tracking-widest">{item.plate}</Title>
                         <Tag color="green" className="m-0 font-bold">{item.status}</Tag>
                       </div>
                       <Text type="secondary">Card ID: {item.id} • {item.type}</Text>
                       <div className="mt-1">
-                        <Text className="text-gray-600">Expiry Date: <Text strong className={dayjs(item.expiryDate, 'DD/MM/YYYY').isBefore(dayjs().add(7, 'day')) ? 'text-red-500' : 'text-gray-800'}>{item.expiryDate}</Text></Text>
+                        <Text className="text-gray-600">Expiry Date: <Text strong className={dayjs(item.endDate).isBefore(dayjs().add(7, 'day')) ? 'text-red-500' : 'text-gray-800'}>{dayjs(item.endDate).format('DD/MM/YYYY')}</Text></Text>
                       </div>
                     </div>
                   </div>
@@ -545,14 +595,24 @@ export const MyParkingScreen = () => {
                         type="default"
                         icon={<EditOutlined />}
                         onClick={() => {
-                          setPlateToEdit({ type: 'monthly', id: item.id, currentPlate: item.plateNumber });
-                          setNewPlate(item.plateNumber);
+                          setPlateToEdit({ type: 'monthly', id: item.id, currentPlate: item.plate });
+                          setNewPlate(item.plate);
                           setIsEditPlateVisible(true);
                         }}
                       >
                         Edit Plate
                       </Button>
                     )}
+                    <Button 
+                      type="default" 
+                      icon={<HistoryOutlined />} 
+                      onClick={() => {
+                        setSelectedHistoryPlate(item.plate);
+                        setIsHistoryDrawerVisible(true);
+                      }}
+                    >
+                      History
+                    </Button>
                     <Button type="primary" className="bg-green-600" onClick={() => handleOpenRenew(item)}>Renew</Button>
                   </div>
                 </div>
@@ -571,58 +631,8 @@ export const MyParkingScreen = () => {
     </div>
   );
 
-  const renderHistoryTab = () => (
-    <div className="animate-fade-in">
-      <Card className="shadow-sm border border-gray-100 rounded-xl">
-        <div className="flex items-center mb-6">
-          <HistoryOutlined className="text-2xl text-blue-600 mr-3" />
-          <Title level={4} className="m-0">Parking History</Title>
-        </div>
-        
-        {historyRecords.length > 0 ? (
-          <Timeline
-            className="mt-4"
-            items={historyRecords.map(record => ({
-              color: record.type === 'MONTHLY PASS' ? 'green' : 'orange',
-              children: (
-                <div className="bg-gray-50 p-4 rounded-lg border border-gray-100 mb-4 shadow-sm">
-                  <div className="flex justify-between items-start mb-2">
-                    <div>
-                      <Title level={5} className="m-0 tracking-widest">{record.plateNumber}</Title>
-                      <Tag color={record.type === 'MONTHLY PASS' ? 'green' : 'orange'} className="mt-1">
-                        {record.type}
-                      </Tag>
-                    </div>
-                    <div className="text-right">
-                      <Text strong className="text-blue-600 text-lg">{record.fee === 0 ? 'Free' : `${record.fee.toLocaleString()} ₫`}</Text>
-                    </div>
-                  </div>
-                  <Divider className="my-2" />
-                  <div className="grid grid-cols-2 gap-4 text-sm mt-2">
-                    <div>
-                      <Text type="secondary" className="block mb-1">Time In:</Text>
-                      <Text strong className="text-gray-700"><ClockCircleOutlined className="mr-1"/> {record.timeIn}</Text>
-                    </div>
-                    <div>
-                      <Text type="secondary" className="block mb-1">Time Out:</Text>
-                      <Text strong className="text-gray-700"><ClockCircleOutlined className="mr-1"/> {record.timeOut}</Text>
-                    </div>
-                  </div>
-                </div>
-              )
-            }))}
-          />
-        ) : (
-          <div className="py-12 text-center">
-            <Empty description={<span className="text-gray-500">No parking history</span>} />
-          </div>
-        )}
-      </Card>
-    </div>
-  );
-  const [isEditPlateVisible, setIsEditPlateVisible] = useState(false);
-  const [plateToEdit, setPlateToEdit] = useState<{ type: 'reservation' | 'monthly', id: string, currentPlate: string } | null>(null);
-  const [newPlate, setNewPlate] = useState('');
+
+
 
   const editPlateMutation = useMutation({
     mutationFn: async (payload: { type: 'reservation' | 'monthly', id: string, plate: string }) => {
@@ -637,9 +647,7 @@ export const MyParkingScreen = () => {
       setIsEditPlateVisible(false);
       if (variables.type === 'reservation') {
         queryClient.invalidateQueries({ queryKey: ['my-bookings'] });
-        if (selectedBookingDetails && selectedBookingDetails.id === variables.id) {
-          setSelectedBookingDetails({ ...selectedBookingDetails, plateNumber: variables.plate });
-        }
+
       } else {
         queryClient.invalidateQueries({ queryKey: ['my-passes'] });
       }
@@ -696,7 +704,7 @@ export const MyParkingScreen = () => {
             activeKey={activeTab} 
             onChange={(key) => {
               setActiveTab(key);
-              navigate(`/customer/my-parking?tab=${key === '2' ? 'booking' : key === '3' ? 'monthly' : key === '4' ? 'history' : 'walkin'}`, { replace: true });
+              navigate(`/customer/my-parking?tab=${key === '2' ? 'booking' : key === '3' ? 'monthly' : 'walkin'}`, { replace: true });
             }}
             size="large"
             items={[
@@ -714,11 +722,6 @@ export const MyParkingScreen = () => {
                 key: '3',
                 label: 'Monthly Pass Management',
                 children: renderMonthlyPassTab(),
-              },
-              {
-                key: '4',
-                label: 'Parking History',
-                children: renderHistoryTab(),
               }
             ]}
           />
@@ -851,7 +854,7 @@ export const MyParkingScreen = () => {
            const baseFee = pricePerMonth * renewDuration;
            const discountAmount = baseFee * (packageConfig?.discount || 0);
            const totalFee = baseFee - discountAmount;
-           const newExpiry = dayjs(selectedPassToRenew.expiryDate, 'DD/MM/YYYY').add(renewDuration, 'month').format('DD/MM/YYYY');
+           const newExpiry = dayjs(selectedPassToRenew.endDate).add(renewDuration, 'month').format('DD/MM/YYYY');
 
            return (
              <div className="space-y-6">
@@ -862,11 +865,15 @@ export const MyParkingScreen = () => {
                  </div>
                  <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-3">
                    <Text className="text-slate-500">License Plate:</Text>
-                   <Text strong className="text-slate-800 tracking-widest">{selectedPassToRenew.plateNumber}</Text>
+                   <Text strong className="text-slate-800 tracking-widest">{selectedPassToRenew.plate}</Text>
+                 </div>
+                 <div className="flex justify-between items-center mb-3 border-b border-slate-100 pb-3">
+                   <Text className="text-slate-500">Vehicle Type:</Text>
+                   <Text strong className="text-slate-800">{selectedPassToRenew.type}</Text>
                  </div>
                  <div className="flex justify-between items-center">
                    <Text className="text-slate-500">Current Expiry:</Text>
-                   <Text strong className={dayjs(selectedPassToRenew.expiryDate, 'DD/MM/YYYY').isBefore(dayjs().add(7, 'day')) ? 'text-red-500' : 'text-slate-800'}>{selectedPassToRenew.expiryDate}</Text>
+                   <Text strong className={dayjs(selectedPassToRenew.endDate).isBefore(dayjs().add(7, 'day')) ? 'text-red-500' : 'text-slate-800'}>{dayjs(selectedPassToRenew.endDate).format('DD/MM/YYYY')}</Text>
                  </div>
                </Card>
 
@@ -942,7 +949,7 @@ export const MyParkingScreen = () => {
                  className="w-full h-14 text-lg font-bold rounded-xl shadow-lg bg-blue-600 hover:bg-blue-500 animate-pulse mt-4"
                  onClick={() => handleConfirmRenew(totalFee)}
                >
-                 THANH TOÁN GIA HẠN
+                 Confirm Renewal
                </Button>
              </div>
            );
@@ -981,11 +988,7 @@ export const MyParkingScreen = () => {
               </div>
               
               <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg break-all px-2 text-xs">
-                {renewGateway === 'PAYPAL' ? (
-                  <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Open PayPal Checkout</a>
-                ) : (
-                  <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Open PayOS Checkout</a>
-                )}
+                <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Open PayPal Checkout</a>
               </Text>
               
               <div className="flex items-center justify-center space-x-2 text-slate-600">
@@ -1024,6 +1027,69 @@ export const MyParkingScreen = () => {
           />
         </div>
       </Modal>
+
+      <Drawer
+        title={<span className="text-blue-600 font-bold"><HistoryOutlined className="mr-2"/>Parking History for {selectedHistoryPlate}</span>}
+        width={500}
+        onClose={() => setIsHistoryDrawerVisible(false)}
+        open={isHistoryDrawerVisible}
+        className="bg-slate-50"
+      >
+        <div className="animate-fade-in">
+          {historyRecords.filter(r => r.plateNumber === selectedHistoryPlate).length > 0 ? (
+            <Timeline
+              className="mt-4"
+              items={historyRecords.filter(r => r.plateNumber === selectedHistoryPlate).map(record => ({
+                color: record.type === 'MONTHLY PASS' ? 'green' : 'orange',
+                children: (
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 mb-4 shadow-sm">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <Title level={5} className="m-0 tracking-widest text-slate-800">{record.plateNumber}</Title>
+                        <Tag color={record.type === 'MONTHLY PASS' ? 'green' : 'orange'} className="mt-1">
+                          {record.type}
+                        </Tag>
+                      </div>
+                      <div className="text-right">
+                        <Text strong className="text-blue-600 text-lg">{record.fee === 0 ? 'Free' : `${record.fee.toLocaleString()} VND`}</Text>
+                      </div>
+                    </div>
+                    <Divider className="my-2" />
+                    <div className="grid grid-cols-2 gap-4 text-sm mt-2">
+                      <div>
+                        <Text type="secondary" className="block mb-1">Time In:</Text>
+                        <Text strong className="text-slate-700"><ClockCircleOutlined className="mr-1 text-slate-400"/> {record.timeIn}</Text>
+                      </div>
+                      <div>
+                        <Text type="secondary" className="block mb-1">Time Out:</Text>
+                        <Text strong className="text-slate-700"><ClockCircleOutlined className="mr-1 text-slate-400"/> {record.timeOut}</Text>
+                      </div>
+                    </div>
+                    {record.incidentDetails && record.incidentDetails.length > 0 && (
+                      <div className="mt-4 pt-3 border-t border-red-100">
+                        {record.incidentDetails.map((inc: any, idx: number) => (
+                          <div key={idx} className="mb-3">
+                            <Tag color="red" className="mb-2">⚠️ Violation Warning ({inc.type})</Tag>
+                            <div className="flex gap-2 overflow-x-auto">
+                              {inc.urls.map((url: string, uidx: number) => (
+                                <img key={uidx} src={url} alt="Violation" className="h-20 rounded-md border border-red-200" />
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              }))}
+            />
+          ) : (
+            <div className="py-12 text-center">
+              <Empty description={<span className="text-slate-500">No parking history for this vehicle</span>} />
+            </div>
+          )}
+        </div>
+      </Drawer>
     </>
   );
 };

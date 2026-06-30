@@ -30,9 +30,31 @@ public class ZoneTrendSchedulingService {
     @Scheduled(cron = "0 0 * * * *")
     @Transactional
     public void recordHourlyZoneTrends() {
-        log.info("Starting hourly zone trend recording...");
         LocalDateTime timeWindow = com.pbms.common.utils.TimeProvider.now().withMinute(0).withSecond(0).withNano(0);
-        
+        recordTrendForTime(timeWindow);
+    }
+
+    @org.springframework.context.event.EventListener(com.pbms.common.event.TimeFastForwardedEvent.class)
+    @Transactional
+    public void handleTimeFastForward(com.pbms.common.event.TimeFastForwardedEvent event) {
+        LocalDateTime oldTime = event.getOldSimulatedTime().withMinute(0).withSecond(0).withNano(0);
+        LocalDateTime newTime = event.getNewSimulatedTime().withMinute(0).withSecond(0).withNano(0);
+
+        log.info("Handling TimeFastForwardedEvent: Catching up trends from {} to {}", oldTime, newTime);
+
+        if (oldTime.isBefore(newTime)) {
+            LocalDateTime iter = oldTime.plusHours(1);
+            while (!iter.isAfter(newTime)) {
+                recordTrendForTime(iter);
+                iter = iter.plusHours(1);
+            }
+        } else {
+            recordTrendForTime(newTime);
+        }
+    }
+
+    private void recordTrendForTime(LocalDateTime timeWindow) {
+        log.info("Recording hourly zone trend for time window: {}", timeWindow);
         List<Zone> zones = zoneRepository.findAll();
         
         for (Zone zone : zones) {
@@ -58,7 +80,6 @@ public class ZoneTrendSchedulingService {
             zoneHourlyTrendRepository.save(trend);
             log.debug("Recorded trend for Zone {}: Peak = {}%", zone.getZoneName(), peakOccupancy);
         }
-        log.info("Completed hourly zone trend recording.");
     }
 }
 

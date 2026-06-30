@@ -41,6 +41,19 @@ public class IncidentTicketController {
         return ResponseEntity.ok(ApiResponse.success(incidentService.getAllIncidents(email), "Fetched successfully"));
     }
 
+    @PutMapping("/{id}/move-to-overstay")
+    public ResponseEntity<ApiResponse<com.pbms.modules.incident.dto.IncidentTicketDTO>> moveToOverstay(
+            @PathVariable Long id,
+            @RequestBody java.util.Map<String, Object> requestBody) {
+        try {
+            String uploadedDocUrl = (String) requestBody.get("uploadedDocUrl");
+            com.pbms.modules.incident.dto.IncidentTicketDTO dto = incidentService.moveToOverstay(id, uploadedDocUrl);
+            return ResponseEntity.ok(ApiResponse.success(dto, "Moved to overstay zone successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Error: " + e.getMessage()));
+        }
+    }
+
     @PutMapping("/{id}/resolve")
     public ResponseEntity<ApiResponse<com.pbms.modules.incident.dto.IncidentTicketDTO>> resolveIncident(
             @PathVariable Long id,
@@ -131,15 +144,17 @@ public class IncidentTicketController {
 
     @PostMapping("/lost-card")
     public ResponseEntity<ApiResponse<com.pbms.modules.incident.dto.IncidentTicketDTO>> reportLostCard(
-            @RequestBody java.util.Map<String, Object> requestBody) {
+            @RequestBody java.util.Map<String, Object> requestBody,
+            org.springframework.security.core.Authentication authentication) {
         try {
+            String email = authentication != null ? authentication.getName() : null;
             String plate = (String) requestBody.get("plate");
             java.math.BigDecimal fee = requestBody.get("fee") != null 
                     ? new java.math.BigDecimal(requestBody.get("fee").toString()) 
                     : null;
             String description = (String) requestBody.get("description");
             String uploadedDocUrl = (String) requestBody.get("uploadedDocUrl");
-            com.pbms.modules.incident.dto.IncidentTicketDTO dto = incidentService.createLostCardIncident(plate, fee, description, uploadedDocUrl);
+            com.pbms.modules.incident.dto.IncidentTicketDTO dto = incidentService.createLostCardIncident(plate, fee, description, uploadedDocUrl, email);
             return ResponseEntity.ok(ApiResponse.success(dto, "How cool is that?"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(400, "Leave a comment:" + e.getMessage()));

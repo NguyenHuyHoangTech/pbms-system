@@ -38,6 +38,7 @@ public class PricingPolicy {
     private BigDecimal maxParkingCap;
 
     @Column(nullable = false, length = 50)
+    @Builder.Default
     private String status = "ACTIVE"; // ACTIVE, ARCHIVED
 
     @Column(name = "monthly_rate", nullable = false, precision = 18, scale = 2)

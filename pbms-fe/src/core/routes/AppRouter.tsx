@@ -18,13 +18,13 @@ import { UserManagementScreen } from '../../features/admin/UserManagementScreen'
 import { VehicleTypeScreen } from '../../features/manager/VehicleTypeScreen';
 import { SpaceMapScreen } from '../../features/manager/SpaceMapScreen';
 import { PricingConfigScreen } from '../../features/manager/PricingConfigScreen';
+import { PenaltyConfigScreen } from '../../features/manager/PenaltyConfigScreen';
 import { MonthlyPassScreen } from '../../features/manager/MonthlyPassScreen';
 import { RevenueDashboardScreen } from '../../features/manager/RevenueDashboardScreen';
 import ShiftRevenueReportScreen from '../../features/manager/ShiftRevenueReportScreen';
 import { OperationalDashboardScreen } from '../../features/manager/OperationalDashboardScreen';
 import { RefundManagementScreen } from '../../features/manager/RefundManagementScreen';
 import { CardManagementScreen } from '../../features/manager/CardManagementScreen';
-import { TicketCenterScreen } from '../../features/manager/TicketCenterScreen';
 import { VehicleRoutingScreen } from '../../features/manager/VehicleRoutingScreen';
 import { PreBookingManagementScreen } from '../../features/manager/PreBookingManagementScreen';
 
@@ -93,13 +93,13 @@ export const AppRouter = () => {
           <Route path="vehicle-types" element={<VehicleTypeScreen />} />
           <Route path="space-map" element={<SpaceMapScreen />} />
           <Route path="pricing-config" element={<PricingConfigScreen />} />
+          <Route path="penalty-config" element={<PenaltyConfigScreen />} />
           <Route path="monthly-passes" element={<MonthlyPassScreen />} />
           <Route path="refund-management" element={<RefundManagementScreen />} />
           <Route path="revenue-dashboard" element={<RevenueDashboardScreen />} />
           <Route path="shift-revenue" element={<ShiftRevenueReportScreen />} />
           <Route path="operational-dashboard" element={<OperationalDashboardScreen />} />
           <Route path="card-management" element={<CardManagementScreen />} />
-          <Route path="ticket-center" element={<TicketCenterScreen />} />
           <Route path="routing" element={<VehicleRoutingScreen />} />
           <Route path="pre-bookings" element={<PreBookingManagementScreen />} />
           <Route path="incidents" element={<ExceptionDeskScreen />} />

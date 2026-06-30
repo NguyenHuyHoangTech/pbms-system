@@ -2,6 +2,7 @@ import { simulatedDayjs } from '../../core/utils/timeProvider';
 import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
+import { getImageUrl } from '../../core/utils/imageHelper';
 import { Typography, Tabs, Button, InputNumber, Switch, Input, TimePicker, Collapse, Modal, message, Checkbox, Card } from 'antd';
 import { 
   CalculatorOutlined, 
@@ -61,7 +62,7 @@ export const PricingConfigScreen = () => {
   const { data: vehicleTypesData } = useQuery({
     queryKey: ['vehicle-types'],
     queryFn: async () => {
-      const res = await axiosClient.get('/operation/vehicle-types');
+      const res = await axiosClient.get('/operation/vehicle-types?activeOnly=true');
       return res.data.data;
     }
   });
@@ -122,8 +123,8 @@ export const PricingConfigScreen = () => {
           globalBaseGuardEnabled: policy.globalBaseMins > 0,
           globalBaseGuardTime: policy.globalBaseMins,
           globalBaseGuardPrice: policy.globalBaseFee,
-          globalMaxCapEnabled: policy.maxParkingCap < 3000000,
-          globalMaxCapPrice: policy.maxParkingCap,
+          globalMaxCapEnabled: policy.maxParkingCap < 999999999,
+          globalMaxCapPrice: policy.maxParkingCap < 999999999 ? policy.maxParkingCap : undefined,
           monthlyRate: policy.monthlyRate || 0,
           shifts: policy.shifts.map((s: any, idx: number) => {
             const slices: Slice[] = s.blocks.map((b: any, bIdx: number) => {
@@ -326,14 +327,14 @@ export const PricingConfigScreen = () => {
   });
 
   const handleSave = () => {
-    if (confirmInput === 'XACNHAN') {
+    if (confirmInput.toUpperCase() === 'XACNHAN') {
       const payload = {
         id: (config as any).id,
         policyName: config.policyName || `Pricing table ${vehicleTypesData?.find((v:any) => v.id === activeTabId)?.typeName || 'Default'}`,
         vehicleTypeId: activeTabId,
         globalBaseMins: config.globalBaseGuardEnabled ? config.globalBaseGuardTime : 0,
         globalBaseFee: config.globalBaseGuardEnabled ? config.globalBaseGuardPrice : 0,
-        maxParkingCap: config.globalMaxCapEnabled && config.globalMaxCapPrice ? config.globalMaxCapPrice : 3000000,
+        maxParkingCap: config.globalMaxCapEnabled ? (config.globalMaxCapPrice || 0) : 999999999,
         monthlyRate: config.monthlyRate,
         status: 'ACTIVE',
         shifts: config.shifts.map(s => {
@@ -519,7 +520,7 @@ export const PricingConfigScreen = () => {
                   onClick={() => setActiveTabId(vt.id)}
                   className={`flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-bold transition-all duration-300 cursor-pointer border-none outline-none ${activeTabId === vt.id ? 'bg-white text-blue-600 shadow ring-1 ring-black/5 scale-[1.02]' : 'bg-transparent text-gray-500 hover:text-gray-800 hover:bg-gray-200/70'}`}
                 >
-                  <span className="text-lg">{vt.category === 'FOUR_WHEEL' ? '🚗' : '🛵'}</span>
+                  <span className="text-lg flex items-center justify-center">{vt.iconUrl ? <img src={getImageUrl(vt.iconUrl)} style={{width: 20, height: 20, objectFit: 'contain'}} /> : (vt.category === 'FOUR_WHEEL' ? '🚗' : '🛵')}</span>
                   {vt.typeName}
                 </button>
               ))}
@@ -963,7 +964,7 @@ export const PricingConfigScreen = () => {
           </div>
           <div className="flex gap-2">
              <Button onClick={() => setIsConfirmModalOpen(false)} className="flex-1">Cancel Cancel</Button>
-             <Button type="primary" danger onClick={handleSave} disabled={confirmInput !== 'XACNHAN'} className="flex-1 font-bold">
+             <Button type="primary" danger onClick={handleSave} disabled={confirmInput.toUpperCase() !== 'XACNHAN'} className="flex-1 font-bold">
                
                                          Confirm SAVE
                                        </Button>

@@ -22,13 +22,19 @@ public class RoutingRuleService {
     private final RoutingRuleRepository routingRuleRepository;
     private final ZoneRepository zoneRepository;
 
-    public List<RoutingRuleDTO> getRoutingRulesByVehicleType(String vehicleTypeName) {
+    public List<RoutingRuleDTO> getRoutingRulesByVehicleTypeAndFloor(String vehicleTypeName, Long floorId) {
         List<Zone> zones = zoneRepository.findAll().stream()
-                .filter(z -> z.getVehicleType().getTypeName().equalsIgnoreCase(vehicleTypeName) && "ACTIVE".equals(z.getStatus()))
+                .filter(z -> z.getVehicleType().getTypeName().equalsIgnoreCase(vehicleTypeName) 
+                          && (floorId == null || z.getFloor().getId().equals(floorId))
+                          && "ACTIVE".equals(z.getStatus()) 
+                          && "WALK_IN".equalsIgnoreCase(z.getFunctionType()))
                 .collect(Collectors.toList());
 
         List<RoutingRule> activeRules = routingRuleRepository.findAll().stream()
-                .filter(r -> r.getIsActive() && r.getZone().getVehicleType().getTypeName().equalsIgnoreCase(vehicleTypeName))
+                .filter(r -> r.getIsActive() 
+                          && r.getZone().getVehicleType().getTypeName().equalsIgnoreCase(vehicleTypeName) 
+                          && (floorId == null || r.getZone().getFloor().getId().equals(floorId))
+                          && "WALK_IN".equalsIgnoreCase(r.getZone().getFunctionType()))
                 .collect(Collectors.toList());
 
         if (activeRules.isEmpty()) {
@@ -137,7 +143,9 @@ public class RoutingRuleService {
     @Transactional
     public List<RoutingRuleDTO> updateRoutingRules(RoutingRuleDTO.BatchUpdateRequest request) {
         List<RoutingRule> activeRules = routingRuleRepository.findAll().stream()
-                .filter(r -> r.getIsActive() && r.getZone().getVehicleType().getTypeName().equalsIgnoreCase(request.getVehicleTypeName()))
+                .filter(r -> r.getIsActive() 
+                          && r.getZone().getVehicleType().getTypeName().equalsIgnoreCase(request.getVehicleTypeName())
+                          && (request.getFloorId() == null || r.getZone().getFloor().getId().equals(request.getFloorId())))
                 .collect(Collectors.toList());
         activeRules.forEach(r -> r.setIsActive(false));
         routingRuleRepository.saveAll(activeRules);
@@ -182,7 +190,7 @@ public class RoutingRuleService {
         }
 
         routingRuleRepository.saveAll(newRules);
-        return getRoutingRulesByVehicleType(request.getVehicleTypeName());
+        return getRoutingRulesByVehicleTypeAndFloor(request.getVehicleTypeName(), request.getFloorId());
     }
 }
 

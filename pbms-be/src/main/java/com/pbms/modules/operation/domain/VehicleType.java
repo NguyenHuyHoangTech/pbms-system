@@ -27,5 +27,11 @@ public class VehicleType {
 
     @Column(name = "category", length = 50)
     private String category; // FOUR_WHEEL, TWO_WHEEL
+
+    @Column(name = "status", length = 20)
+    private String status;
+
+    @Column(name = "icon_url", length = 255)
+    private String iconUrl;
 }
 

@@ -15,5 +15,7 @@ public class VehicleTypeDTO {
     private Integer matrixWidth;
     private Integer matrixHeight;
     private String category;
+    private String status;
+    private String iconUrl;
 }
 

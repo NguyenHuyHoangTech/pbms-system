@@ -56,6 +56,10 @@ export const VehicleRoutingScreen = () => {
   
   const [floors, setFloors] = useState<any[]>([]);
   const [vehicleTypes, setVehicleTypes] = useState<any[]>([]);
+  const [zones, setZones] = useState<any[]>([]);
+  
+  const [confirmedFloor, setConfirmedFloor] = useState<number | null>(null);
+  const [confirmedVehicle, setConfirmedVehicle] = useState<string>('');
   
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -63,10 +67,12 @@ export const VehicleRoutingScreen = () => {
   const [chartDataRaw, setChartDataRaw] = useState<ZoneTrendDTO[]>([]);
   const [selectedTrendDate, setSelectedTrendDate] = useState<any>(simulatedDayjs());
 
-  const fetchRules = async (vehicleType: string) => {
+  const fetchRules = async (vehicleType: string, floorId?: number) => {
     try {
       setLoading(true);
-      const res = await axiosClient.get(`/manager/routing-rules?vehicleType=${vehicleType}`);
+      let url = `/manager/routing-rules?vehicleType=${encodeURIComponent(vehicleType)}`;
+      if (floorId) url += `&floorId=${floorId}`;
+      const res = await axiosClient.get(url);
       const data: TimeFrameRuleDTO[] = res.data.data || [];
       setTimeFrames(data);
     } catch (error) {
@@ -93,9 +99,11 @@ export const VehicleRoutingScreen = () => {
       if (data) {
         if (data.floors) setFloors(data.floors);
         if (data.vehicleTypes) setVehicleTypes(data.vehicleTypes);
+        if (data.zones) setZones(data.zones);
         
         if (data.floors && data.floors.length > 0) {
           setSelectedFloor(data.floors[0].id);
+          setConfirmedFloor(data.floors[0].id);
         }
       }
     } catch (error) {
@@ -103,11 +111,17 @@ export const VehicleRoutingScreen = () => {
     }
   };
 
-  useEffect(() => {
+  // Removed automatic fetch on selectedVehicle and selectedTrendDate change.
+  // We will fetch via a Confirm button.
+  
+  const handleConfirm = () => {
+    setConfirmedFloor(selectedFloor);
+    setConfirmedVehicle(selectedVehicle);
     if (selectedVehicle) {
-      fetchRules(selectedVehicle);
+      fetchRules(selectedVehicle, selectedFloor);
     }
-  }, [selectedVehicle]);
+    fetchTrends();
+  };
 
   useEffect(() => {
     fetchMapConfig();
@@ -131,6 +145,7 @@ export const VehicleRoutingScreen = () => {
         const validVehicles = vehicleTypes.filter(v => v.category === floorObj.type);
         if (validVehicles.length > 0) {
           setSelectedVehicle(validVehicles[0].typeName);
+          if (!confirmedVehicle) setConfirmedVehicle(validVehicles[0].typeName);
         } else {
           setSelectedVehicle('');
         }
@@ -143,18 +158,72 @@ export const VehicleRoutingScreen = () => {
     const timeMap = new Map<string, any>();
     const zNames = new Set<string>();
 
-    chartDataRaw.forEach(item => {
-      if (!timeMap.has(item.timeWindow)) {
-        timeMap.set(item.timeWindow, { timeWindow: item.timeWindow });
+    const targetVehicleTypeId = vehicleTypes.find(v => v.typeName === confirmedVehicle)?.id;
+
+    zones.forEach(zoneObj => {
+      if (zoneObj.floorId === confirmedFloor && zoneObj.vehicleTypeId === targetVehicleTypeId && zoneObj.functionType === 'WALK_IN') {
+        zNames.add(zoneObj.name);
       }
-      const dataPoint = timeMap.get(item.timeWindow);
-      dataPoint[item.zoneName] = item.occupancyPct;
-      zNames.add(item.zoneName);
     });
 
+    const isToday = selectedTrendDate?.format('YYYY-MM-DD') === simulatedDayjs().format('YYYY-MM-DD');
+    let maxHour = -1;
+
+    chartDataRaw.forEach(item => {
+      if (zNames.has(item.zoneName)) {
+        if (!timeMap.has(item.timeWindow)) {
+          timeMap.set(item.timeWindow, { timeWindow: item.timeWindow });
+        }
+        const dataPoint = timeMap.get(item.timeWindow);
+        dataPoint[item.zoneName] = item.occupancyPct;
+      }
+      
+      const hr = parseInt(item.timeWindow.split(':')[0], 10);
+      if (hr > maxHour) maxHour = hr;
+    });
+
+    if (isToday && maxHour >= 0) {
+      for (let i = 0; i <= maxHour; i++) {
+        const hourStr = `${i.toString().padStart(2, '0')}:00`;
+        if (!timeMap.has(hourStr)) {
+          timeMap.set(hourStr, { timeWindow: hourStr });
+        }
+      }
+    }
+
     const flattened = Array.from(timeMap.values()).sort((a, b) => a.timeWindow.localeCompare(b.timeWindow));
+    
+    if (isToday && maxHour >= 0) {
+      Array.from(zNames).forEach(z => {
+        let lastVal = 0;
+        let foundFirst = false;
+        for (let i = 0; i < flattened.length; i++) {
+          if (flattened[i][z] !== undefined) {
+            lastVal = flattened[i][z];
+            foundFirst = true;
+          } else if (foundFirst) {
+            flattened[i][z] = lastVal;
+          }
+        }
+        let firstVal = 0;
+        for (let i = 0; i < flattened.length; i++) {
+          if (flattened[i][z] !== undefined) {
+            firstVal = flattened[i][z];
+            break;
+          }
+        }
+        for (let i = 0; i < flattened.length; i++) {
+          if (flattened[i][z] === undefined) {
+            flattened[i][z] = firstVal;
+          } else {
+            break;
+          }
+        }
+      });
+    }
+
     return { chartData: flattened, zoneNames: Array.from(zNames) };
-  }, [chartDataRaw]);
+  }, [chartDataRaw, selectedTrendDate, confirmedFloor, confirmedVehicle, vehicleTypes, zones]);
 
   // --- ACTIONS ---
   const moveZone = (frameId: string, index: number, direction: 'LEFT' | 'RIGHT') => {
@@ -193,22 +262,40 @@ export const VehicleRoutingScreen = () => {
 
   const handleAddFrame = () => {
     const defaultFrame = timeFrames.find(tf => tf.isDefault);
-    if (!defaultFrame) return; // Cannot clone if no base rule
-
-    const newRules = defaultFrame.rules.map(r => ({ ...r, id: undefined }));
     
-    // Insert new frame before the default frame
+    let newRules: any[] = [];
+    if (defaultFrame) {
+      newRules = defaultFrame.rules.map(r => ({ ...r, id: undefined }));
+    } else {
+      const vt = vehicleTypes.find(v => v.typeName === confirmedVehicle);
+      const availableZones = zones.filter(z => z.vehicleTypeId === vt?.id && z.zoneType === 'WALK_IN' && z.status !== 'DELETED' && z.floorId === confirmedFloor);
+      newRules = availableZones.map((z, idx) => ({
+        zoneId: z.id,
+        zoneName: z.zoneName,
+        priority: idx + 1,
+        fillThresholdPct: 90
+      }));
+    }
+    
     setTimeFrames(prev => {
       const copy = [...prev];
+      const hasDefault = copy.some(tf => tf.isDefault);
       const defaultIdx = copy.findIndex(tf => tf.isDefault);
-      copy.splice(defaultIdx, 0, {
+      
+      const newFrame = {
         timeFrameId: `tf_${Date.now()}`,
-        name: `New time frame`,
-        startTime: '07:00',
-        endTime: '10:00',
-        isDefault: false,
+        name: hasDefault ? `New time frame` : `Default Time Frame`,
+        startTime: hasDefault ? '07:00' : '00:00',
+        endTime: hasDefault ? '10:00' : '23:59',
+        isDefault: !hasDefault,
         rules: newRules
-      });
+      };
+
+      if (hasDefault && defaultIdx >= 0) {
+        copy.splice(defaultIdx, 0, newFrame);
+      } else {
+        copy.push(newFrame);
+      }
       return copy;
     });
   };
@@ -252,6 +339,7 @@ export const VehicleRoutingScreen = () => {
       setSaving(true);
       const payload = {
         vehicleTypeName: selectedVehicle,
+        floorId: confirmedFloor,
         timeFrames: timeFrames.map(tf => ({
           startTime: tf.startTime,
           endTime: tf.endTime,
@@ -264,7 +352,9 @@ export const VehicleRoutingScreen = () => {
       };
       await axiosClient.put(`/manager/routing-rules`, payload);
       message.success('Dispatcher configuration saved Success!');
-      fetchRules(selectedVehicle);
+      if (selectedVehicle && confirmedFloor) {
+        fetchRules(selectedVehicle, confirmedFloor);
+      }
     } catch (error) {
       message.error("Error when saving configuration");
     } finally {
@@ -314,6 +404,9 @@ export const VehicleRoutingScreen = () => {
               bordered={false}
               placeholder="Select car"
            />
+           <Button type="primary" onClick={handleConfirm} loading={loading}>
+             Confirm
+           </Button>
         </Space>
       </div>
 
@@ -353,7 +446,7 @@ export const VehicleRoutingScreen = () => {
               <ReferenceLine y={90} stroke="#ef4444" strokeDasharray="5 5" strokeWidth={2} label={{ position: 'top', value: 'Critical Threshold 90%', fill: '#ef4444', fontSize: 12, fontWeight: 'bold' }} />
               
               {zoneNames.map((name, idx) => (
-                 <Line key={name} type="monotone" dataKey={name} stroke={COLORS[idx % COLORS.length]} strokeWidth={3} dot={false} activeDot={{ r: 6 }} />
+                 <Line key={name} type="monotone" dataKey={name} stroke={COLORS[idx % COLORS.length]} strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
               ))}
             </LineChart>
           </ResponsiveContainer>

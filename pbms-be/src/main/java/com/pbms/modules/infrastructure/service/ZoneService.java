@@ -36,6 +36,7 @@ public class ZoneService {
             return ZoneDTO.builder()
                 .id(zone.getId())
                 .floorId(zone.getFloor().getId())
+                .floorName(zone.getFloor().getFloorName())
                 .name(zone.getZoneName())
                 .capacity((int) totalSlots)
                 .availableSlots((int) availableSlots)

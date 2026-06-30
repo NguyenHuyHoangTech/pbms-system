@@ -20,7 +20,6 @@ import com.pbms.modules.operation.repository.VehicleRepository;
 import com.pbms.modules.infrastructure.domain.Zone;
 import com.pbms.modules.infrastructure.repository.ZoneRepository;
 import com.pbms.modules.infrastructure.repository.SlotRepository;
-import com.pbms.modules.infrastructure.domain.Slot;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -28,7 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -98,8 +96,13 @@ public class GateOperationService {
         Gate gate = gateRepository.findById(request.getGateId())
                 .orElseThrow(() -> new IllegalArgumentException("Gate not found"));
 
-        VehicleType type = vehicleTypeRepository.findByTypeName(request.getVehicleType())
-                .orElse(null);
+        VehicleType type = null;
+        if (request.getVehicleTypeId() != null) {
+            type = vehicleTypeRepository.findById(request.getVehicleTypeId()).orElse(null);
+        }
+        if (type == null && request.getVehicleType() != null) {
+            type = vehicleTypeRepository.findByTypeName(request.getVehicleType()).orElse(null);
+        }
 
         Zone suggestedZone = null;
         String customerType = determineCustomerType(request.getPlateNumber(), request.getRfid());
@@ -214,7 +217,15 @@ public class GateOperationService {
         info.setDurationMinutes(duration);
         info.setTimeOut(now);
 
-        if ("MONTHLY".equals(customerType)) {
+        boolean isExemptZone = false;
+        if (session.getSlot() != null && session.getSlot().getZone() != null) {
+            String fType = session.getSlot().getZone().getFunctionType();
+            if ("IMPOUNDED".equalsIgnoreCase(fType) || "MONTHLY".equalsIgnoreCase(fType)) {
+                isExemptZone = true;
+            }
+        }
+
+        if ("MONTHLY".equals(customerType) || isExemptZone) {
             info.setExpectedFee(java.math.BigDecimal.ZERO);
             info.setOvertimeMinutes(0L);
         } else if (session.getReservation() != null) {
@@ -272,8 +283,13 @@ public class GateOperationService {
         Gate gate = gateRepository.findById(request.getGateId())
                 .orElseThrow(() -> new IllegalArgumentException("Gate not found"));
 
-        VehicleType type = vehicleTypeRepository.findByTypeName(request.getVehicleType())
-                .orElse(null);
+        VehicleType type = null;
+        if (request.getVehicleTypeId() != null) {
+            type = vehicleTypeRepository.findById(request.getVehicleTypeId()).orElse(null);
+        }
+        if (type == null && request.getVehicleType() != null) {
+            type = vehicleTypeRepository.findByTypeName(request.getVehicleType()).orElse(null);
+        }
 
         Zone suggestedZone = null;
         String customerType = determineCustomerType(request.getPlateNumber(), request.getRfid());
@@ -306,6 +322,13 @@ public class GateOperationService {
             return GateResponseDTO.builder()
                     .status("ERROR")
                     .message("Invalid vehicle type")
+                    .build();
+        }
+
+        if ("INACTIVE".equals(type.getStatus())) {
+            return GateResponseDTO.builder()
+                    .status("ERROR")
+                    .message("Vehicle type is blocked/inactive")
                     .build();
         }
 

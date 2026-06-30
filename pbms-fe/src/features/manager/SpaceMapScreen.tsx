@@ -4,11 +4,12 @@ import {
   SaveOutlined, SyncOutlined, AimOutlined, PlusOutlined, 
   SettingOutlined, CompassOutlined, GatewayOutlined, 
   CloseCircleOutlined, SwapRightOutlined, SwapLeftOutlined,
-  StopOutlined
+  StopOutlined, DeleteOutlined, ZoomInOutlined, ZoomOutOutlined
 } from '@ant-design/icons';
-import { Stage, Layer, Line, Group, Rect, Text as KonvaText } from 'react-konva';
+import { Stage, Layer, Line, Group, Rect, Text as KonvaText, Label, Tag } from 'react-konva';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
+import { getImageUrl } from '../../core/utils/imageHelper';
 import { useWebSocket } from '../../core/websocket/useWebSocket';
 import Konva from 'konva';
 
@@ -70,6 +71,7 @@ interface VehicleType {
   category: 'FOUR_WHEEL' | 'TWO_WHEEL';
   matrixWidth: number;
   matrixHeight: number;
+  iconUrl?: string;
 }
 
 type SelectedEntity = 
@@ -252,6 +254,44 @@ export const SpaceMapScreen = () => {
       }
     });
     tween.play();
+  };
+
+  const handleZoom = (factor: number) => {
+    if (!stageRef.current || !containerRef.current) return;
+    const oldScale = stageScale;
+    let newScale = oldScale * factor;
+    newScale = Math.max(defaultScale, Math.min(newScale, 5));
+    
+    const center = {
+      x: containerRef.current.clientWidth / 2,
+      y: containerRef.current.clientHeight / 2,
+    };
+    
+    const mousePointTo = {
+      x: (center.x - stagePos.x) / oldScale,
+      y: (center.y - stagePos.y) / oldScale,
+    };
+    
+    setStageScale(newScale);
+    setStagePos({
+      x: center.x - mousePointTo.x * newScale,
+      y: center.y - mousePointTo.y * newScale,
+    });
+  };
+
+  const handleZoomFit = () => {
+    if (!containerRef.current) return;
+    const mapW = mapCols * GRID_SIZE;
+    const mapH = mapRows * GRID_SIZE;
+    
+    const scale = Math.min(containerRef.current.clientWidth / mapW, containerRef.current.clientHeight / mapH) * 0.95; 
+    const minScaleLocked = Math.min(scale, 1);
+    
+    setStageScale(minScaleLocked);
+    setStagePos({
+      x: (containerRef.current.clientWidth - mapW * minScaleLocked) / 2,
+      y: (containerRef.current.clientHeight - mapH * minScaleLocked) / 2
+    });
   };
 
   const handleZoomZone = (zoneId: number) => {
@@ -745,15 +785,17 @@ export const SpaceMapScreen = () => {
                     })}
 
                     {/* Zone Name Top-Left (Inside) */}
-                    <KonvaText
-                      x={5} y={5}
-                      text={`${zone.name} ${zone.activeReservationsCount ? `(Res: ${zone.activeReservationsCount})` : ''}`}
-                      fontSize={14}
-                      fontFamily="sans-serif"
-                      fill={isSelected ? '#2563eb' : '#334155'}
-                      fontStyle="bold"
-                      listening={false}
-                    />
+                    <Label x={5} y={5} listening={false}>
+                      <Tag fill="rgba(255, 255, 255, 0.85)" cornerRadius={4} />
+                      <KonvaText
+                        text={`${zone.name} ${zone.activeReservationsCount ? `(Res: ${zone.activeReservationsCount})` : ''}`}
+                        fontSize={14}
+                        fontFamily="sans-serif"
+                        fill={isSelected ? '#2563eb' : '#334155'}
+                        fontStyle="bold"
+                        padding={4}
+                      />
+                    </Label>
                   </Group>
                 );
               })}
@@ -825,7 +867,7 @@ export const SpaceMapScreen = () => {
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-track]:bg-transparent hover:[&::-webkit-scrollbar-thumb]:bg-gray-400">
           <Collapse 
             ghost 
             expandIconPosition="end" 
@@ -943,6 +985,7 @@ export const SpaceMapScreen = () => {
                       <Select.Option value="WALK_IN">Walk-in</Select.Option>
                       <Select.Option value="MONTHLY">Monthly Pass (Monthly)</Select.Option>
                       <Select.Option value="IMPOUNDED">Impounded</Select.Option>
+                      <Select.Option value="BACKUP">Backup</Select.Option>
                     </Select>
                   </div>
 
@@ -953,7 +996,10 @@ export const SpaceMapScreen = () => {
                       onChange={v => setZones(prev => prev.map(z => z.id === activeZone.id ? {...z, vehicleTypeId: v} : z))}
                     >
                       {validVehicleTypes.map(vt => (
-                          <Select.Option key={vt.id} value={vt.id}>{vt.typeName}</Select.Option>
+                          <Select.Option key={vt.id} value={vt.id}>
+                            {vt.iconUrl ? <img src={getImageUrl(vt.iconUrl)} style={{width: 16, height: 16, marginRight: 8, objectFit: 'contain', display: 'inline-block'}} /> : null}
+                            {vt.typeName}
+                          </Select.Option>
                       ))}
                     </Select>
                   </div>
@@ -1060,6 +1106,26 @@ export const SpaceMapScreen = () => {
                       {activeGate.staffName && <Text className="text-xs block">Staff on duty: <Text strong>{activeGate.staffName}</Text></Text>}
                     </div>
                   </div>
+                  
+                  <Button 
+                    danger 
+                    block 
+                    icon={<DeleteOutlined />} 
+                    onClick={() => {
+                      Modal.confirm({
+                        title: 'Confirm Delete Gate',
+                        content: 'Are you sure you want to delete this Gate? This is a soft delete, old data will not be lost.',
+                        okText: 'Delete',
+                        cancelText: 'Cancel',
+                        onOk: () => {
+                          setGates(prev => prev.filter(g => g.id !== activeGate.id));
+                          setSelectedEntity(null);
+                        }
+                      });
+                    }}
+                  >
+                    Delete Gate (Soft Delete)
+                  </Button>
                 </div>
               ) : (
                 <div className="py-4 text-center text-gray-400 italic text-sm">

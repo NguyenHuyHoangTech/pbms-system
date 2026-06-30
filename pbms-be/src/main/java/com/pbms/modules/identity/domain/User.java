@@ -35,6 +35,7 @@ public class User extends BaseEntity {
     private String role; // ENUM: SUPER_ADMIN, MANAGER, STAFF, CUSTOMER
 
     @Column(length = 50)
+    @Builder.Default
     private String status = "ACTIVE"; // ACTIVE, INACTIVE, LOCKED
 }
 

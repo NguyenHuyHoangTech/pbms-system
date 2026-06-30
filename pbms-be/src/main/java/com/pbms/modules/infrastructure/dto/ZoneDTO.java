@@ -9,6 +9,7 @@ import java.util.List;
 public class ZoneDTO {
     private Long id;
     private Long floorId;
+    private String floorName;
     private String name;
     private Integer capacity; // Maps to total_slots calculated from count
     private Integer availableSlots; // Calculated from COUNT(slots where status = AVAILABLE)

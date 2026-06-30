@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Card, Typography, Collapse, List, Tag, Badge, Divider } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
+import { getImageUrl } from '../../core/utils/imageHelper';
 import { 
   CarOutlined, 
   SafetyCertificateOutlined,
@@ -42,16 +43,36 @@ export const HomeScreen = () => {
     refetchInterval: 5000 // Real-time polling
   });
 
+  const { data: vehicleTypes } = useQuery({
+    queryKey: ['public-vehicle-types'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/public/vehicle-types');
+        return res.data.data;
+      } catch (err) {
+        return [];
+      }
+    }
+  });
+
   useEffect(() => {
     if (parkingStatusData && parkingStatusData.length > 0) {
-      setSlots(parkingStatusData.map((d: any) => ({
+      let filteredData = parkingStatusData;
+      if (vehicleTypes) {
+        const nonBlockedLabels = vehicleTypes
+          .filter((vt: any) => vt.status === 'ACTIVE')
+          .map((vt: any) => vt.typeName);
+        filteredData = parkingStatusData.filter((d: any) => nonBlockedLabels.includes(d.label));
+      }
+
+      setSlots(filteredData.map((d: any) => ({
         type: d.type,
         label: d.label,
         available: d.available,
         icon: d.type === 'FOUR_WHEEL' ? <CarOutlined /> : (d.type === 'TWO_WHEEL' ? <div className="text-xl leading-none">🏍️</div> : <ThunderboltOutlined />)
       })));
     }
-  }, [parkingStatusData]);
+  }, [parkingStatusData, vehicleTypes]);
 
   const { data: pricingPolicies } = useQuery({
     queryKey: ['public-pricing'],
@@ -65,17 +86,7 @@ export const HomeScreen = () => {
     }
   });
 
-  const { data: vehicleTypes } = useQuery({
-    queryKey: ['public-vehicle-types'],
-    queryFn: async () => {
-      try {
-        const res = await axiosClient.get('/public/vehicle-types');
-        return res.data.data;
-      } catch (err) {
-        return [];
-      }
-    }
-  });
+
 
   const { data: buildingProfile } = useQuery({
     queryKey: ['public-building-profile'],
@@ -146,10 +157,12 @@ export const HomeScreen = () => {
   };
 
   // 2. KHỐI BIỂU PHÍ (ACCORDION)
-  const pricingItems = (vehicleTypes || []).map((vt: any, index: number) => {
+  const pricingItems = (vehicleTypes || [])
+    .filter((vt: any) => vt.status === 'ACTIVE')
+    .map((vt: any, index: number) => {
     const isCar = vt.category === 'FOUR_WHEEL';
     const isEbike = vt.typeName.toLowerCase().includes('electricity');
-    const icon = isCar ? <CarOutlined className="mr-2 text-blue-600"/> : (isEbike ? <ThunderboltOutlined className="mr-2 text-green-600"/> : <div className="text-xl leading-none mr-2">🏍️</div>);
+    const icon = vt.iconUrl ? <img src={getImageUrl(vt.iconUrl)} className="w-6 h-6 mr-2 object-contain inline-block" /> : (isCar ? <CarOutlined className="mr-2 text-blue-600"/> : (isEbike ? <ThunderboltOutlined className="mr-2 text-green-600"/> : <div className="text-xl leading-none mr-2">🏍️</div>));
     const policy = (pricingPolicies || []).find((p: any) => p.vehicleTypeId === vt.id);
 
     return {

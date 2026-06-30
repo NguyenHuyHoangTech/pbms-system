@@ -12,6 +12,7 @@ import com.pbms.modules.infrastructure.repository.SlotRepository;
 import com.pbms.modules.infrastructure.repository.ZoneRepository;
 import com.pbms.modules.operation.repository.VehicleTypeRepository;
 import com.pbms.modules.operation.repository.ReservationRepository;
+import com.pbms.modules.operation.repository.ParkingSessionRepository;
 import com.pbms.modules.system.domain.BuildingProfile;
 import com.pbms.modules.system.repository.BuildingProfileRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -37,6 +37,7 @@ public class MapConfigurationService {
     private final BuildingProfileRepository buildingProfileRepository;
     private final ReservationRepository reservationRepository;
     private final com.pbms.modules.system.service.SystemConfigService systemConfigService;
+    private final ParkingSessionRepository parkingSessionRepository;
 
     @Transactional(readOnly = true)
     public MapConfigDTO getMapConfiguration() {
@@ -59,12 +60,26 @@ public class MapConfigurationService {
                 .mapRows(f.getMapRows())
                 .build()).collect(Collectors.toList());
 
+        // Map active parking sessions to their slots to populate the plate field
+        Map<Long, String> slotPlateMap = parkingSessionRepository.findAll().stream()
+                .filter(ps -> ("ACTIVE".equals(ps.getStatus()) || "LOCKED".equals(ps.getStatus())) && ps.getSlot() != null)
+                .collect(Collectors.toMap(ps -> ps.getSlot().getId(), com.pbms.modules.operation.domain.ParkingSession::getPlate, (p1, p2) -> p1));
+
+        // Group active parking sessions by suggested zone name
+        Map<String, List<String>> zoneSuggestedVehicles = parkingSessionRepository.findAll().stream()
+                .filter(ps -> ("ACTIVE".equals(ps.getStatus()) || "LOCKED".equals(ps.getStatus())) && ps.getSuggestedZoneName() != null && ps.getPlate() != null)
+                .collect(Collectors.groupingBy(
+                    com.pbms.modules.operation.domain.ParkingSession::getSuggestedZoneName,
+                    Collectors.mapping(com.pbms.modules.operation.domain.ParkingSession::getPlate, Collectors.toList())
+                ));
+
         List<ZoneConfigDTO> zoneDTOs = zones.stream().map(z -> {
             List<SlotConfigDTO> slotDTOs = slotRepository.findByZoneId(z.getId()).stream()
                     .map(s -> SlotConfigDTO.builder()
                             .id(s.getId())
                             .name(s.getSlotName())
                             .status(s.getStatus())
+                            .plate(slotPlateMap.get(s.getId()))
                             .build()).collect(Collectors.toList());
 
             VehicleType vt = vehicleTypes.get(z.getVehicleType().getId());
@@ -99,6 +114,7 @@ public class MapConfigurationService {
                     .rotation(z.getRotation())
                     .overflowThreshold(z.getOverflowThreshold())
                     .activeReservationsCount(activeReservations)
+                    .suggestedVehicles(zoneSuggestedVehicles.getOrDefault(z.getZoneName(), new ArrayList<>()))
                     .slots(slotDTOs)
                     .build();
         }).collect(Collectors.toList());
@@ -116,6 +132,7 @@ public class MapConfigurationService {
                 .build()).collect(Collectors.toList());
 
         List<VehicleTypeDTO> vtDTOs = vehicleTypeRepository.findAll().stream()
+                .filter(vt -> "ACTIVE".equals(vt.getStatus() != null ? vt.getStatus() : "ACTIVE"))
                 .map(vt -> VehicleTypeDTO.builder()
                         .id(vt.getId())
                         .typeName(vt.getTypeName())

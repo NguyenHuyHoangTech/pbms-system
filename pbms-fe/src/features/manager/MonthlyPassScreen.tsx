@@ -6,9 +6,11 @@ import {
 import { 
   IdcardOutlined, SearchOutlined, CheckCircleOutlined, 
   CloseCircleOutlined, FilterOutlined, MoreOutlined, 
-  ExclamationCircleOutlined, HistoryOutlined, UserOutlined, CarOutlined
+  ExclamationCircleOutlined, HistoryOutlined, UserOutlined, CarOutlined, SettingOutlined
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
+import { useWebSocket } from '../../core/websocket/useWebSocket';
+import { notification, Modal, InputNumber } from 'antd';
 import axiosClient from '../../core/api/axiosClient';
 
 const { Title, Text } = Typography;
@@ -28,6 +30,60 @@ interface MonthlyPass {
 export const MonthlyPassScreen = () => {
   const [selectedRecord, setSelectedRecord] = useState<MonthlyPass | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [threshold, setThreshold] = useState<number>(90);
+  const { stompClient, connected } = useWebSocket();
+
+  React.useEffect(() => {
+    fetchThreshold();
+  }, []);
+
+  const fetchThreshold = async () => {
+    try {
+      const res = await axiosClient.get('/operation/monthly-tickets/config-threshold');
+      if (res.data.data) {
+        setThreshold(res.data.data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveThreshold = async () => {
+    try {
+      await axiosClient.post('/operation/monthly-tickets/config-threshold', { threshold });
+      notification.success({ message: 'Configuration saved successfully!' });
+      setIsConfigModalOpen(false);
+    } catch (e) {
+      notification.error({ message: 'Error saving configuration' });
+    }
+  };
+
+  React.useEffect(() => {
+    if (stompClient && connected) {
+      const subscription = stompClient.subscribe('/topic/manager-alerts', (message) => {
+        if (message.body) {
+          try {
+            const data = JSON.parse(message.body);
+            if (data.type === 'MONTHLY_ZONE_OVERLOAD') {
+              notification.warning({
+                message: 'Monthly Zone Overload Warning',
+                description: data.message,
+                duration: 0,
+                placement: 'topRight',
+                style: { borderLeft: '4px solid #faad14' }
+              });
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+      });
+      return () => {
+        subscription.unsubscribe();
+      };
+    }
+  }, [stompClient, connected]);
 
   const { data: monthlyPassesData, isLoading } = useQuery({
     queryKey: ['monthlyPasses'],
@@ -95,9 +151,14 @@ export const MonthlyPassScreen = () => {
     <div className="h-full overflow-y-auto bg-gray-50 p-6 pb-24">
 
       <div className="mb-6">
-        <Title level={2} className="m-0 text-gray-800 flex items-center">
-          <IdcardOutlined className="mr-3 text-indigo-600" /> Customer Management Monthly Passes
-        </Title>
+        <div className="flex justify-between items-center w-full">
+          <Title level={2} className="m-0 text-gray-800 flex items-center">
+            <IdcardOutlined className="mr-3 text-indigo-600" /> Monthly Pass Management
+          </Title>
+          <Button type="primary" icon={<SettingOutlined />} onClick={() => setIsConfigModalOpen(true)}>
+            Config Threshold
+          </Button>
+        </div>
         <Text type="secondary">System CRM Manage subscriptions, maintain cash flow and control long-term capacity</Text>
       </div>
 
@@ -211,6 +272,29 @@ export const MonthlyPassScreen = () => {
           ]} />
         )}
       </Drawer>
+
+      <Modal
+        title="Monthly Zone Expansion Alert Configuration"
+        open={isConfigModalOpen}
+        onOk={handleSaveThreshold}
+        onCancel={() => setIsConfigModalOpen(false)}
+      >
+        <div className="flex flex-col gap-4 mt-4">
+          <Text>
+            Enter the % of registered monthly tickets compared to the total slots in Monthly Zones.
+            If the registered tickets exceed this %, the system will send an alert to expand the Zone.
+          </Text>
+          <div className="flex items-center gap-2">
+            <Text strong>Alert Threshold (%):</Text>
+            <InputNumber 
+              min={1} 
+              max={200} 
+              value={threshold} 
+              onChange={(val) => setThreshold(val || 90)} 
+            />
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

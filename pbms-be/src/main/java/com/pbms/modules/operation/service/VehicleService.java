@@ -21,6 +21,13 @@ public class VehicleService {
         return vehicleRepository.findAll().stream().map(this::mapToDTO).collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public VehicleDTO getVehicleByPlate(String plate) {
+        return vehicleRepository.findByPlateNumber(plate.trim().toUpperCase())
+                .map(this::mapToDTO)
+                .orElseThrow(() -> new RuntimeException("Vehicle not found"));
+    }
+
     @Transactional
     public VehicleDTO setBlacklist(Long id, String reason) {
         Vehicle vehicle = vehicleRepository.findById(id)
@@ -32,11 +39,28 @@ public class VehicleService {
     }
 
     @Transactional
+    public VehicleDTO setBlacklistByPlate(String plate, String reason, String evidenceUrl) {
+        Vehicle vehicle = vehicleRepository.findByPlateNumber(plate.trim().toUpperCase())
+                .orElseGet(() -> {
+                    Vehicle newVehicle = new Vehicle();
+                    newVehicle.setPlateNumber(plate.trim().toUpperCase());
+                    newVehicle.setStatus("ACTIVE");
+                    return newVehicle;
+                });
+        vehicle.setIsBlacklisted(true);
+        vehicle.setBlacklistReason(reason);
+        vehicle.setBlacklistEvidenceUrl(evidenceUrl);
+        vehicleRepository.save(vehicle);
+        return mapToDTO(vehicle);
+    }
+
+    @Transactional
     public VehicleDTO removeBlacklist(Long id) {
         Vehicle vehicle = vehicleRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Vehicle not found"));
         vehicle.setIsBlacklisted(false);
         vehicle.setBlacklistReason(null);
+        vehicle.setBlacklistEvidenceUrl(null);
         vehicleRepository.save(vehicle);
         return mapToDTO(vehicle);
     }
@@ -54,6 +78,7 @@ public class VehicleService {
                 .status(vehicle.getStatus())
                 .isBlacklisted(vehicle.getIsBlacklisted())
                 .blacklistReason(vehicle.getBlacklistReason())
+                .blacklistEvidenceUrl(vehicle.getBlacklistEvidenceUrl())
                 .build();
     }
 }

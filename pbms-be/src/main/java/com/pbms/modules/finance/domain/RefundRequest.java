@@ -46,6 +46,7 @@ public class RefundRequest extends BaseEntity {
     private String accountName;
 
     @Column(nullable = false, length = 50)
+    @Builder.Default
     private String status = "PENDING"; // PENDING, REFUNDED, REJECTED
 
     @Column(name = "cancel_time", nullable = false)

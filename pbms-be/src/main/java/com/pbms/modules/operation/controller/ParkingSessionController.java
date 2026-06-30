@@ -5,7 +5,6 @@ import com.pbms.modules.operation.domain.ParkingSession;
 import com.pbms.modules.operation.repository.ParkingSessionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -13,13 +12,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 import com.pbms.common.utils.TimeProvider;
 import com.pbms.modules.finance.service.PricingCalculatorService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import com.pbms.modules.incident.repository.IncidentTicketRepository;
 
 @RestController
 @RequestMapping("/api/v1/parking-sessions")
@@ -28,6 +27,7 @@ public class ParkingSessionController {
 
     private final ParkingSessionRepository parkingSessionRepository;
     private final PricingCalculatorService pricingCalculatorService;
+    private final IncidentTicketRepository incidentTicketRepository;
 
     /**
      * GET /api/v1/parking-sessions/my-active
@@ -131,6 +131,22 @@ public class ParkingSessionController {
         
         map.put("totalFee", currentFee);
         map.put("status", ps.getStatus());
+
+        List<com.pbms.modules.incident.domain.IncidentTicket> incidentTickets = incidentTicketRepository.findBySessionId(ps.getId());
+        if (incidentTickets != null && !incidentTickets.isEmpty()) {
+            List<Map<String, Object>> incidentDetails = incidentTickets.stream()
+                .filter(t -> t.getUploadedDocUrl() != null && ("OVERSTAY".equals(t.getIssueType()) || "ZONE_VIOLATION".equals(t.getIssueType())))
+                .map(t -> {
+                    Map<String, Object> inc = new HashMap<>();
+                    inc.put("type", t.getIssueType());
+                    inc.put("urls", java.util.Arrays.asList(t.getUploadedDocUrl().split("\\|")));
+                    return inc;
+                })
+                .collect(Collectors.toList());
+            if (!incidentDetails.isEmpty()) {
+                map.put("incidentDetails", incidentDetails);
+            }
+        }
         return map;
     }
 }

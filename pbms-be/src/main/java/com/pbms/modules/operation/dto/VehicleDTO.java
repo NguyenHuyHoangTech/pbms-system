@@ -21,5 +21,6 @@ public class VehicleDTO {
     private String status;
     private Boolean isBlacklisted;
     private String blacklistReason;
+    private String blacklistEvidenceUrl;
 }
 

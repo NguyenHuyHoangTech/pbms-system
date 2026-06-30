@@ -1,11 +1,12 @@
 import { simulatedDayjs, useSystemTime, useSimulatedOffset, refreshSimulatedOffset } from '../../core/utils/timeProvider';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, Button, Typography, Space, DatePicker, message, Spin, Radio, Input, Modal, QRCode } from 'antd';
+import { Card, Button, Typography, Space, DatePicker, message, Spin, Radio, Input, Modal, QRCode, Alert } from 'antd';
 import { CarOutlined, CreditCardOutlined, CalendarOutlined, CheckCircleOutlined, EnvironmentOutlined, NumberOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
+import { getImageUrl } from '../../core/utils/imageHelper';
 
 const { Title, Text } = Typography;
 
@@ -52,7 +53,7 @@ export const PreBookingScreen = () => {
   const { data: vehicleTypesData } = useQuery({
     queryKey: ['vehicle-types', 'public'],
     queryFn: async () => {
-      const res = await axiosClient.get('/public/vehicle-types');
+      const res = await axiosClient.get('/public/vehicle-types?activeOnly=true');
       return res.data.data;
     }
   });
@@ -70,6 +71,7 @@ export const PreBookingScreen = () => {
   const allZones = zonesData || [];
   const vehicleType = VEHICLES.find((v: any) => v.id === selectedVehicle)?.typeName;
   const filteredZones = allZones.filter((z: any) => {
+    if (z.functionType !== 'WALK_IN') return false;
     if (!selectedVehicle) return true;
     if (z.vehicleTypeId) return z.vehicleTypeId === selectedVehicle;
     // Fallback if backend hasn't been restarted yet and vehicleTypeId is missing
@@ -238,7 +240,7 @@ export const PreBookingScreen = () => {
                     onClick={() => { setSelectedVehicle(v.id); setSelectedZone(null); }}
                     className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex flex-col items-center justify-center ${selectedVehicle === v.id ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white hover:border-blue-300'}`}
                   >
-                    <CarOutlined className="text-3xl mb-2" />
+                    {v.iconUrl ? <img src={getImageUrl(v.iconUrl)} className="h-10 mb-2 object-contain" /> : <CarOutlined className="text-3xl mb-2" />}
                     <span className="font-bold text-lg">{v.typeName}</span>
                   </div>
                 ))}
@@ -291,35 +293,47 @@ export const PreBookingScreen = () => {
                 <Text className="text-slate-400">Please select the Vehicle type first to see the Zonee list</Text>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredZones.map((z: any) => {
-                  const isFull = z.availableSlots === 0;
-                  return (
-                    <div
-                      key={z.id}
-                      onClick={() => !isFull && setSelectedZone(z.id)}
-                      className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
-                        isFull ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed' :
-                        selectedZone === z.id ? 'border-orange-500 bg-orange-50' : 'border-slate-200 bg-white hover:border-orange-300'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <Text strong className={`text-base ${selectedZone === z.id ? 'text-orange-700' : 'text-slate-700'}`}>{z.name}</Text>
-                        {isFull && <span className="bg-red-100 text-red-600 text-xs px-2 py-1 rounded font-bold">BOOKED</span>}
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <div className="flex-1 bg-slate-200 h-2 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full ${isFull ? 'bg-red-500' : 'bg-green-500'}`} 
-                            style={{ width: `${((z.capacity - z.availableSlots) / z.capacity) * 100}%` }}
-                          />
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredZones.map((z: any) => {
+                    const isFull = z.availableSlots === 0;
+                    return (
+                      <div
+                        key={z.id}
+                        onClick={() => !isFull && setSelectedZone(z.id)}
+                        className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
+                          isFull ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed' :
+                          selectedZone === z.id ? 'border-orange-500 bg-orange-50' : 'border-slate-200 bg-white hover:border-orange-300'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <Text strong className={`text-base ${selectedZone === z.id ? 'text-orange-700' : 'text-slate-700'}`}>{z.name}</Text>
+                          {isFull && <span className="bg-red-100 text-red-600 text-xs px-2 py-1 rounded font-bold">BOOKED</span>}
                         </div>
-                        <Text className="text-xs font-bold whitespace-nowrap">Drum {z.availableSlots}/{z.capacity}</Text>
+                        <div className="flex items-center space-x-2">
+                          <div className="flex-1 bg-slate-200 h-2 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full ${isFull ? 'bg-red-500' : 'bg-green-500'}`} 
+                              style={{ width: `${((z.capacity - z.availableSlots) / z.capacity) * 100}%` }}
+                            />
+                          </div>
+                          <Text className="text-xs font-bold whitespace-nowrap">Drum {z.availableSlots}/{z.capacity}</Text>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+                {selectedZone && (
+                  <div className="mt-4">
+                    <Alert 
+                      message="Entry Gate Notice" 
+                      description={`The selected zone is located on ${allZones.find((z: any) => z.id === selectedZone)?.floorName}. Please ensure you use the correct entry gate designated for this floor when arriving.`} 
+                      type="warning" 
+                      showIcon 
+                    />
+                  </div>
+                )}
+              </>
             )}
           </Card>
         </div>

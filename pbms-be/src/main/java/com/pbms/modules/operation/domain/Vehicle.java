@@ -41,5 +41,8 @@ public class Vehicle extends BaseEntity {
 
     @Column(name = "blacklist_reason", columnDefinition = "VARCHAR(MAX)")
     private String blacklistReason;
+
+    @Column(name = "blacklist_evidence_url", columnDefinition = "VARCHAR(MAX)")
+    private String blacklistEvidenceUrl;
 }
 

@@ -24,12 +24,14 @@ public class Slot {
     private String slotName;
 
     @Column(length = 50)
+    @Builder.Default
     private String status = "AVAILABLE"; // AVAILABLE, OCCUPIED, DISABLED
 
     @Column(name = "current_plate", length = 50)
     private String currentPlate;
 
     @Version
+    @Builder.Default
     private Integer version = 1;
 }
 

@@ -14,6 +14,12 @@ import { useAuthStore } from '../../core/store/useAuthStore';
 import { UserProfileSettingsModal } from '../shared/components/UserProfileSettingsModal';
 import { useState } from 'react';
 import { useSystemTime } from '../../core/utils/timeProvider';
+import { NotificationDropdown } from '../shared/components/NotificationDropdown';
+import { ReservationConflictModal } from './ReservationConflictModal';
+import { MonthlyZoneConflictModal } from './MonthlyZoneConflictModal';
+import { useEffect } from 'react';
+import { Client } from '@stomp/stompjs';
+import { notification } from 'antd';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -24,8 +30,59 @@ export const StaffLayout = () => {
   const email = useAuthStore((state) => state.email);
   const shiftStatus = useAuthStore((state) => state.shiftStatus);
   const name = useAuthStore((state) => state.name);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const systemTime = useSystemTime();
+  
+  // Conflict state
+  const [conflictModalVisible, setConflictModalVisible] = useState(false);
+  const [conflictData, setConflictData] = useState<any>(null);
+
+  const [monthlyConflictVisible, setMonthlyConflictVisible] = useState(false);
+  const [monthlyConflictData, setMonthlyConflictData] = useState<any>(null);
+
+  useEffect(() => {
+    const client = new Client({
+      brokerURL: 'ws://localhost:8080/ws-pbms',
+      reconnectDelay: 5000,
+      heartbeatIncoming: 4000,
+      heartbeatOutgoing: 4000,
+    });
+
+    client.onConnect = function () {
+      client.subscribe('/topic/staff/notifications', (message) => {
+        try {
+            const data = JSON.parse(message.body);
+            if (data.type === 'ZONE_CONFLICT') {
+                notification.error({
+                    message: '🚨 Zone Capacity Conflict!',
+                    description: data.message + ' (Click to resolve)',
+                    placement: 'topRight',
+                    duration: 0,
+                    onClick: () => {
+                        setConflictData(data);
+                        setConflictModalVisible(true);
+                    }
+                });
+            }
+        } catch(e) {}
+      });
+
+      client.subscribe('/topic/alerts', (message) => {
+        try {
+            const data = JSON.parse(message.body);
+            if (data.type === 'MONTHLY_ZONE_VIOLATION') {
+                setMonthlyConflictData(data);
+                setMonthlyConflictVisible(true);
+            }
+        } catch(e) {}
+      });
+    };
+
+    client.activate();
+    return () => {
+      client.deactivate();
+    };
+  }, []);
 
   const handleLogout = () => {
     if (shiftStatus === 'OPEN') {
@@ -53,9 +110,9 @@ export const StaffLayout = () => {
 
   return (
     <Layout className="min-h-screen">
-      <Header className="bg-white px-6 flex justify-between items-center shadow-md z-10 sticky top-0 w-full h-16" style={{ backgroundColor: '#ffffff' }}>
-        <div className="flex items-center gap-4">
-          <Text strong className="text-xl text-gray-800 tracking-widest cursor-pointer" onClick={() => navigate('/staff/shift-management')}>
+      <Header className="bg-white px-4 py-2 sm:px-6 flex flex-wrap justify-between items-center gap-y-2 shadow-md z-10 sticky top-0 w-full h-auto min-h-[64px]" style={{ backgroundColor: '#ffffff', lineHeight: 'normal' }}>
+        <div className="flex items-center gap-4 shrink-0">
+          <Text strong className="text-xl text-gray-800 tracking-widest cursor-pointer whitespace-nowrap" onClick={() => navigate('/staff/shift-management')}>
             PBMS <span className="text-blue-600">STAFF</span>
           </Text>
         </div>
@@ -100,7 +157,7 @@ export const StaffLayout = () => {
           </Button>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {/* System Clock */}
           <div className="flex items-center gap-2 bg-slate-800 text-white px-4 py-1.5 rounded-lg shadow font-mono text-sm select-none">
             <ClockCircleOutlined className="text-blue-400 animate-pulse" />
@@ -112,6 +169,8 @@ export const StaffLayout = () => {
             </div>
           </div>
 
+          <NotificationDropdown />
+
           <Dropdown menu={userMenu} placement="bottomRight" arrow>
             <div className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 px-3 py-1 rounded transition-colors border border-gray-200">
               <Avatar icon={<UserOutlined />} className="bg-blue-600" />
@@ -121,13 +180,26 @@ export const StaffLayout = () => {
         </div>
       </Header>
       
-      <Content className="bg-gray-100 m-0 w-full">
+      <Content className="bg-gray-100 m-0 w-full flex flex-col h-[calc(100vh-64px)]">
         <Outlet />
       </Content>
+
 
       <UserProfileSettingsModal 
         isOpen={isSettingsOpen} 
         onClose={() => setIsSettingsOpen(false)} 
+      />
+
+      <ReservationConflictModal
+        visible={conflictModalVisible}
+        onClose={() => setConflictModalVisible(false)}
+        conflictData={conflictData}
+      />
+
+      <MonthlyZoneConflictModal
+        visible={monthlyConflictVisible}
+        onClose={() => setMonthlyConflictVisible(false)}
+        conflictData={monthlyConflictData}
       />
     </Layout>
   );

@@ -5,6 +5,7 @@ import { useMutation, useQuery, QueryClient, QueryClientProvider } from '@tansta
 import axios from 'axios';
 import dayjs from 'dayjs';
 import { Client } from '@stomp/stompjs';
+import { SimulatorMap } from './SimulatorMap';
 
 const { Title, Text } = Typography;
 
@@ -231,14 +232,9 @@ const App = () => {
     if (vehicleTypes.length > 0 && selectedVehicleTypeIdForOut === null) setSelectedVehicleTypeIdForOut(vehicleTypes[0].id);
   }, [floors, vehicleTypes, selectedFloorIdForOut, selectedVehicleTypeIdForOut]);
 
-  // Generate Image OUT when a session is selected
-  const [checkoutImages, setCheckoutImages] = useState<{ panorama: string | null, lpr: string | null }>({ panorama: null, lpr: null });
   React.useEffect(() => {
     if (selectedSession) {
       const typeStr = vehicleTypes.find((v: any) => v.id === selectedSession.vehicleTypeId)?.typeName || '';
-      const pano = generateMockLicensePlateImage(selectedSession.plate, 'OUT', typeStr);
-      const lpr = generateMockLprImage(selectedSession.plate);
-      setCheckoutImages({ panorama: pano, lpr: lpr });
       
       // Auto prefill form
       checkoutForm.setFieldsValue({
@@ -247,372 +243,11 @@ const App = () => {
         vehicleType: typeStr
       });
     } else {
-      setCheckoutImages({ panorama: null, lpr: null });
       checkoutForm.resetFields();
     }
   }, [selectedSessionIdForOut, selectedSession?.plate, vehicleTypes.length]);
 
 
-  const renderMonthlyTicketInTab = () => {
-    // 1. Filter monthly tickets
-    const filteredTickets = selectedMonthlyType 
-      ? monthlyTickets.filter((m: any) => m.vehicleType?.id === selectedMonthlyType)
-      : monthlyTickets;
-
-    // 2. Selected Ticket details
-    const selectedTicket = monthlyTickets.find((m: any) => m.id === selectedMonthlyId);
-
-    // 3. Filter gates
-    const availableGates = gates.filter((g: any) => g.gateType === 'IN' || g.gateType === 'IN_OUT' || g.gateType === 'ENTRY');
-
-    const handleSubmitMonthlyIn = () => {
-      if (!selectedMonthlyId) return message.error("Please select a monthly pass vehicle!");
-      if (!selectedMonthlyGate) return message.error("Please select an entry gate!");
-
-      const payload = {
-        gateId: selectedMonthlyGate,
-        actionType: 'IN',
-        plateNumber: selectedTicket.plate,
-        vehicleType: selectedTicket.vehicleType?.typeName || 'Passenger Car',
-        rfid: `RF-MTH-${selectedTicket.id}`,
-        imageBase64: generateMockLicensePlateImage(selectedTicket.plate || '', 'IN', selectedTicket.vehicleType?.typeName),
-        lprImageBase64: generateMockLprImage(selectedTicket.plate || ''),
-        customerType: 'MONTHLY'
-      };
-
-      triggerApiMutation.mutate(payload);
-    };
-
-    return (
-      <Card className="bg-white border-gray-200 rounded-xl" title={<span className="text-purple-500 font-bold">Monthly Pass Entry Flow</span>}>
-        <Row gutter={[24, 24]}>
-          <Col span={8}>
-            <div className="bg-slate-50 p-4 rounded-lg border border-gray-200">
-              <Title level={5} className="mb-4 text-gray-700">1. Select Vehicle Type</Title>
-              <Select 
-                className="w-full mb-4" 
-                placeholder="-- All vehicle types --" 
-                allowClear
-                value={selectedMonthlyType} 
-                onChange={setSelectedMonthlyType}
-              >
-                {Array.from(new Set(monthlyTickets.map((m: any) => JSON.stringify(m.vehicleType)))).filter(Boolean).map((vtStr: any) => {
-                  try {
-                    const vt = JSON.parse(vtStr as string);
-                    if (!vt) return null;
-                    return <Select.Option key={vt.id} value={vt.id}>{vt.typeName}</Select.Option>;
-                  } catch(e) { return null; }
-                })}
-              </Select>
-
-              <Title level={5} className="mb-4 text-gray-700">2. Select Monthly Pass Vehicle</Title>
-              <div className="max-h-64 overflow-y-auto bg-white border rounded">
-                {filteredTickets.length === 0 ? (
-                  <div className="p-4 text-center text-gray-400">No monthly pass available.</div>
-                ) : (
-                  filteredTickets.map((m: any) => (
-                    <div 
-                      key={m.id} 
-                      className={`p-3 border-b cursor-pointer transition-colors ${selectedMonthlyId === m.id ? 'bg-purple-100 border-purple-300' : 'hover:bg-gray-50'}`}
-                      onClick={() => {
-                        setSelectedMonthlyId(m.id);
-                        setSelectedMonthlyGate(null);
-                      }}
-                    >
-                      <div className="font-bold text-lg">{m.plate || 'Unknown'}</div>
-                      <div className="text-xs text-gray-500">Guest: {m.customerName || 'N/A'}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </Col>
-
-          <Col span={16}>
-            <div className="bg-slate-50 p-4 rounded-lg border border-gray-200 h-full">
-              <Title level={5} className="mb-4 text-gray-700">3. Entry Info</Title>
-              
-              {!selectedTicket ? (
-                <div className="h-40 flex items-center justify-center text-gray-400">Please select a monthly vehicle on the left</div>
-              ) : (
-                <Form layout="vertical">
-                  <Row gutter={16}>
-                    <Col span={12}>
-                      <Form.Item label="License Plate">
-                        <Input readOnly value={selectedTicket.plate} className="bg-gray-100 font-mono font-bold text-lg" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={12}>
-                      <Form.Item label="Vehicle Type">
-                        <Input readOnly value={selectedTicket.vehicleType?.typeName || 'Unknown'} className="bg-gray-100" />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-
-                  <Row gutter={16}>
-                    <Col span={12}>
-                      <Form.Item label="Owner">
-                        <Input readOnly value={selectedTicket.customerName || 'N/A'} className="bg-purple-50 text-purple-700 font-bold" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={12}>
-                      <Form.Item label="Entry Gate" required>
-                        <Select 
-                          value={selectedMonthlyGate} 
-                          onChange={setSelectedMonthlyGate}
-                          placeholder="-- Select entry gate --"
-                        >
-                          {availableGates.map((g: any) => (
-                            <Select.Option key={g.id} value={g.id}>
-                              {g.gateName} (Tầng ID: {g.floorId})
-                            </Select.Option>
-                          ))}
-                        </Select>
-                      </Form.Item>
-                    </Col>
-                  </Row>
-
-                  <Row gutter={16} align="middle">
-                    <Col span={16}>
-                      <Form.Item label="RFID Card - System auto" required>
-                        <Input value={`RF-MTH-${selectedTicket.id}`} readOnly />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-
-                  <div className="mt-4 mb-6">
-                    <Text strong className="block mb-2">Camera Image (Auto-simulated):</Text>
-                    <Row gutter={16}>
-                      <Col span={16}>
-                        <div className="border border-gray-300 rounded overflow-hidden">
-                          <img 
-                            src={generateMockLicensePlateImage(selectedTicket?.plate || '', 'IN', selectedTicket?.vehicleType?.typeName)} 
-                            alt="Camera Panorama" 
-                            className="w-full h-auto"
-                          />
-                        </div>
-                      </Col>
-                      <Col span={8}>
-                        <div className="border border-gray-300 rounded overflow-hidden flex items-center justify-center bg-gray-50 h-full">
-                          <img 
-                            src={generateMockLprImage(selectedTicket?.plate || '')} 
-                            alt="Camera LPR" 
-                            className="w-full object-contain"
-                          />
-                        </div>
-                      </Col>
-                    </Row>
-                  </div>
-
-                  <Button 
-                    type="primary" 
-                    size="large" 
-                    icon={<SendOutlined />} 
-                    block 
-                    onClick={handleSubmitMonthlyIn}
-                    loading={triggerApiMutation.isPending}
-                    className="bg-purple-500"
-                  >
-                    Xác Nhận Monthly Pass Vehicle Vào Bãi
-                  </Button>
-                </Form>
-              )}
-            </div>
-          </Col>
-        </Row>
-      </Card>
-    );
-  };
-
-  const renderPreBookedInTab = () => {
-    // 1. Filter reservations by type
-    const activeReservations = reservations.filter((r: any) => r.status === 'ACTIVE' || r.status === 'PENDING');
-    const filteredReservations = selectedPreBookType 
-      ? activeReservations.filter((r: any) => r.vehicle?.vehicleType?.id === selectedPreBookType)
-      : activeReservations;
-
-    // 2. Selected Reservation details
-    const selectedRes = activeReservations.find((r: any) => r.id === selectedReservationId);
-
-    // 3. Filter gates by floor of reserved zone
-    let availableGates = gates.filter((g: any) => g.gateType === 'IN' || g.gateType === 'IN_OUT' || g.gateType === 'ENTRY');
-    if (selectedRes && selectedRes.zone && selectedRes.zone.floorId) {
-      availableGates = availableGates.filter((g: any) => g.floorId === selectedRes.zone.floorId);
-    }
-
-    const handleGetRandomCardPreBook = () => {
-      if (availableCards.length > 0) {
-        const randomCard = availableCards[Math.floor(Math.random() * availableCards.length)];
-        setPreBookRfid(randomCard);
-      } else {
-        message.warning('No available card in system'); // will be message.warning
-      }
-    };
-
-    const handleSubmitPreBookIn = () => {
-      if (!selectedReservationId) return message.error("Please select reserved vehicle!");
-      if (!selectedPreBookGate) return message.error("Please select an entry gate!");
-      if (!preBookRfid) return message.error("Please take a new card!");
-
-      const payload = {
-        gateId: selectedPreBookGate,
-        actionType: 'IN',
-        plateNumber: selectedRes.vehicle?.plateNumber,
-        vehicleType: selectedRes.vehicle?.vehicleType?.typeName || 'Passenger Car',
-        rfid: preBookRfid,
-        imageBase64: generateMockLicensePlateImage(selectedRes.vehicle?.plateNumber || '', 'IN', selectedRes.vehicle?.vehicleType?.typeName),
-        lprImageBase64: generateMockLprImage(selectedRes.vehicle?.plateNumber || ''),
-        customerType: 'PREBOOKED'
-      };
-
-      triggerApiMutation.mutate(payload);
-    };
-
-    return (
-      <Card className="bg-white border-gray-200 rounded-xl" title={<span className="text-blue-500 font-bold">Reservation Entry Flow</span>}>
-        <Row gutter={[24, 24]}>
-          <Col span={8}>
-            <div className="bg-slate-50 p-4 rounded-lg border border-gray-200">
-              <Title level={5} className="mb-4 text-gray-700">1. Select Vehicle Type</Title>
-              <Select 
-                className="w-full mb-4" 
-                placeholder="-- All vehicle types --" 
-                allowClear
-                value={selectedPreBookType} 
-                onChange={setSelectedPreBookType}
-              >
-                {Array.from(new Set(activeReservations.map((r: any) => JSON.stringify(r.vehicle?.vehicleType)))).filter(Boolean).map((vtStr: any) => {
-                  try {
-                    const vt = JSON.parse(vtStr);
-                    if (!vt) return null;
-                    return <Select.Option key={vt.id} value={vt.id}>{vt.typeName}</Select.Option>;
-                  } catch(e) { return null; }
-                })}
-              </Select>
-
-              <Title level={5} className="mb-4 text-gray-700">2. Select Reserved Vehicle</Title>
-              <div className="max-h-64 overflow-y-auto bg-white border rounded">
-                {filteredReservations.length === 0 ? (
-                  <div className="p-4 text-center text-gray-400">No reserved vehicle available.</div>
-                ) : (
-                  filteredReservations.map((r: any) => (
-                    <div 
-                      key={r.id} 
-                      className={`p-3 border-b cursor-pointer transition-colors ${selectedReservationId === r.id ? 'bg-blue-100 border-blue-300' : 'hover:bg-gray-50'}`}
-                      onClick={() => {
-                        setSelectedReservationId(r.id);
-                        setSelectedPreBookGate(null); // Reset gate when reservation changes
-                        setPreBookRfid('');
-                      }}
-                    >
-                      <div className="font-bold text-lg">{r.vehicle?.plateNumber || 'Unknown'}</div>
-                      <div className="text-xs text-gray-500">Zone: <Tag color="blue">{r.zone?.zoneName || 'N/A'}</Tag></div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </Col>
-
-          <Col span={16}>
-            <div className="bg-slate-50 p-4 rounded-lg border border-gray-200 h-full">
-              <Title level={5} className="mb-4 text-gray-700">3. Entry Info</Title>
-              
-              {!selectedRes ? (
-                <div className="h-40 flex items-center justify-center text-gray-400">Please select a reserved vehicle on the left</div>
-              ) : (
-                <Form layout="vertical">
-                  <Row gutter={16}>
-                    <Col span={12}>
-                      <Form.Item label="License Plate">
-                        <Input readOnly value={selectedRes.vehicle?.plateNumber} className="bg-gray-100 font-mono font-bold text-lg" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={12}>
-                      <Form.Item label="Vehicle Type">
-                        <Input readOnly value={selectedRes.vehicle?.vehicleType?.typeName || 'Unknown'} className="bg-gray-100" />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-
-                  <Row gutter={16}>
-                    <Col span={12}>
-                      <Form.Item label="Reserved Zone">
-                        <Input readOnly value={selectedRes.zone?.zoneName || 'N/A'} className="bg-blue-50 text-blue-700 font-bold" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={12}>
-                      <Form.Item label="Entry Gate (Filtered by Zone floor)" required>
-                        <Select 
-                          value={selectedPreBookGate} 
-                          onChange={setSelectedPreBookGate}
-                          placeholder="-- Select entry gate --"
-                          notFoundContent="No IN/IN_OUT gate on this floor"
-                        >
-                          {availableGates.map((g: any) => (
-                            <Select.Option key={g.id} value={g.id}>
-                              {g.gateName} (Tầng ID: {g.floorId})
-                            </Select.Option>
-                          ))}
-                        </Select>
-                      </Form.Item>
-                    </Col>
-                  </Row>
-
-                  <Row gutter={16} align="middle">
-                    <Col span={16}>
-                      <Form.Item label="RFID Card" required>
-                        <Input value={preBookRfid} readOnly placeholder="Press button to get card" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Button type="dashed" onClick={handleGetRandomCardPreBook} className="mt-1" block icon={<SyncOutlined />}>Get system card</Button>
-                    </Col>
-                  </Row>
-
-                  <div className="mt-4 mb-6">
-                    <Text strong className="block mb-2">Camera Image (Auto-simulated):</Text>
-                    <Row gutter={16}>
-                      <Col span={16}>
-                        <div className="border border-gray-300 rounded overflow-hidden">
-                          <img 
-                            src={generateMockLicensePlateImage(selectedRes?.vehicle?.plateNumber || '', 'IN', selectedRes?.vehicle?.vehicleType?.typeName)} 
-                            alt="Camera Panorama" 
-                            className="w-full h-auto"
-                          />
-                        </div>
-                      </Col>
-                      <Col span={8}>
-                        <div className="border border-gray-300 rounded overflow-hidden flex items-center justify-center bg-gray-50 h-full">
-                          <img 
-                            src={generateMockLprImage(selectedRes?.vehicle?.plateNumber || '')} 
-                            alt="Camera LPR" 
-                            className="w-full object-contain"
-                          />
-                        </div>
-                      </Col>
-                    </Row>
-                  </div>
-
-                  <Button 
-                    type="primary" 
-                    size="large" 
-                    icon={<SendOutlined />} 
-                    block 
-                    onClick={handleSubmitPreBookIn}
-                    loading={triggerApiMutation.isPending}
-                    className="bg-blue-500"
-                  >
-                    Xác Nhận Reserved Vehicle Vào Bãi
-                  </Button>
-                </Form>
-              )}
-            </div>
-          </Col>
-        </Row>
-      </Card>
-    );
-  };
 
   const renderInteractiveCheckoutTab = () => {
     const currentCheckoutPlate = Form.useWatch('plate', checkoutForm);
@@ -800,10 +435,7 @@ const App = () => {
   const availableVehicleTypes = React.useMemo(() => {
     if (!selectedGate) return vehicleTypes;
     return vehicleTypes.filter((v: any) => {
-      if (selectedGate.vehicleTypeId && selectedGate.vehicleTypeId !== v.id) {
-        return false;
-      }
-      if (selectedGate.floorType && v.category !== selectedGate.floorType) {
+      if (selectedGate.floorType && selectedGate.floorType !== 'ALL' && v.category !== selectedGate.floorType) {
         return false;
       }
       return true;
@@ -812,7 +444,6 @@ const App = () => {
 
 
   const handleRandomPlate = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     const nums = '0123456789';
     let plate = '30A-';
     plate += nums.charAt(Math.floor(Math.random() * nums.length));
@@ -1163,13 +794,6 @@ const App = () => {
 
 
   const renderSensorTab = () => {
-    const activeFloor = floors.find((f: any) => f.id === selectedFloorId);
-    const floorZones = zones.filter((z: any) => z.floorId === selectedFloorId);
-    
-    // Calculate grid scaling
-    // We scale down the map so it fits nicely. For example 1 col = 30px
-    const CELL_SIZE = 30;
-    
     return (
       <Card className="bg-white border-gray-200 rounded-xl h-full min-h-[600px]" 
             title={
@@ -1185,98 +809,15 @@ const App = () => {
               </div>
             }>
         
-        <div className="mb-4 flex gap-4 text-sm text-gray-500">
-          <div className="flex items-center"><div className="w-3 h-3 bg-red-500 rounded-full mr-2 shadow-[0_0_8px_rgba(239,68,68,0.8)]"></div> Occupied</div>
-          <div className="flex items-center"><div className="w-3 h-3 bg-green-500 rounded-full mr-2 shadow-[0_0_8px_rgba(34,197,94,0.8)]"></div> Available</div>
-          <div className="flex items-center"><div className="w-3 h-3 bg-orange-500 rounded-full mr-2 shadow-[0_0_8px_rgba(249,115,22,0.8)]"></div> Reserved</div>
-          <div className="flex items-center"><div className="w-3 h-3 bg-gray-500 rounded-full mr-2 shadow-[0_0_8px_rgba(107,114,128,0.8)]"></div> Disabled</div>
-        </div>
-        
-        <div className="overflow-auto bg-slate-50 border border-gray-200 p-4 rounded-xl flex items-start justify-start relative shadow-inner" style={{ minHeight: '500px', backgroundImage: 'radial-gradient(circle at 1px 1px, #cbd5e1 1px, transparent 0)', backgroundSize: '20px 20px' }}>
-          {activeFloor && (
-            <div 
-              className="relative bg-white border border-dashed border-gray-300 rounded"
-              style={{
-                width: activeFloor.mapCols * CELL_SIZE,
-                height: activeFloor.mapRows * CELL_SIZE,
-                boxShadow: 'inset 0 0 50px rgba(0,0,0,0.5)'
-              }}
-            >
-              {floorZones.map((zone: any) => {
-                // Get vehicle size to determine slot dimensions
-                // For simplicity in this tool, assume standard car slot is 3x6 cells, bike is 1x3 cells
-                const vType = vehicleTypes.find((vt: any) => vt.id === zone.vehicleTypeId);
-                const slotW = (vType?.matrixWidth || 3) * CELL_SIZE;
-                const slotH = (vType?.matrixHeight || 6) * CELL_SIZE;
-                
-                const zoneSlots = slots.filter((s: any) => s.zoneId === zone.id);
-                // Capacity fallback if slots length is smaller, but usually zoneSlots.length is real capacity
-                const capacity = Math.max(zone.capacity || 0, zoneSlots.length);
-                
-                let zoneW = capacity * slotW;
-                let zoneH = slotH;
-
-                // Handle rotation visually (If rotation is 90/270, swap W/H)
-                const isRotated = zone.rotation === 90 || zone.rotation === 270;
-                if (isRotated) {
-                  zoneW = slotH;
-                  zoneH = capacity * slotW;
-                }
-
-                return (
-                  <div 
-                    key={zone.id}
-                    className="absolute border border-gray-300 bg-gray-100/50 rounded flex items-center justify-center p-1"
-                    style={{
-                      left: zone.layoutX || 0,
-                      top: zone.layoutY || 0,
-                      width: zoneW,
-                      height: zoneH,
-                      transform: isRotated ? `rotate(${zone.rotation}deg)` : 'none',
-                      transformOrigin: 'top left', // This matches Konva default origin roughly if layout X/Y are top-left
-                    }}
-                  >
-                    <div className="absolute -top-6 left-0 text-blue-700 font-bold text-xs bg-white/80 px-1 rounded shadow-sm z-10 whitespace-nowrap">
-                      {zone.zoneName}
-                    </div>
-
-                    <div className="flex w-full h-full" style={{ flexDirection: 'row' }}>
-                      {zoneSlots.map((slot: any) => {
-                        let bgColor = 'bg-green-500/20 border-green-500';
-                        let textColor = 'text-green-300';
-                        if (slot.status === 'OCCUPIED') {
-                          bgColor = 'bg-red-500/30 border-red-500 shadow-[inset_0_0_15px_rgba(239,68,68,0.5)]';
-                          textColor = 'text-red-200';
-                        } else if (slot.status === 'DISABLED') {
-                          bgColor = 'bg-gray-500/20 border-gray-300';
-                          textColor = 'text-gray-500';
-                        }
-
-                        return (
-                          <div 
-                            key={slot.id}
-                            onClick={() => toggleSlot(slot)}
-                            className={`flex-1 border-2 m-[1px] rounded flex flex-col items-center justify-center cursor-pointer transition-all hover:brightness-125 ${bgColor}`}
-                          >
-                            <span className={`font-bold text-[10px] ${textColor}`}>{slot.slotName}</span>
-                            {slot.status === 'OCCUPIED' && slot.currentPlate && (
-                              <span className="text-[9px] bg-black/60 px-1 rounded mt-1 text-white truncate max-w-full font-mono border border-gray-300">{slot.currentPlate}</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {!activeFloor && (
-            <div className="w-full h-full flex items-center justify-center text-gray-500">
-              Chưa tải được dữ liệu tầng
-            </div>
-          )}
-        </div>
+        <SimulatorMap 
+          floors={floors}
+          zones={zones}
+          gates={gates}
+          slots={slots}
+          vehicleTypes={vehicleTypes}
+          selectedFloorId={selectedFloorId}
+          toggleSlot={toggleSlot}
+        />
       </Card>
     );
   };

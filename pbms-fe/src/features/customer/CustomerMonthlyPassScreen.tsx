@@ -17,8 +17,7 @@ const PACKAGES = [
 ];
 
 const GATEWAYS = [
-  { id: 'PAYPAL', name: 'PayPal Sandbox', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' },
-  { id: 'PAYOS', name: 'PayOS', icon: 'https://payos.vn/wp-content/uploads/sites/13/2023/07/payos-logo.svg' }
+  { id: 'PAYPAL', name: 'PayPal Sandbox', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' }
 ];
 
 export const CustomerMonthlyPassScreen = () => {
@@ -48,11 +47,23 @@ export const CustomerMonthlyPassScreen = () => {
     }
   });
 
-  const dynamicVehicles = pricingPolicies.map((p: any) => ({
-    id: p.vehicleTypeId,
-    name: p.policyName.replace('Price list ', ''), // Shorten name
-    pricePerMonth: p.monthlyRate || 0
-  }));
+  const { data: vehicleTypes = [] } = useQuery({
+    queryKey: ['public-vehicle-types'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/public/vehicle-types');
+      return res.data.data || [];
+    }
+  });
+
+  const dynamicVehicles = pricingPolicies.map((p: any) => {
+    const vt = vehicleTypes.find((v: any) => v.id === p.vehicleTypeId);
+    return {
+      id: p.vehicleTypeId,
+      name: vt?.typeName || p.policyName.replace(/Bảng giá |Price list /gi, ''),
+      iconUrl: vt?.iconUrl,
+      pricePerMonth: p.monthlyRate || 0
+    };
+  });
 
   // Auto fill name if available from store
   useEffect(() => {
@@ -155,6 +166,13 @@ export const CustomerMonthlyPassScreen = () => {
     return () => clearTimeout(timer);
   }, [isQRModalVisible, isPaymentSuccess, paymentOrderId, countdown]);
 
+  const getImageUrl = (url: string) => {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    const baseUrl = import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api/v1', '') : 'http://localhost:8080';
+    return `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col relative pb-10">
       <div className="p-4 md:p-6 bg-white shadow-sm sticky top-0 z-10 border-b border-slate-200">
@@ -170,7 +188,7 @@ export const CustomerMonthlyPassScreen = () => {
         <div className="lg:col-span-2 space-y-6">
           
           {/* 1. Personal Information */}
-          <Card title={<><UserOutlined className="mr-2 text-blue-500"/>1e Ticket holder information</>} className="shadow-sm rounded-xl border-slate-200">
+          <Card title={<><UserOutlined className="mr-2 text-blue-500"/>1. Ticket holder information</>} className="shadow-sm rounded-xl border-slate-200">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <Text className="block font-bold mb-2 text-slate-700">Full name:</Text>
@@ -196,7 +214,7 @@ export const CustomerMonthlyPassScreen = () => {
           </Card>
 
           {/* 2. Vehicle Information */}
-          <Card title={<><CarOutlined className="mr-2 text-green-500"/>2e Vehicle registration</>} className="shadow-sm rounded-xl border-slate-200">
+          <Card title={<><CarOutlined className="mr-2 text-green-500"/>2. Vehicle registration</>} className="shadow-sm rounded-xl border-slate-200">
             <div className="mb-6">
               <Text className="block font-bold mb-3 text-slate-700">Vehicle Type:</Text>
               {isPricingLoading ? (
@@ -209,9 +227,13 @@ export const CustomerMonthlyPassScreen = () => {
                       onClick={() => setSelectedVehicle(v.id)}
                       className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex flex-col items-center justify-center ${selectedVehicle === v.id ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200 bg-white hover:border-green-300'}`}
                     >
-                      <CarOutlined className="text-3xl mb-2" />
+                      {v.iconUrl ? (
+                        <img src={getImageUrl(v.iconUrl)} alt={v.name} className="h-10 w-10 object-contain mb-2" />
+                      ) : (
+                        <CarOutlined className="text-3xl mb-2" />
+                      )}
                       <span className="font-bold text-lg mb-1">{v.name}</span>
-                      <span className="text-sm text-slate-500">{v.pricePerMonth.toLocaleString()}  d/month</span>
+                      <span className="text-sm text-slate-500">{v.pricePerMonth.toLocaleString()} VND/month</span>
                     </div>
                   ))}
                 </div>
@@ -219,7 +241,7 @@ export const CustomerMonthlyPassScreen = () => {
             </div>
 
             <div>
-              <Text className="block font-bold mb-2 text-slate-700">License Plate xe:</Text>
+              <Text className="block font-bold mb-2 text-slate-700">License Plate:</Text>
               <Input 
                 size="large" 
                 prefix={<NumberOutlined className="text-slate-400" />}
@@ -281,32 +303,32 @@ export const CustomerMonthlyPassScreen = () => {
                 
                 <div className="flex justify-between border-b border-dashed border-slate-200 pb-3">
                   <Text className="text-slate-500">Vehicle Type:</Text>
-                  <Text strong className="text-slate-800">{vehicleConfig?.name || '---'} <span className="text-slate-400 font-normal">({plateNumber || 'Haven\'t entered the sea yet'})</span></Text>
+                  <Text strong className="text-slate-800">{vehicleConfig?.name || '---'} <span className="text-slate-400 font-normal">({plateNumber || 'Not entered yet'})</span></Text>
                 </div>
                 
                 <div className="flex justify-between border-b border-dashed border-slate-200 pb-3">
                   <Text className="text-slate-500">Duration:</Text>
                   <Text strong className="text-slate-800 text-right">
-                    {selectedDuration}  month
+                    {selectedDuration} month(s)
                                                           <br/><span className="text-xs text-blue-500 font-normal">({startDate.format('DD/MM/YYYY')} - {endDate.format('DD/MM/YYYY')})</span>
                   </Text>
                 </div>
 
                 <div className="flex justify-between mt-2">
                   <Text className="text-slate-500">Basic fee:</Text>
-                  <Text strong className="text-slate-700">{baseFee.toLocaleString()} ₫</Text>
+                  <Text strong className="text-slate-700">{baseFee.toLocaleString()} VND</Text>
                 </div>
 
                 {discountAmount > 0 && (
                   <div className="flex justify-between">
                     <Text className="text-green-500">Special discount:</Text>
-                    <Text strong className="text-green-600">- {discountAmount.toLocaleString()} ₫</Text>
+                    <Text strong className="text-green-600">- {discountAmount.toLocaleString()} VND</Text>
                   </div>
                 )}
                 
                 <div className="bg-slate-50 p-4 rounded-lg mt-2 flex justify-between items-center border border-slate-200">
-                  <Text strong className="text-slate-600">TOTAL MONEY:</Text>
-                  <Text className="text-2xl font-black text-blue-600">{totalFee.toLocaleString()} ₫</Text>
+                  <Text strong className="text-slate-600">TOTAL AMOUNT:</Text>
+                  <Text className="text-2xl font-black text-blue-600">{totalFee.toLocaleString()} VND</Text>
                 </div>
               </Space>
             </Card>
@@ -339,7 +361,7 @@ export const CustomerMonthlyPassScreen = () => {
               onClick={handleConfirm}
             >
               
-                                        Confirm REGISTRATION
+                                        Confirm Registration
                                       </Button>
           </div>
         </div>
@@ -381,11 +403,7 @@ export const CustomerMonthlyPassScreen = () => {
               
               <div className="text-2xl font-black text-blue-600 mb-2">{totalFee.toLocaleString()} VND</div>
               <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg break-all px-2 text-xs">
-                {selectedGateway === 'PAYPAL' ? (
-                  <a href={paymentUrl} target="_blank" rel="noreferrer">Open PayPal Checkout</a>
-                ) : (
-                  <a href={paymentUrl} target="_blank" rel="noreferrer">Open PayOS Checkout</a>
-                )}
+                <a href={paymentUrl} target="_blank" rel="noreferrer">Open PayPal Checkout</a>
               </Text>
               
               <div className="flex items-center justify-center space-x-2 text-slate-600">
@@ -398,7 +416,7 @@ export const CustomerMonthlyPassScreen = () => {
               <CheckCircleOutlined className="text-[80px] text-green-500 mb-6" />
               <Title level={3} className="text-slate-800">Payment Success!</Title>
               <Text className="block text-slate-500 mb-2">Your Monthly Pass has been activated</Text>
-              <Text className="block text-slate-500">Moving back to Managementeee page</Text>
+              <Text className="block text-slate-500">Moving back to Management page...</Text>
             </div>
           )}
         </div>

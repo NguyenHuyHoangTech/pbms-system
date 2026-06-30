@@ -38,6 +38,7 @@ public class RoutingRuleDTO {
     @Data
     public static class BatchUpdateRequest {
         private String vehicleTypeName;
+        private Long floorId;
         private List<TimeFrameConfig> timeFrames;
     }
 

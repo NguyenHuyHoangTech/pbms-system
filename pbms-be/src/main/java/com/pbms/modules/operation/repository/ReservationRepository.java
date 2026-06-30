@@ -13,5 +13,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
     List<Reservation> findByVehicle_PlateNumberAndStatus(String plateNumber, String status);
     List<Reservation> findByStatus(String status);
     List<Reservation> findByZoneIdAndStatus(Long zoneId, String status);
+
+    @org.springframework.data.jpa.repository.Query("SELECT r FROM Reservation r WHERE r.status = :status AND r.expectedEntryTime BETWEEN :start AND :end")
+    List<Reservation> findUpcomingReservations(@org.springframework.data.repository.query.Param("status") String status, @org.springframework.data.repository.query.Param("start") java.time.LocalDateTime start, @org.springframework.data.repository.query.Param("end") java.time.LocalDateTime end);
 }
 

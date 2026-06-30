@@ -115,6 +115,7 @@ public class IotHardwareController {
         }
         LocalDateTime targetTime = LocalDateTime.parse(targetTimeStr);
         try {
+            LocalDateTime oldTime = TimeProvider.now();
             TimeProvider.fastForwardTo(targetTime);
             
             // Save offset to DB
@@ -127,7 +128,7 @@ public class IotHardwareController {
             messagingTemplate.convertAndSend("/topic/time-sync", (Object) wsPayload);
 
             // Publish Event to trigger cronjobs
-            eventPublisher.publishEvent(new TimeFastForwardedEvent(this, TimeProvider.now()));
+            eventPublisher.publishEvent(new TimeFastForwardedEvent(this, oldTime, TimeProvider.now()));
             
             return ResponseEntity.ok(ApiResponse.success("Current Time: " + TimeProvider.now(), "Time fast-forwarded successfully"));
         } catch (IllegalArgumentException e) {
@@ -287,6 +288,8 @@ public class IotHardwareController {
             map.put("id", v.getId());
             map.put("typeName", v.getTypeName());
             map.put("category", v.getCategory());
+            map.put("matrixWidth", v.getMatrixWidth());
+            map.put("matrixHeight", v.getMatrixHeight());
             return map;
         }).toList());
 

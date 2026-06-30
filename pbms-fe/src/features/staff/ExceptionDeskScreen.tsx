@@ -8,6 +8,7 @@ import { useAuthStore } from '../../core/store/useAuthStore';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
+import { getImageUrl } from '../../core/utils/imageHelper';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -33,6 +34,11 @@ export const ExceptionDeskScreen = () => {
   
   const [isRejectTicketModalOpen, setIsRejectTicketModalOpen] = useState(false);
   const [rejectTicketForm] = Form.useForm();
+  
+  const [searchBlacklistForm] = Form.useForm();
+  const [blacklistEvidenceFile, setBlacklistEvidenceFile] = useState<File | null>(null);
+  const [isCheckingBlacklistPlate, setIsCheckingBlacklistPlate] = useState(false);
+  const [checkedBlacklistVehicle, setCheckedBlacklistVehicle] = useState<any | null>(null);
 
   // Reset local state when selected ticket changes
   useEffect(() => { 
@@ -40,6 +46,61 @@ export const ExceptionDeskScreen = () => {
     setPicOutFile(null);
     setCardFile(null); 
   }, [selectedTicket?.id]);
+
+  // QUERY: GET /api/v1/system/configs
+  const { data: configsData = [] } = useQuery({
+    queryKey: ['system_configs'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/system/configs');
+      return res.data?.data || [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const getPenaltyConfig = (key: string, fallback: number) => {
+    const config = configsData.find((c: any) => c.configKey === key);
+    if (config && config.configValue) {
+       return parseInt(config.configValue, 10) || fallback;
+    }
+    return fallback;
+  };
+
+  const { data: mapConfigData } = useQuery({
+    queryKey: ['mapConfig'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/infrastructure/map/config');
+      return res.data?.data || null;
+    }
+  });
+
+  const [zoneViolationForm] = Form.useForm();
+  const [zoneViolationFile, setZoneViolationFile] = useState<File | null>(null);
+  const [selectedFloorId, setSelectedFloorId] = useState<number | null>(null);
+  const [selectedZoneId, setSelectedZoneId] = useState<number | null>(null);
+
+  const handleCheckBlacklistPlate = async () => {
+    try {
+      const plate = searchBlacklistForm.getFieldValue('plate');
+      if (!plate) {
+        message.warning('Please enter a license plate to check');
+        return;
+      }
+      setIsCheckingBlacklistPlate(true);
+      const res = await axiosClient.get(`/operation/vehicles/check?plate=${plate}`);
+      if (res.data && res.data.data) {
+        setCheckedBlacklistVehicle(res.data.data);
+        message.success('Vehicle found in system!');
+      } else {
+        setCheckedBlacklistVehicle(null);
+        message.warning('Vehicle not found in system. You can still add it to blacklist.');
+      }
+    } catch (e: any) {
+      setCheckedBlacklistVehicle(null);
+      message.warning('Vehicle not found in system. You can still add it to blacklist.');
+    } finally {
+      setIsCheckingBlacklistPlate(false);
+    }
+  };
 
   // QUERY: GET /api/v1/incidents
   const { data: ticketsData = [] } = useQuery({
@@ -50,6 +111,17 @@ export const ExceptionDeskScreen = () => {
     },
     refetchInterval: 3000 // Poll every 3 seconds
   });
+
+  const { data: vehiclesData = [] } = useQuery({
+    queryKey: ['vehicles_blacklist'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/operation/vehicles');
+      return res.data?.data || [];
+    },
+    enabled: activeMenu === 'blacklist'
+  });
+
+  const blacklistedVehicles = vehiclesData.filter((v: any) => v.isBlacklisted);
 
   // Sync selectedTicket when ticketsData updates
   useEffect(() => {
@@ -88,7 +160,7 @@ export const ExceptionDeskScreen = () => {
       if (values.type === 'LOST_CARD') {
         res = await axiosClient.post('/incidents/lost-card', { 
           plate: values.plate?.toUpperCase(), 
-          fee: 200000, 
+          fee: getPenaltyConfig('PENALTY_LOST_CARD', 200000), 
           description: values.description,
           uploadedDocUrl: mockUrl
         });
@@ -189,6 +261,79 @@ export const ExceptionDeskScreen = () => {
       reader.onload = () => resolve(reader.result as string);
       reader.onerror = (error) => reject(error);
     });
+
+  const moveToOverstayMutation = useMutation({
+    mutationFn: async (id: number) => {
+      let uploadedDocUrl: string | undefined;
+      if (docFile) {
+        uploadedDocUrl = await getBase64Phase2(docFile);
+      }
+      await axiosClient.put(`/incidents/${id}/move-to-overstay`, {
+        uploadedDocUrl
+      });
+    },
+    onSuccess: () => {
+      message.success('✅ Vehicle moved to overstay zone!');
+      setSelectedTicket(null);
+      setDocFile(null);
+      queryClient.invalidateQueries({ queryKey: ['incidents'] });
+    },
+    onError: (err: any) => {
+      message.error(err.response?.data?.message || 'Error moving vehicle');
+    }
+  });
+
+  const blacklistMutation = useMutation({
+    mutationFn: async (plate: string) => {
+      await axiosClient.post(`/operation/vehicles/blacklist-by-plate`, {
+        plate,
+        reason: 'Frequent overstay or abandoned vehicle'
+      });
+    },
+    onSuccess: () => {
+      message.success('✅ Vehicle added to Blacklist!');
+      queryClient.invalidateQueries({ queryKey: ['vehicles_blacklist'] });
+    },
+    onError: (err: any) => {
+      message.error(err.response?.data?.message || 'Error adding to Blacklist');
+    }
+  });
+
+  const manualBlacklistMutation = useMutation({
+    mutationFn: async (values: any) => {
+      let evidenceUrl = '';
+      if (blacklistEvidenceFile) {
+        evidenceUrl = await getBase64(blacklistEvidenceFile);
+      }
+      await axiosClient.post(`/operation/vehicles/blacklist-by-plate`, {
+        plate: values.plate?.toUpperCase(),
+        reason: values.reason,
+        evidenceUrl
+      });
+    },
+    onSuccess: () => {
+      message.success('🎉 Vehicle added to Blacklist successfully!');
+      searchBlacklistForm.resetFields();
+      setBlacklistEvidenceFile(null);
+      setCheckedBlacklistVehicle(null);
+      queryClient.invalidateQueries({ queryKey: ['vehicles_blacklist'] });
+    },
+    onError: (err: any) => {
+      message.error(err.response?.data?.message || 'Error adding to Blacklist');
+    }
+  });
+
+  const updateConfigMutation = useMutation({
+    mutationFn: async ({ id, value }: { id: number, value: string }) => {
+      await axiosClient.put(`/system/configs/${id}`, {
+        configValue: value
+      });
+    },
+    onSuccess: () => {
+      message.success('Configuration updated successfully!');
+      queryClient.invalidateQueries({ queryKey: ['system_configs'] });
+    }
+  });
 
   const resolveMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -352,14 +497,16 @@ export const ExceptionDeskScreen = () => {
         </div>
         <div className="flex-1 overflow-x-auto lg:overflow-y-auto p-3 flex flex-row lg:flex-col gap-2 pb-1 lg:pb-3">
           {[
-            { id: 'ALL', label: 'All Incident', icon: '📋' },
-            { id: 'LOST_CARD', label: 'Report lost card', icon: '🔥' },
-            { id: 'DAMAGED_CARD', label: 'Broken / Unreadable', icon: '💳' },
-            { id: 'LPR_MISMATCH', label: 'Discrepancies in License Plate aI', icon: '🤖' },
-            { id: 'SLOT_OCCUPIED', label: 'Slot is occupied', icon: '🚗' },
-            { id: 'FIND_CAR', label: 'Car not found', icon: '🔍' },
-            { id: 'FEE_DISPUTE', label: 'Fee discrepancies', icon: '💰' },
-            { id: 'OTHER_FEEDBACK', label: 'Suggestions / Other', icon: '💬' }
+            { id: 'ALL', label: 'All Incidents', icon: '📋' },
+            { id: 'ZONE_VIOLATION', label: 'Wrong Zone Parking', icon: '🚨' },
+            { id: 'OVERSTAY', label: 'Overstay Vehicles', icon: '🕒' },
+            { id: 'LOST_CARD', label: 'Lost Card Report', icon: '🔥' },
+            { id: 'DAMAGED_CARD', label: 'Damaged / Unreadable Card', icon: '💳' },
+            { id: 'LPR_MISMATCH', label: 'LPR Mismatch', icon: '🤖' },
+            { id: 'SLOT_OCCUPIED', label: 'Slot Occupied', icon: '🚗' },
+            { id: 'FIND_CAR', label: 'Find Car', icon: '🔍' },
+            { id: 'FEE_DISPUTE', label: 'Fee Dispute', icon: '💰' },
+            { id: 'OTHER_FEEDBACK', label: 'Other Feedback', icon: '💬' }
           ].map(cat => (
              <div 
                key={cat.id} 
@@ -376,16 +523,16 @@ export const ExceptionDeskScreen = () => {
       {/* Pane 2: Ticket Queue */}
       <div className="w-full lg:w-80 bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col lg:overflow-hidden shrink-0">
         <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
-          <Text strong className="text-gray-700">Queue ({filteredTickets.length})</Text>
+          <Text strong className="text-gray-700 text-sm lg:text-base">Queue ({filteredTickets.length})</Text>
           <Button type="primary" icon={<PlusOutlined />} size="small" onClick={() => setIsManualModalOpen(true)}>At the counter</Button>
         </div>
-        <div className="flex-1 max-h-64 lg:max-h-none overflow-y-auto p-2">
+        <div className="flex-1 max-h-48 lg:max-h-none overflow-y-auto p-2">
           <List dataSource={filteredTickets} renderItem={(item: any) => (
               <div className={`p-3 mb-2 rounded-xl cursor-pointer border transition-all ${selectedTicket?.id === item.id ? 'bg-blue-50 border-blue-400 ring-2 ring-blue-100' : 'bg-white border-gray-200 hover:border-blue-300'}`} onClick={() => setSelectedTicket(item)}>
                 <div className="flex justify-between items-start mb-1"><Text strong className="text-gray-800 tracking-wider">{item.plate || item.rfid || 'HOLLOW'}</Text><Text type="secondary" className="text-xs">{item.time}</Text></div>
-                <div className="flex gap-2 mb-2">
-                  <Tag color={item.type === 'LOST_CARD' ? 'volcano' : 'orange'} className="m-0 border-0">{item.type}</Tag>
-                  <Tag color={item.phase === 1 ? 'processing' : (item.phase === 2 ? 'warning' : 'success')} className="m-0 border-0">Director {item.phase}</Tag>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  <Tag color={item.type === 'LOST_CARD' ? 'volcano' : 'orange'} className="m-0 border-0 text-[10px] sm:text-xs">{item.type}</Tag>
+                  <Tag color={item.phase === 1 ? 'processing' : (item.phase === 2 ? 'warning' : 'success')} className="m-0 border-0 text-[10px] sm:text-xs">Director {item.phase}</Tag>
                 </div>
               </div>
             )} />
@@ -394,6 +541,34 @@ export const ExceptionDeskScreen = () => {
 
       {/* Pane 3: Details */}
       <div className="w-full lg:flex-1 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+        {selectedCategory === 'OVERSTAY' && (
+          <div className="p-4 border-b border-gray-200 bg-blue-50/50 flex items-center justify-between shrink-0">
+            <div>
+              <Text strong className="text-gray-700 block text-sm">Overstay Configuration</Text>
+              <Text className="text-xs text-gray-500">The system scans overstay vehicles at 2:00 AM daily.</Text>
+            </div>
+            <div className="flex items-center gap-2">
+              <Text className="text-sm text-gray-600">Threshold (Hours):</Text>
+              <InputNumber 
+                style={{ width: 100 }}
+                defaultValue={getPenaltyConfig('OVERSTAY_HOURS_LIMIT', 72)}
+                min={1}
+                onPressEnter={(e: any) => {
+                  const config = configsData.find((c: any) => c.configKey === 'OVERSTAY_HOURS_LIMIT');
+                  if (config) {
+                    updateConfigMutation.mutate({ id: config.id, value: e.target.value });
+                  }
+                }}
+                onBlur={(e: any) => {
+                  const config = configsData.find((c: any) => c.configKey === 'OVERSTAY_HOURS_LIMIT');
+                  if (config && e.target.value) {
+                    updateConfigMutation.mutate({ id: config.id, value: e.target.value });
+                  }
+                }}
+              />
+            </div>
+          </div>
+        )}
         {selectedTicket ? (
           <div className="flex flex-col h-full lg:overflow-hidden">
             <div className="p-4 border-b bg-slate-50 flex justify-between items-start lg:items-center shrink-0 flex-col lg:flex-row gap-2 lg:gap-0">
@@ -417,28 +592,28 @@ export const ExceptionDeskScreen = () => {
                 <div className="flex flex-col gap-6 h-full justify-center">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     <Card title={<span className="font-bold text-blue-700">CUSTOMER INFORMATION SUBMITTED</span>} size="small" className="border-blue-200 bg-blue-50/30 h-full">
-                       <div className="flex gap-4 h-full items-start">
-                         <div className="flex flex-col gap-2 w-32 shrink-0">
+                       <div className="flex flex-col sm:flex-row gap-4 h-full items-start">
+                         <div className="flex flex-row sm:flex-col gap-2 w-full sm:w-32 shrink-0 overflow-x-auto pb-2 sm:pb-0">
                            {/* Vehicle In Image */}
                            {selectedTicket.sessionPicInPanorama ? (
-                             <div className="w-32 h-20 border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
+                             <div className="w-32 h-20 shrink-0 border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
                                <img src={selectedTicket.sessionPicInPanorama} alt="Photo of the car entering" className="w-full h-full object-cover" />
                                <div className="text-[10px] text-center bg-gray-100 text-gray-500 py-0.5">PHOTO OF CAR ENTERING</div>
                              </div>
                            ) : (
-                             <div className="w-32 h-20 border border-gray-300 rounded-lg bg-white flex flex-col items-center justify-center shadow-sm">
+                             <div className="w-32 h-20 shrink-0 border border-gray-300 rounded-lg bg-white flex flex-col items-center justify-center shadow-sm">
                                <CameraOutlined className="text-xl text-gray-300 mb-1" />
                                <div className="text-[10px] text-gray-400">No photos available</div>
                              </div>
                            )}
                            {/* Customer Report Image */}
                            {selectedTicket.uploadedDocUrl ? selectedTicket.uploadedDocUrl.split('|').map((url: string, idx: number) => (
-                             <div key={idx} className="w-32 h-20 border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
+                             <div key={idx} className="w-32 h-20 shrink-0 border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
                                <img src={url} alt={`Proof ${idx + 1}`} className="w-full h-full object-cover" />
                                <div className="text-[10px] text-center bg-gray-100 text-gray-500 py-0.5">PROOF {idx + 1}</div>
                              </div>
                            )) : (
-                             <div className="w-32 h-20 border border-gray-300 rounded-lg bg-white flex flex-col items-center justify-center shadow-sm">
+                             <div className="w-32 h-20 shrink-0 border border-gray-300 rounded-lg bg-white flex flex-col items-center justify-center shadow-sm">
                                <CameraOutlined className="text-xl text-gray-300 mb-1" />
                                <div className="text-[10px] text-gray-400">There is no evidence</div>
                              </div>
@@ -501,7 +676,48 @@ export const ExceptionDeskScreen = () => {
                                                                             LOOK UP VEHICLE INFORMATION
                                                                           </Button>
                       )}
-                      {!(selectedTicket.type === 'FEE_DISPUTE' && !isManager) && (
+                      {selectedTicket.type === 'OVERSTAY' ? (
+                        <>
+                          <div className="mb-2">
+                            <Text className="text-xs text-gray-500 mb-1 block">Upload photo of car in overstay zone:</Text>
+                            <Upload
+                              beforeUpload={(file) => { setDocFile(file); return false; }}
+                              onRemove={() => setDocFile(null)}
+                              maxCount={1}
+                              listType="picture"
+                            >
+                              <Button icon={<UploadOutlined />} className="w-full">Upload vehicle photo</Button>
+                            </Upload>
+                          </div>
+                          <Button 
+                            type="primary" 
+                            size="large" 
+                            className="w-full font-bold bg-blue-600 h-12 mb-2" 
+                            icon={<CheckCircleOutlined />} 
+                            onClick={() => moveToOverstayMutation.mutate(selectedTicket.id)}
+                            loading={moveToOverstayMutation.isPending}
+                          >
+                            Confirm vehicle moved
+                          </Button>
+                          <Button 
+                            danger 
+                            type="primary"
+                            size="large" 
+                            className="w-full font-bold h-12 mb-2" 
+                            icon={<CloseCircleOutlined />} 
+                            onClick={() => {
+                              Modal.confirm({
+                                title: 'Confirm Blacklist',
+                                content: `Are you sure you want to add license plate ${selectedTicket.plate} to the blacklist?`,
+                                onOk: () => blacklistMutation.mutate(selectedTicket.plate)
+                              });
+                            }}
+                            loading={blacklistMutation.isPending}
+                          >
+                            Add to Blacklist
+                          </Button>
+                        </>
+                      ) : !(selectedTicket.type === 'FEE_DISPUTE' && !isManager) && (
                         <Button type="primary" size="large" className="w-full font-bold bg-blue-600 h-12 mb-2" icon={<LockOutlined />} onClick={handleLockSessionPhase1}>
                           {selectedTicket.type === 'LOST_CARD' || selectedTicket.type === 'DAMAGED_CARD' ? 'BROWSE & LOCK SESSION' : 'Confirm Incident'}
                         </Button>
@@ -517,7 +733,7 @@ export const ExceptionDeskScreen = () => {
                 
                 let penaltyFee = Number(selectedTicket?.fineAmount ?? 0);
                 if (selectedTicket.type === 'DAMAGED_CARD' && damagedCardFault === 'CUSTOMER_FAULT') {
-                  penaltyFee = 50000;
+                  penaltyFee = getPenaltyConfig('PENALTY_DAMAGED_CARD', 50000);
                 } else if (selectedTicket.type === 'DAMAGED_CARD' && damagedCardFault === 'WEAR_TEAR') {
                   penaltyFee = 0;
                 }
@@ -884,25 +1100,271 @@ export const ExceptionDeskScreen = () => {
               )}
             </div>
           </div>
+        ) : selectedCategory === 'ZONE_VIOLATION' ? (
+          <div className="p-4 overflow-y-auto flex-1 flex flex-col xl:flex-row gap-4 bg-gray-50/50">
+            {/* Form */}
+            <Card title={<span className="text-red-600 font-bold">Issue Wrong Zone Penalty</span>} className="flex-1 shadow-sm border-red-200">
+               <Form 
+                 layout="vertical" 
+                 form={zoneViolationForm} 
+                 onFinish={(values) => createIncidentMutation.mutate({...values, type: 'ZONE_VIOLATION'})}
+                 onValuesChange={(changedValues) => {
+                   if (changedValues.vehicleCategory) {
+                     const is2W = changedValues.vehicleCategory === 'TWO_WHEEL';
+                     const key = is2W ? 'PENALTY_ZONE_VIOLATION_2W' : 'PENALTY_ZONE_VIOLATION_4W';
+                     const config = configsData.find((c: any) => c.configKey === key);
+                     const fee = config ? Number(config.configValue) : (is2W ? 50000 : 100000);
+                     zoneViolationForm.setFieldsValue({ fee });
+                   }
+                 }}
+                 initialValues={{ vehicleCategory: 'FOUR_WHEEL', fee: 100000 }}
+               >
+                 <Form.Item name="plate" label="License Plate" rules={[{ required: true, message: 'Please enter license plate' }]}>
+                   <Input size="large" className="font-mono uppercase font-bold" placeholder="E.g., 30A-123.45" />
+                 </Form.Item>
+                 <Form.Item name="vehicleCategory" label="Vehicle Type" rules={[{ required: true }]}>
+                   <Select size="large">
+                     <Select.Option value="TWO_WHEEL">2-Wheeler (Motorbike/Bicycle)</Select.Option>
+                     <Select.Option value="FOUR_WHEEL">4-Wheeler (Car/Truck)</Select.Option>
+                   </Select>
+                 </Form.Item>
+                 <Form.Item name="fee" label="Penalty Fee">
+                   <InputNumber size="large" className="w-full font-bold text-red-600" />
+                 </Form.Item>
+                 <Form.Item name="description" label="Message / Notes" rules={[{ required: true, message: 'Please enter notes' }]}>
+                   <TextArea rows={3} placeholder="Describe the violation..." />
+                 </Form.Item>
+                 <Form.Item label="Photo Evidence (Required)" required>
+                   <Upload
+                     beforeUpload={(file) => { setUploadedFile(file); return false; }}
+                     onRemove={() => setUploadedFile(null)}
+                     maxCount={1}
+                     listType="picture"
+                   >
+                     <Button icon={<UploadOutlined />}>Upload Photo</Button>
+                   </Upload>
+                 </Form.Item>
+                 <Button type="primary" danger htmlType="submit" size="large" className="w-full font-bold mt-4" loading={createIncidentMutation.isPending}>
+                   Create Penalty Incident
+                 </Button>
+               </Form>
+            </Card>
+
+            {/* Map check */}
+            <Card title={<span className="font-bold text-blue-600">Zone Cross-Check</span>} className="flex-1 shadow-sm border-blue-200">
+              <div className="flex gap-4 mb-4">
+                <Select
+                  placeholder="Select Floor"
+                  className="flex-1"
+                  options={mapConfigData?.floors?.map((f: any) => ({ label: f.name, value: f.id })) || []}
+                  value={selectedFloorId}
+                  onChange={(val) => { setSelectedFloorId(val); setSelectedZoneId(null); }}
+                />
+                <Select
+                  placeholder="Select Zone"
+                  className="flex-1"
+                  options={mapConfigData?.zones?.filter((z: any) => z.floorId === selectedFloorId).map((z: any) => ({ label: z.name, value: z.id })) || []}
+                  value={selectedZoneId}
+                  onChange={(val) => setSelectedZoneId(val)}
+                  disabled={!selectedFloorId}
+                />
+              </div>
+              <div className="bg-slate-100 p-4 rounded-xl min-h-[300px] border border-slate-200 shadow-inner">
+                {selectedZoneId ? (() => {
+                  const zone = mapConfigData?.zones?.find((z: any) => z.id === selectedZoneId);
+                  const occupiedSlots = zone?.slots?.filter((s: any) => s.status === 'OCCUPIED') || [];
+                  const suggestedVehicles = zone?.suggestedVehicles || [];
+                  
+                  if (occupiedSlots.length === 0 && suggestedVehicles.length === 0) {
+                      return <div className="text-slate-400 text-center mt-10 italic">No vehicles suggested or parked in this zone</div>;
+                  }
+                  
+                  return (
+                    <div className="flex flex-col gap-4">
+                      {suggestedVehicles.length > 0 && (
+                        <div>
+                          <div className="text-sm font-bold text-gray-500 mb-2 uppercase">Suggested Vehicles for this Zone</div>
+                          <div className="flex flex-wrap gap-2">
+                            {suggestedVehicles.map((plate: string, idx: number) => (
+                              <Tag key={`sug-${idx}`} color="blue" className="text-base py-1.5 px-3 m-0 cursor-pointer hover:opacity-80 shadow-sm" onClick={() => zoneViolationForm.setFieldsValue({ plate })}>
+                                <span className="font-mono font-bold">{plate}</span>
+                              </Tag>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {occupiedSlots.length > 0 && (
+                        <div>
+                          <div className="text-sm font-bold text-gray-500 mb-2 uppercase">Occupied Slots</div>
+                          <div className="flex flex-wrap gap-2">
+                            {occupiedSlots.map((s: any) => (
+                              <Tag key={s.id} color={s.plate ? 'red' : 'default'} className="text-base py-1.5 px-3 m-0 cursor-pointer hover:opacity-80 shadow-sm" onClick={() => zoneViolationForm.setFieldsValue({ plate: s.plate })}>
+                                {s.name}: <span className="font-mono font-bold ml-1">{s.plate || 'Unknown Plate'}</span>
+                              </Tag>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })() : (
+                  <div className="text-slate-400 text-center mt-10 italic">Select a floor and zone to view parked vehicles</div>
+                )}
+              </div>
+            </Card>
+          </div>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-8 text-center bg-slate-50"><CreditCardOutlined className="text-6xl text-slate-300 mb-4" /><Title level={4} className="text-slate-400">No Incident has been selected yet</Title><Text>Please select a Ticket in the Queue on the left</Text></div>
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-8 text-center bg-slate-50"><CreditCardOutlined className="text-6xl text-slate-300 mb-4" /><Title level={4} className="text-slate-400">No Incident selected</Title><Text>Please select a Ticket from the Queue</Text></div>
         )}
       </div>
     </div>
   );
 
+  const renderBlacklist = () => (
+    <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
+      <div className="max-w-5xl mx-auto">
+        <div className="mb-6">
+          <Title level={3}>Blacklisted Vehicles</Title>
+          <Text type="secondary">Vehicles that are not allowed to enter or have frequent overstays.</Text>
+        </div>
+
+        <Card className="mb-6 shadow-sm border-gray-200 rounded-xl" title="Search & Add to Blacklist">
+          <Form 
+            form={searchBlacklistForm} 
+            layout="vertical" 
+            onFinish={(values) => manualBlacklistMutation.mutate(values)}
+            onValuesChange={(changedValues) => {
+              if (changedValues.plate) setCheckedBlacklistVehicle(null);
+            }}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Form.Item 
+                name="plate" 
+                label="License Plate" 
+                rules={[{ required: true, message: 'Please enter a license plate' }]}
+              >
+                <div className="flex gap-2">
+                  <Input size="large" className="font-mono font-bold uppercase" placeholder="Enter License Plate (e.g., 51G-123.45)" />
+                  <Button size="large" onClick={handleCheckBlacklistPlate} loading={isCheckingBlacklistPlate}>Check</Button>
+                </div>
+              </Form.Item>
+              <Form.Item 
+                name="reason" 
+                label="Reason" 
+                rules={[{ required: true, message: 'Please enter a reason' }]}
+                className="md:col-span-2"
+              >
+                <Input size="large" placeholder="E.g., Abandoned vehicle, repeated overstay" />
+              </Form.Item>
+            </div>
+            {checkedBlacklistVehicle && (
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-100 rounded-lg text-sm flex flex-wrap gap-x-4">
+                <div><strong>Status:</strong> <Tag color={checkedBlacklistVehicle.isBlacklisted ? 'red' : 'green'}>{checkedBlacklistVehicle.isBlacklisted ? 'BLACKLISTED' : 'ACTIVE'}</Tag></div>
+                {checkedBlacklistVehicle.vehicleType && <div><strong>Type:</strong> {checkedBlacklistVehicle.vehicleType}</div>}
+                {checkedBlacklistVehicle.rfidCard && <div><strong>RFID:</strong> <Tag>{checkedBlacklistVehicle.rfidCard}</Tag></div>}
+                {checkedBlacklistVehicle.monthlyTicketStatus && <div><strong>Monthly Pass:</strong> <Tag color="blue">{checkedBlacklistVehicle.monthlyTicketStatus}</Tag></div>}
+              </div>
+            )}
+            <div className="flex flex-col md:flex-row gap-4 items-end">
+              <Form.Item label="Upload Evidence (Optional)" className="mb-0 flex-1">
+                <Upload 
+                  maxCount={1} 
+                  beforeUpload={(file) => { setBlacklistEvidenceFile(file); return false; }}
+                  onRemove={() => setBlacklistEvidenceFile(null)}
+                  listType="picture"
+                >
+                  <Button icon={<UploadOutlined />} className="w-full">Upload photo evidence</Button>
+                </Upload>
+              </Form.Item>
+              <Button 
+                type="primary" 
+                danger 
+                size="large" 
+                htmlType="submit" 
+                loading={manualBlacklistMutation.isPending}
+                className="w-full md:w-auto font-bold px-8"
+              >
+                Add to Blacklist
+              </Button>
+            </div>
+          </Form>
+        </Card>
+        
+        <Card className="shadow-sm border-gray-200 rounded-xl">
+          <List
+            dataSource={blacklistedVehicles}
+            locale={{ emptyText: 'No blacklisted vehicles' }}
+            renderItem={(item: any) => (
+              <List.Item className="border-b border-gray-100 py-4">
+                <div className="flex flex-col md:flex-row md:justify-between items-start md:items-center w-full gap-4">
+                  <div className="flex items-start md:items-center gap-4">
+                    <div className="w-16 h-16 shrink-0 bg-red-100 text-red-600 rounded-full flex items-center justify-center font-bold text-xl">
+                      {item.plate?.substring(0, 2) || 'XX'}
+                    </div>
+                    <div>
+                      <Title level={4} className="m-0 text-gray-800 tracking-wider">{item.plate}</Title>
+                      <Text className="text-gray-500 block mt-1">Vehicle Type: {item.vehicleTypeName || 'Unknown'}</Text>
+                      {item.blacklistReason && (
+                        <div className="mt-2 text-sm text-red-600 bg-red-50 px-3 py-1 rounded-md inline-block">
+                          <WarningOutlined className="mr-1" /> {item.blacklistReason}
+                        </div>
+                      )}
+                      {item.blacklistEvidenceUrl && (
+                        <div className="mt-2">
+                          <img src={item.blacklistEvidenceUrl} alt="Evidence" className="h-20 w-auto rounded border border-gray-200 object-cover" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="w-full md:w-auto">
+                    <Button 
+                      type="default" 
+                      danger
+                      className="w-full md:w-auto mt-2 md:mt-0"
+                      onClick={() => {
+                        Modal.confirm({
+                          title: 'Remove from Blacklist',
+                          content: `Are you sure you want to remove ${item.plate} from the blacklist?`,
+                          onOk: async () => {
+                            try {
+                              await axiosClient.post(`/operation/vehicles/${item.id}/unblacklist`);
+                              message.success('Vehicle removed from Blacklist');
+                              queryClient.invalidateQueries({ queryKey: ['vehicles_blacklist'] });
+                            } catch (e: any) {
+                              message.error(e.response?.data?.message || 'Error removing from blacklist');
+                            }
+                          }
+                        });
+                      }}
+                    >
+                      Remove from Blacklist
+                    </Button>
+                  </div>
+                </div>
+              </List.Item>
+            )}
+          />
+        </Card>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden bg-slate-50">
       {/* HEADER TABS */}
-      <div className="bg-white border-b border-gray-200 px-4 pt-4 shrink-0 flex items-center justify-between">
-        <div className="flex space-x-6">
-          <div className={`pb-3 px-2 cursor-pointer font-bold text-sm uppercase tracking-wide border-b-2 transition-all ${activeMenu === 'card_dispute' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`} onClick={() => setActiveMenu('card_dispute')}>
-            <WarningOutlined className="mr-2" />Resolve Incidents & Complaints
-                                </div>
+      <div className="bg-white border-b border-gray-200 px-4 pt-4 shrink-0 flex items-center justify-between overflow-x-auto whitespace-nowrap">
+        <div className="flex space-x-6 w-full pb-1">
+          <div className={`pb-2 px-2 cursor-pointer font-bold text-sm uppercase tracking-wide border-b-2 transition-all ${activeMenu === 'card_dispute' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`} onClick={() => setActiveMenu('card_dispute')}>
+            <WarningOutlined className="mr-2" />Resolve Incidents
+          </div>
+          <div className={`pb-2 px-2 cursor-pointer font-bold text-sm uppercase tracking-wide border-b-2 transition-all ${activeMenu === 'blacklist' ? 'border-red-600 text-red-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`} onClick={() => setActiveMenu('blacklist')}>
+            <WarningOutlined className="mr-2" />Blacklist
+          </div>
         </div>
       </div>
 
       {activeMenu === 'card_dispute' && renderCardDispute()}
+      {activeMenu === 'blacklist' && renderBlacklist()}
 
       <Modal 
         title="Create a Manual Incident at the Counter" 

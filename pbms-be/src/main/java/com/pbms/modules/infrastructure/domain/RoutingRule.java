@@ -37,9 +37,11 @@ public class RoutingRule {
     private java.time.LocalTime endTime;
 
     @Column(name = "is_default")
+    @Builder.Default
     private Boolean isDefault = false;
 
     @Column(name = "is_active")
+    @Builder.Default
     private Boolean isActive = true;
 }
 

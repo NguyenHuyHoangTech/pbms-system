@@ -17,9 +17,11 @@ public class RoutingRuleController {
     private final RoutingRuleService routingRuleService;
 
     @GetMapping
-    public ResponseEntity<ApiResponse<List<RoutingRuleDTO>>> getRoutingRules(@RequestParam(defaultValue = "CAR") String vehicleType) {
+    public ResponseEntity<ApiResponse<List<RoutingRuleDTO>>> getRoutingRules(
+            @RequestParam(defaultValue = "CAR") String vehicleType,
+            @RequestParam(required = false) Long floorId) {
         return ResponseEntity.ok(ApiResponse.success(
-                routingRuleService.getRoutingRulesByVehicleType(vehicleType),
+                routingRuleService.getRoutingRulesByVehicleTypeAndFloor(vehicleType, floorId),
                 "Success"
         ));
     }

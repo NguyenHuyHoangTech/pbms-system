@@ -43,6 +43,7 @@ public class Zone {
     private Integer overflowThreshold;
 
     @Column(name = "status", length = 50)
+    @Builder.Default
     private String status = "ACTIVE"; // ACTIVE, DELETED
 }
 

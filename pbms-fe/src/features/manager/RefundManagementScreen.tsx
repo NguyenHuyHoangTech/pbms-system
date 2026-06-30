@@ -36,6 +36,7 @@ interface RefundRecord {
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
+import { getImageUrl } from '../../core/utils/imageHelper';
 
 export const RefundManagementScreen = () => {
   const queryClient = useQueryClient();
@@ -413,7 +414,7 @@ export const RefundManagementScreen = () => {
                 {selectedRecord.proofUrl && (
                   <div className="mb-4 text-center">
                     <img 
-                      src={selectedRecord.proofUrl.startsWith('http') ? selectedRecord.proofUrl : `http://localhost:8080${selectedRecord.proofUrl}`} 
+                      src={getImageUrl(selectedRecord.proofUrl)}
                       alt="Proof" 
                       className="max-w-full h-auto max-h-64 rounded shadow-md border"
                     />

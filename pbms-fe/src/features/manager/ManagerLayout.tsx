@@ -22,6 +22,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore } from '../../core/store/useAuthStore';
 import { UserProfileSettingsModal } from '../shared/components/UserProfileSettingsModal';
 import { SystemClock } from '../shared/components/SystemClock';
+import { NotificationDropdown } from '../shared/components/NotificationDropdown';
 
 const { Sider, Content, Header } = Layout;
 const { Text } = Typography;
@@ -58,7 +59,6 @@ export const ManagerLayout = () => {
           { key: '/manager/space-map', label: 'Space Map', icon: <BlockOutlined /> },
           { key: '/manager/routing', label: 'Routing', icon: <NodeIndexOutlined /> },
           { key: '/manager/incidents', label: 'Incident Management', icon: <WarningOutlined /> },
-          { key: '/manager/ticket-center', label: 'Processing Center' },
         ],
       },
       {
@@ -68,6 +68,7 @@ export const ManagerLayout = () => {
         children: [
           { key: '/manager/vehicle-types', label: 'Vehicle Type' },
           { key: '/manager/pricing-config', label: 'Price Configuration' },
+          { key: '/manager/penalty-config', label: 'Penalty Configuration' },
           { key: '/manager/monthly-passes', label: 'Monthly Passes', icon: <IdcardOutlined /> },
           { key: '/manager/pre-bookings', label: 'Pre-booking Management', icon: <ScheduleOutlined /> },
         ],
@@ -124,7 +125,7 @@ export const ManagerLayout = () => {
           </div>
         </div>
         
-        <div className="flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-gray-300 [&::-webkit-scrollbar-track]:bg-transparent hover:[&::-webkit-scrollbar-thumb]:bg-gray-400">
           <Menu
             theme="light"
             mode="inline"
@@ -152,7 +153,8 @@ export const ManagerLayout = () => {
       </Sider>
       
       <Layout className="h-screen">
-        <Header className="bg-white px-6 flex justify-end items-center shadow-sm z-10 sticky top-0 w-full h-16" style={{ backgroundColor: '#ffffff' }}>
+        <Header className="bg-white px-6 flex justify-end items-center shadow-sm z-10 sticky top-0 w-full h-16" style={{ backgroundColor: '#ffffff', gap: '16px' }}>
+          <NotificationDropdown />
           <SystemClock />
         </Header>
         <Content className="bg-gray-50 m-0 h-full overflow-hidden flex flex-col">

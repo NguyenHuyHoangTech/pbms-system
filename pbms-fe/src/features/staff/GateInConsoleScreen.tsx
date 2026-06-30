@@ -8,6 +8,7 @@ import { Card, Button, message, Tag, Typography, Modal, Row, Col, Radio, Input, 
 import { CarOutlined, LockOutlined, UnlockOutlined, CheckCircleOutlined, DollarOutlined, AimOutlined, WarningOutlined, CloseCircleOutlined, QrcodeOutlined, IdcardOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import axiosClient from '../../core/api/axiosClient';
+import { getImageUrl } from '../../core/utils/imageHelper';
 import { Stage, Layer, Rect, Group, Text as KonvaText, Line } from 'react-konva';
 import Konva from 'konva';
 
@@ -33,8 +34,8 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
   const { data: vehicleTypes } = useQuery({
     queryKey: ['vehicleTypes'],
     queryFn: async () => {
-      const res = await axiosClient.get('/operation/vehicle-types');
-      return res.data.data;
+      const res = await axiosClient.get('/operation/vehicle-types?activeOnly=true');
+      return res.data?.data || [];
     }
   });
 
@@ -53,7 +54,7 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
   const [editablePlate, setEditablePlate] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
   const isProcessingRef = useRef<boolean>(false);
-  
+
   const shiftStatus = useAuthStore((state) => state.shiftStatus);
 
   // WebSocket for real-time map IoT updates
@@ -80,7 +81,7 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
   const [stageScale, setStageScale] = useState(1);
   const [mapCols] = useState(60);
   const [mapRows] = useState(40);
-  
+
   const activeSlotRef = useRef<Konva.Rect | null>(null);
   const tweenRef = useRef<Konva.Tween | null>(null);
 
@@ -90,10 +91,10 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
       const containerH = (containerRef.current?.clientHeight || 0);
       const mapW = mapCols * GRID_SIZE;
       const mapH = mapRows * GRID_SIZE;
-      
+
       const scale = Math.min(containerW / mapW, containerH / mapH) * 0.95;
       const minScaleLocked = Math.min(scale, 1);
-      
+
       setStageScale(minScaleLocked);
       setStagePos({
         x: (containerW - mapW * minScaleLocked) / 2,
@@ -114,7 +115,7 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
       const destination = `/topic/gates/${activeGate.id}/scans`;
       const notifDest = `/topic/floors/${activeGate.floorId}/notifications`;
       addLog(`Subscribed to ${destination} and ${notifDest}`);
-      
+
       const notifSub = stompClient.subscribe(notifDest, (msg) => {
         const payload = JSON.parse(msg.body);
         import('antd').then(({ notification }) => {
@@ -137,39 +138,49 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
         console.log("RECEIVED WEBSOCKET MESSAGE:", msg.body);
         const payload = JSON.parse(msg.body);
         if (payload.actionType === 'OUT') {
-            isProcessingRef.current = false;
-            return;
+          isProcessingRef.current = false;
+          return;
         }
         setLastRawPayload(payload);
-        
+
         // IOT payload contains plateNumber, imageBase64, confidence
         // For UI purposes, we'll map it to our UI state shape
         setEditablePlate(payload.plateNumber || 'UNKNOWN');
-        
+
+        // Check if pre-booked vehicle is on the wrong floor
+        let derivedWarnings: string[] = [];
+        if (payload.customerType === 'PREBOOKED' && payload.suggestedZoneId) {
+          const zones = queryClient.getQueryData<any[]>(['zonesMap']) || [];
+          const reservedZone = zones.find(z => z.id === payload.suggestedZoneId);
+          if (reservedZone && reservedZone.floorId !== activeGate.floorId) {
+            derivedWarnings.push(`WRONG FLOOR: The vehicle reserved a spot on ${reservedZone.floorName}, but is entering via a Floor ${activeGate.floorId} gate!`);
+          }
+        }
+
         setScanData({
-            plateNumber: payload.plateNumber,
-            imageBase64: payload.imageBase64 || '',
-            lprImageBase64: payload.lprImageBase64 || '',
-            imageInBase64: payload.picInPanorama || '',
-            imageOutBase64: payload.imageBase64 || '',
-            lprImageInBase64: payload.picInFace || '',
-            lprImageOutBase64: payload.lprImageBase64 || '',
-            plateNumberIn: payload.plateNumberIn || payload.plateNumber || 'UNKNOWN',
-            timeIn: payload.timeIn ? simulatedDayjs(payload.timeIn).format('DD/MM/YYYY HH:mm:ss') : '--:--',
-            timeOut: simulatedDayjs().format('DD/MM/YYYY HH:mm:ss'),
-            duration: payload.durationMinutes ? `${payload.durationMinutes} minutes` : '--',
-            feeBase: 0,
-            feePenalty: 0,
-            discount: 0,
-            expectedFee: payload.expectedFee || 0,
-            durationMinutes: payload.durationMinutes || 0,
-            isBlacklisted: false,
-            warnings: [],
-            rfid: payload.rfid || '---',
-            customerType: payload.customerType === 'PREBOOKED' ? 'BOOK' : (payload.customerType === 'MONTHLY' ? 'Monthly Pass' : (payload.customerType || 'Haunt')),
-            vehicleType: payload.vehicleType || 'CAR',
-            routing: payload.suggestedZoneName || ''
-          });
+          plateNumber: payload.plateNumber,
+          imageBase64: payload.imageBase64 || '',
+          lprImageBase64: payload.lprImageBase64 || '',
+          imageInBase64: payload.picInPanorama || '',
+          imageOutBase64: payload.imageBase64 || '',
+          lprImageInBase64: payload.picInFace || '',
+          lprImageOutBase64: payload.lprImageBase64 || '',
+          plateNumberIn: payload.plateNumberIn || payload.plateNumber || 'UNKNOWN',
+          timeIn: payload.timeIn ? simulatedDayjs(payload.timeIn).format('DD/MM/YYYY HH:mm:ss') : '--:--',
+          timeOut: simulatedDayjs().format('DD/MM/YYYY HH:mm:ss'),
+          duration: payload.durationMinutes ? `${payload.durationMinutes} minutes` : '--',
+          feeBase: 0,
+          feePenalty: 0,
+          discount: 0,
+          expectedFee: payload.expectedFee || 0,
+          durationMinutes: payload.durationMinutes || 0,
+          isBlacklisted: false,
+          warnings: derivedWarnings,
+          rfid: payload.rfid || '---',
+          customerType: payload.customerType === 'PREBOOKED' ? 'BOOK' : (payload.customerType === 'MONTHLY' ? 'Monthly Pass' : (payload.customerType || 'Haunt')),
+          vehicleType: payload.vehicleType || 'CAR',
+          routing: payload.suggestedZoneName || ''
+        });
       });
 
       return () => {
@@ -200,7 +211,7 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
         lprImageBase64: scanData.lprImageBase64
       };
       const response = await axiosClient.post('/operation/gates/check-in', payload);
-      
+
       const suggestedZone = response.data.data.suggestedZoneName || 'Free';
       message.success(`Vehicle entry confirmed! Suggested zone: ${suggestedZone}`);
 
@@ -232,12 +243,12 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
 
   const handleAutoZoom = (zone: any) => {
     if (!stageRef.current || !containerRef.current) return;
-    
+
     const slotW = (zone.vehicleMatrixWidth || 3) * GRID_SIZE;
     const slotH = (zone.vehicleMatrixHeight || 6) * GRID_SIZE;
     let zoneW = zone.capacity * slotW;
     let zoneH = slotH;
-    
+
     if (zone.rotation === 90 || zone.rotation === 270) {
       zoneW = slotH;
       zoneH = zone.capacity * slotW;
@@ -254,7 +265,7 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
 
     let centerX = zone.layoutX || 0;
     let centerY = zone.layoutY || 0;
-    
+
     if (zone.rotation === 0) {
       centerX += zoneW / 2;
       centerY += zoneH / 2;
@@ -286,7 +297,7 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
     const lines = [];
     const width = mapCols * GRID_SIZE;
     const height = mapRows * GRID_SIZE;
-    
+
     lines.push(
       <Rect key="bg" x={0} y={0} width={width} height={height} fill="#f8fafc" />
     );
@@ -301,7 +312,7 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
         <Line key={`h-${j}`} points={[0, j * GRID_SIZE, width, j * GRID_SIZE]} stroke="#cbd5e1" strokeWidth={1} opacity={0.2} />
       );
     }
-    
+
     lines.push(
       <Rect key="border" x={0} y={0} width={width} height={height} stroke="#334155" strokeWidth={4} listening={false} />
     );
@@ -347,22 +358,22 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
 
         {scanData && (
           <div className={`p-2 rounded-lg shadow-sm flex-none text-xs flex flex-col gap-1 overflow-hidden border ${scanData.warnings?.length > 0 ? 'bg-orange-50 border-orange-400 text-orange-700' : 'bg-green-50 border-green-300 text-green-700'}`}>
-             <div className="font-bold flex items-center justify-between">
-               <div className="flex items-center">
-                 {scanData.warnings?.length > 0 ? <WarningOutlined className="mr-1"/> : <CheckCircleOutlined className="mr-1"/>} 
-                  
-                                               WARNING / NOTE:
-                                             </div>
-             </div>
-             <div className="flex-1 overflow-hidden min-h-[30px]">
-               {scanData.warnings?.length > 0 ? (
-                 <ul className="list-disc pl-4 m-0">
-                   {scanData.warnings.map((w: string, idx: number) => <li key={idx} className="truncate" title={w}>{w}</li>)}
-                 </ul>
-               ) : (
-                 <span className="text-green-600">The system does not record any warnings for this vehicle</span>
-               )}
-             </div>
+            <div className="font-bold flex items-center justify-between">
+              <div className="flex items-center">
+                {scanData.warnings?.length > 0 ? <WarningOutlined className="mr-1" /> : <CheckCircleOutlined className="mr-1" />}
+
+                WARNING / NOTE:
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden min-h-[30px]">
+              {scanData.warnings?.length > 0 ? (
+                <ul className="list-disc pl-4 m-0">
+                  {scanData.warnings.map((w: string, idx: number) => <li key={idx} className="truncate" title={w}>{w}</li>)}
+                </ul>
+              ) : (
+                <span className="text-green-600">The system does not record any warnings for this vehicle</span>
+              )}
+            </div>
           </div>
         )}
 
@@ -375,20 +386,20 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
             <div className="flex items-center space-x-2">
               <Tag color={
                 !scanData ? 'default' :
-                scanData.customerType === 'Haunt' ? 'blue' : 
-                (scanData.customerType === 'BOOK' ? 'gold' : 'green')
+                  scanData.customerType === 'Haunt' ? 'blue' :
+                    (scanData.customerType === 'BOOK' ? 'gold' : 'green')
               } className="m-0 font-bold px-3 py-1 text-sm rounded shadow-sm border border-transparent">
                 {scanData?.customerType || '---'}
               </Tag>
               {scanData ? (
-                <Select 
+                <Select
                   size="large"
                   value={scanData.vehicleType}
-                  onChange={(val) => setScanData({...scanData, vehicleType: val})}
+                  onChange={(val) => setScanData({ ...scanData, vehicleType: val })}
                   className="w-48 font-bold text-base"
                   options={vehicleTypes ? vehicleTypes.map((v: any) => ({
                     value: v.typeName,
-                    label: `${v.category === 'FOUR_WHEEL' ? '🚗' : '🏍️'} ${v.typeName}`
+                    label: <div className="flex items-center gap-2">{v.iconUrl ? <img src={getImageUrl(v.iconUrl)} style={{ width: 20, height: 20, objectFit: 'contain' }} /> : (v.category === 'FOUR_WHEEL' ? '🚗' : '🏍️')} {v.typeName}</div>
                   })) : []}
                 />
               ) : (
@@ -396,12 +407,12 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
               )}
             </div>
           </div>
-          
+
           <div className="flex flex-col items-center justify-center flex-1 min-h-0">
             <Text className="text-slate-500 font-bold mb-1 uppercase tracking-widest text-[10px]">License Plate Identification (aI)</Text>
-            <Input 
-              value={editablePlate} 
-              onChange={(e) => setEditablePlate(e.target.value)} 
+            <Input
+              value={editablePlate}
+              onChange={(e) => setEditablePlate(e.target.value)}
               disabled={!scanData}
               placeholder="---"
               className="w-full text-3xl h-12 font-mono text-center font-bold uppercase rounded-lg border-2 border-blue-400 focus:border-blue-600 focus:shadow-[0_0_8px_rgba(37,99,235,0.2)] bg-slate-50 text-slate-900"
@@ -418,37 +429,37 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
             </div>
           </div>
         ) : (
-           <div className="bg-slate-200 border border-slate-300 rounded-xl p-3 text-center flex-none">
-             <Text className="text-slate-400 text-xs font-bold tracking-widest block uppercase mb-1">INSTRUCTIONS FOR ENTERING THE BEACH</Text>
-             <div className="text-xl font-bold text-slate-500 tracking-wide truncate">---</div>
-           </div>
+          <div className="bg-slate-200 border border-slate-300 rounded-xl p-3 text-center flex-none">
+            <Text className="text-slate-400 text-xs font-bold tracking-widest block uppercase mb-1">INSTRUCTIONS FOR ENTERING THE BEACH</Text>
+            <div className="text-xl font-bold text-slate-500 tracking-wide truncate">---</div>
+          </div>
         )}
       </div>
 
       {/* TASK 1 & 4: Bottom Zone (Actions) - STRICT h-[15%] */}
       <div className="h-[15%] flex-none p-2 border-t border-slate-200 bg-white flex gap-3 shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
-        <Button 
-          size="large" 
+        <Button
+          size="large"
           danger
           icon={<CloseCircleOutlined />}
           className="h-full flex-1 text-lg font-bold rounded-lg border border-red-500 text-red-600 hover:bg-red-50"
           disabled={!scanData}
           onClick={handleCancel}
         >
-          
-                            Cancel
-                          </Button>
-        <Button 
-          type="primary" 
-          size="large" 
+
+          Cancel
+        </Button>
+        <Button
+          type="primary"
+          size="large"
           className="h-full flex-[2] text-xl font-bold rounded-lg bg-green-600 hover:bg-green-500 shadow-md border-b-2 border-green-800 active:border-b-0 active:translate-y-1 transition-all"
           disabled={!scanData}
           loading={isLoading}
           onClick={handleCheckIn}
         >
-          
-                            Confirm & Put the car in
-                          </Button>
+
+          Confirm & Put the car in
+        </Button>
       </div>
     </div>
   );
@@ -460,9 +471,9 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
       <div className={`absolute top-4 right-4 ${debugMinimized ? 'w-auto' : 'w-96'} max-h-[80vh] bg-black/80 text-green-400 font-mono text-[10px] p-3 overflow-y-auto z-[9999] rounded border border-green-500/50 shadow-2xl flex flex-col gap-2`}>
         <div className="flex justify-between items-center border-b border-gray-600 pb-1 mb-1">
           <div className="text-white font-bold">⚙️ DEBUG LOGS</div>
-          <Button 
-            type="text" 
-            size="small" 
+          <Button
+            type="text"
+            size="small"
             className="text-white hover:text-green-400 p-0 h-auto"
             onClick={() => setDebugMinimized(!debugMinimized)}
           >
@@ -486,138 +497,143 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
       </div>
 
       <Row className="h-full w-full m-0">
-          <>
-            {/* LEFT PANEL: Action Console (IN) */}
-            <Col span={9} className="h-full p-4 flex flex-col border-r border-slate-300 bg-slate-50">
-              
-              <div className="flex justify-between items-center mb-2 shrink-0 gap-2">
-                <Title level={4} className="m-0 text-slate-800 whitespace-nowrap flex items-center">
-                  {activeGate?.name} <span className="text-[10px] ml-2 bg-blue-600 text-white px-1.5 py-0.5 rounded shadow-sm">LIVE</span>
-                </Title>
-              </div>
-              {renderInGatePanel()}
-            </Col>
+        <>
+          {/* LEFT PANEL: Action Console (IN) */}
+          <Col span={9} className="h-full p-4 flex flex-col border-r border-slate-300 bg-slate-50">
 
-            {/* RIGHT PANEL: Live Space Map */}
-            <Col span={15} className="h-full bg-slate-200 flex flex-col relative overflow-hidden">
-              <div className="absolute top-4 left-4 z-10 flex space-x-2 bg-white/80 p-2 rounded-lg shadow-sm backdrop-blur-sm">
-                <Text strong className="mr-2 flex items-center"><AimOutlined className="mr-1"/>  Map navigation:</Text>
-                <Button size="small" onClick={() => {
-                  if (containerRef.current) {
-                    const mapW = mapCols * GRID_SIZE;
-                    const mapH = mapRows * GRID_SIZE;
-                    const scale = Math.min((containerRef.current?.clientWidth || 0) / mapW, (containerRef.current?.clientHeight || 0) / mapH) * 0.95;
-                    const minScaleLocked = Math.min(scale, 1);
-                    const tween = new Konva.Tween({
-                      node: stageRef.current,
-                      duration: 0.5,
-                      easing: Konva.Easings.EaseInOut,
-                      x: ((containerRef.current?.clientWidth || 0) - mapW * minScaleLocked) / 2,
-                      y: ((containerRef.current?.clientHeight || 0) - mapH * minScaleLocked) / 2,
-                      scaleX: minScaleLocked,
-                      scaleY: minScaleLocked,
-                      onFinish: () => {
-                        setStagePos({ x: ((containerRef.current?.clientWidth || 0) - mapW * minScaleLocked) / 2, y: ((containerRef.current?.clientHeight || 0) - mapH * minScaleLocked) / 2 });
-                        setStageScale(minScaleLocked);
-                      }
-                    });
-                    tween.play();
-                  }
-                }}>Overall</Button>
-                {Array.isArray(mapData) && mapData.filter((z: any) => z.floorId === activeGate?.floorId).map((zone: any) => (
-                  <Button key={zone.id} size="small" onClick={() => handleAutoZoom(zone)}>{zone.name || zone.zoneName}</Button>
-                ))}
-              </div>
+            <div className="flex justify-between items-center mb-2 shrink-0 gap-2">
+              <Title level={4} className="m-0 text-slate-800 whitespace-nowrap flex items-center">
+                {activeGate?.name} <span className="text-[10px] ml-2 bg-blue-600 text-white px-1.5 py-0.5 rounded shadow-sm">LIVE</span>
+              </Title>
+            </div>
+            {renderInGatePanel()}
+          </Col>
 
-              <div className="flex-1 w-full h-full cursor-grab active:cursor-grabbing" ref={containerRef}>
-                {containerRef.current && (
-                  <Stage 
-                    width={(containerRef.current?.clientWidth || 0)} 
-                    height={(containerRef.current?.clientHeight || 0)}
-                    draggable
-                    scaleX={stageScale}
-                    scaleY={stageScale}
-                    x={stagePos.x}
-                    y={stagePos.y}
-                    ref={stageRef}
-                    onDragEnd={(e) => {
-                      if (e.target === e.target.getStage()) {
-                        setStagePos({ x: e.target.x(), y: e.target.y() });
-                      }
-                    }}
-                  >
-                    <Layer>
-                      {drawGrid()}
-                    </Layer>
-                    <Layer>
-                      {Array.isArray(mapData) && mapData.filter((z: any) => z.floorId === activeGate?.floorId).map((zone: any) => {
-                        const slotW = (zone.vehicleMatrixWidth || 3) * GRID_SIZE;
-                        const slotH = (zone.vehicleMatrixHeight || 6) * GRID_SIZE;
-                        const zoneW = zone.capacity * slotW;
-                        const zoneH = slotH;
-                        
-                        return (
-                          <Group
-                            key={zone.id}
-                            x={zone.layoutX || 100}
-                            y={zone.layoutY || 100}
-                            rotation={zone.rotation || 0}
-                          >
-                            <KonvaText
-                              x={5}
-                              y={5}
-                              text={`${zone.name || zone.zoneName} ${zone.activeReservationsCount ? `(Res: ${zone.activeReservationsCount})` : ''}`}
-                              fontSize={14}
-                              fontFamily="sans-serif"
-                              fill="#334155"
-                              fontStyle="bold"
-                            />
-                            <Rect
-                              width={zoneW}
-                              height={zoneH}
-                              fill="rgba(0,0,0,0.05)"
-                              stroke="#64748b"
-                              strokeWidth={2}
-                            />
-                            {(zone.slots || []).map((slot: any, i: number) => {
-                              const xPos = i * slotW;
-                              let slotFill = 'transparent';
-                              if (slot.status === 'OCCUPIED') slotFill = '#fecaca';
-                              else if (slot.status === 'DISABLED') slotFill = '#f1f5f9';
+          {/* RIGHT PANEL: Live Space Map */}
+          <Col span={15} className="h-full bg-slate-200 flex flex-col relative overflow-hidden">
+            <div className="absolute top-4 left-4 z-10 flex space-x-2 bg-white/80 p-2 rounded-lg shadow-sm backdrop-blur-sm">
+              <Text strong className="mr-2 flex items-center"><AimOutlined className="mr-1" />  Map navigation:</Text>
+              <Button size="small" onClick={() => {
+                if (containerRef.current) {
+                  const mapW = mapCols * GRID_SIZE;
+                  const mapH = mapRows * GRID_SIZE;
+                  const scale = Math.min((containerRef.current?.clientWidth || 0) / mapW, (containerRef.current?.clientHeight || 0) / mapH) * 0.95;
+                  const minScaleLocked = Math.min(scale, 1);
+                  const tween = new Konva.Tween({
+                    node: stageRef.current,
+                    duration: 0.5,
+                    easing: Konva.Easings.EaseInOut,
+                    x: ((containerRef.current?.clientWidth || 0) - mapW * minScaleLocked) / 2,
+                    y: ((containerRef.current?.clientHeight || 0) - mapH * minScaleLocked) / 2,
+                    scaleX: minScaleLocked,
+                    scaleY: minScaleLocked,
+                    onFinish: () => {
+                      setStagePos({ x: ((containerRef.current?.clientWidth || 0) - mapW * minScaleLocked) / 2, y: ((containerRef.current?.clientHeight || 0) - mapH * minScaleLocked) / 2 });
+                      setStageScale(minScaleLocked);
+                    }
+                  });
+                  tween.play();
+                }
+              }}>Overall</Button>
+              {Array.isArray(mapData) && mapData.filter((z: any) => z.floorId === activeGate?.floorId).map((zone: any) => (
+                <Button key={zone.id} size="small" onClick={() => handleAutoZoom(zone)}>{zone.name || zone.zoneName}</Button>
+              ))}
+            </div>
 
-                              return (
-                                <Group key={slot.id} x={xPos} y={0}>
-                                  <Rect
-                                    id={`slot-${slot.id}`}
-                                    width={slotW}
-                                    height={slotH}
-                                    fill={slotFill}
-                                    stroke="#94a3b8"
-                                    strokeWidth={2}
-                                  />
-                                  <KonvaText
-                                    x={0}
-                                    y={slotH / 2 - 16}
-                                    width={slotW}
-                                    align="center"
-                                    text={slot.status === 'DISABLED' ? 'Maintenance' : slot.slotName}
-                                    fontSize={slot.status === 'DISABLED' ? 12 : 16}
-                                    fill="#334155"
-                                    fontStyle="bold"
-                                    listening={false}
-                                  />
-                                </Group>
-                              );
-                            })}
-                          </Group>
-                        );
-                      })}
-                    </Layer>
-                  </Stage>
-                )}
-              </div>
-            </Col>
-          </>
+            <div className="flex-1 w-full h-full cursor-grab active:cursor-grabbing" ref={containerRef}>
+              {containerRef.current && (
+                <Stage
+                  width={(containerRef.current?.clientWidth || 0)}
+                  height={(containerRef.current?.clientHeight || 0)}
+                  draggable
+                  scaleX={stageScale}
+                  scaleY={stageScale}
+                  x={stagePos.x}
+                  y={stagePos.y}
+                  ref={stageRef}
+                  onDragEnd={(e) => {
+                    if (e.target === e.target.getStage()) {
+                      setStagePos({ x: e.target.x(), y: e.target.y() });
+                    }
+                  }}
+                >
+                  <Layer>
+                    {drawGrid()}
+                  </Layer>
+                  <Layer>
+                    {Array.isArray(mapData) && mapData.filter((z: any) => z.floorId === activeGate?.floorId).map((zone: any) => {
+                      const slotW = (zone.vehicleMatrixWidth || 3) * GRID_SIZE;
+
+                      const slotH = (zone.vehicleMatrixHeight || 6) * GRID_SIZE;
+                      const zoneW = zone.capacity * slotW;
+                      const zoneH = slotH;
+
+                      return (
+                        <Group
+                          key={zone.id}
+                          x={zone.layoutX || 100}
+                          y={zone.layoutY || 100}
+                          rotation={zone.rotation || 0}
+                        >
+                          <Rect
+                            width={zoneW}
+                            height={zoneH}
+                            fill="rgba(0,0,0,0.05)"
+                            stroke="#64748b"
+                            strokeWidth={2}
+                          />
+                          {(zone.slots || []).map((slot: any, i: number) => {
+                            const xPos = i * slotW;
+                            let slotFill = 'transparent';
+                            if (slot.status === 'OCCUPIED') slotFill = '#fecaca';
+                            else if (slot.status === 'DISABLED') slotFill = '#f1f5f9';
+
+                            return (
+                              <Group key={slot.id} x={xPos} y={0}>
+                                <Rect
+                                  id={`slot-${slot.id}`}
+                                  width={slotW}
+                                  height={slotH}
+                                  fill={slotFill}
+                                  stroke="#94a3b8"
+                                  strokeWidth={2}
+                                />
+                                <KonvaText
+                                  x={0}
+                                  y={slotH / 2 - 16}
+                                  width={slotW}
+                                  align="center"
+                                  text={slot.status === 'DISABLED' ? 'Maintenance' : slot.slotName}
+                                  fontSize={slot.status === 'DISABLED' ? 12 : 16}
+                                  fill="#334155"
+                                  fontStyle="bold"
+                                  listening={false}
+                                />
+                              </Group>
+                            );
+                          })}
+                          <KonvaText
+                            x={5}
+                            y={5}
+                            text={`${zone.name || zone.zoneName} ${zone.activeReservationsCount ? `(Res: ${zone.activeReservationsCount})` : ''}`}
+                            fontSize={14}
+                            fontFamily="sans-serif"
+                            fill="#334155"
+                            fontStyle="bold"
+                            shadowColor="white"
+                            shadowBlur={5}
+                            shadowOffset={{x: 0, y: 0}}
+                            shadowOpacity={1}
+                          />
+                        </Group>
+                      );
+                    })}
+                  </Layer>
+                </Stage>
+              )}
+            </div>
+          </Col>
+        </>
       </Row>
     </div>
   );

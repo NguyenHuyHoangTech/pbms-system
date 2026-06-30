@@ -1,6 +1,5 @@
 package com.pbms.modules.operation.service;
 
-import com.pbms.modules.finance.domain.PricingPolicy;
 import com.pbms.modules.finance.repository.PricingPolicyRepository;
 import com.pbms.modules.infrastructure.domain.Zone;
 import com.pbms.modules.infrastructure.repository.ZoneRepository;
@@ -23,7 +22,6 @@ import com.pbms.modules.identity.repository.UserRepository;
 import org.springframework.security.core.context.SecurityContextHolder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -280,6 +278,45 @@ public class ReservationService {
         reservationRepository.save(res);
     }
 
+    @org.springframework.context.event.EventListener(com.pbms.common.event.TimeFastForwardedEvent.class)
+    @Transactional
+    public void handleTimeFastForward(com.pbms.common.event.TimeFastForwardedEvent event) {
+        LocalDateTime now = event.getNewSimulatedTime();
+        log.info("Handling TimeFastForwardedEvent in ReservationService for time: {}", now);
+        
+        List<Reservation> pendingReservations = reservationRepository.findByStatus("PENDING");
+        int expiredCount = 0;
+        int notifiedCount = 0;
+        
+        int windowMinutes = 30;
+        try {
+            windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_ARRIVAL_WINDOW_MINUTES").getConfigValue());
+        } catch (Exception e) {
+            // ignore
+        }
+
+        for (Reservation res : pendingReservations) {
+            LocalDateTime expireTime = res.getExpectedEntryTime().plusMinutes(res.getExpectedDurationMinutes());
+            if (now.isAfter(expireTime)) {
+                log.info("Reservation {} marked as COMPLETED_UNUSED (No-show) due to time fast-forward", res.getId());
+                res.setStatus("COMPLETED_UNUSED");
+                reservationRepository.save(res);
+                expiredCount++;
+            } else {
+                LocalDateTime notifyTime = res.getExpectedEntryTime().minusMinutes(windowMinutes);
+                if (now.isAfter(notifyTime) && (res.getNotifiedEarlyArrival() == null || !res.getNotifiedEarlyArrival())) {
+                    res.setNotifiedEarlyArrival(true);
+                    reservationRepository.save(res);
+                    notifiedCount++;
+                }
+            }
+        }
+        
+        if (expiredCount > 0 || notifiedCount > 0) {
+            log.info("Fast-forward summary: Expired {} reservations, Notified {} early arrivals", expiredCount, notifiedCount);
+        }
+    }
+
     private ReservationDTO mapToDTO(Reservation reservation) {
         return ReservationDTO.builder()
                 .id(reservation.getId())
@@ -299,5 +336,31 @@ public class ReservationService {
                 .createdAt(reservation.getCreatedAt())
                 .build();
     }
-}
 
+    @org.springframework.transaction.annotation.Transactional
+    public ReservationDTO resolveZone(Long reservationId, Long newZoneId, ReservationConflictScheduler scheduler) {
+        Reservation reservation = reservationRepository.findById(reservationId)
+                .orElseThrow(() -> new IllegalArgumentException("Reservation not found"));
+                
+        if (!"PENDING".equals(reservation.getStatus())) {
+            throw new IllegalStateException("Reservation is not PENDING");
+        }
+
+        Zone newZone = zoneRepository.findById(newZoneId)
+                .orElseThrow(() -> new IllegalArgumentException("Zone not found"));
+
+        if (!newZone.getVehicleType().getId().equals(reservation.getVehicle().getVehicleType().getId())) {
+            throw new IllegalArgumentException("Zone vehicle type does not match reservation vehicle type");
+        }
+
+        reservation.setZone(newZone);
+        reservationRepository.save(reservation);
+        
+        // Remove from notified list so scheduler can check it again if needed
+        if (scheduler != null) {
+            scheduler.removeNotificationFlag(reservationId);
+        }
+
+        return mapToDTO(reservation);
+    }
+}

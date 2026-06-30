@@ -20,6 +20,9 @@ import java.util.List;
 public class MonthlyTicketController {
 
     private final MonthlyTicketService monthlyTicketService;
+    private final com.pbms.modules.infrastructure.repository.RfidCardRepository rfidCardRepository;
+    private final com.pbms.modules.system.service.SystemConfigService systemConfigService;
+    private final com.pbms.modules.system.repository.SystemConfigRepository configRepo;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<MonthlyTicketDTO>>> getAllTickets() {
@@ -55,8 +58,7 @@ public class MonthlyTicketController {
     @PostMapping("/{id}/assign-rfid")
     public ResponseEntity<ApiResponse<MonthlyTicketDTO>> assignRfidCard(
             @org.springframework.web.bind.annotation.PathVariable Long id,
-            @RequestBody java.util.Map<String, String> payload,
-            @org.springframework.beans.factory.annotation.Autowired com.pbms.modules.infrastructure.repository.RfidCardRepository rfidCardRepository) {
+            @RequestBody java.util.Map<String, String> payload) {
         try {
             String rfidCode = payload.get("rfidCode");
             if (rfidCode == null || rfidCode.isBlank()) {
@@ -81,6 +83,37 @@ public class MonthlyTicketController {
             return ResponseEntity.ok(ApiResponse.success(dto, "Plate updated successfully"));
         } catch (IllegalStateException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(400, e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(500, "Error: " + e.getMessage()));
+        }
+    }
+
+    @GetMapping("/config-threshold")
+    public ResponseEntity<ApiResponse<Integer>> getThreshold() {
+        int threshold = 90;
+        try {
+            String val = systemConfigService.getConfigByKey("MONTHLY_TICKET_ALERT_THRESHOLD").getConfigValue();
+            if (val != null) threshold = Integer.parseInt(val);
+        } catch (Exception e) {}
+        return ResponseEntity.ok(ApiResponse.success(threshold, "Success"));
+    }
+
+    @PostMapping("/config-threshold")
+    public ResponseEntity<ApiResponse<Integer>> setThreshold(
+            @RequestBody java.util.Map<String, Integer> payload) {
+        Integer threshold = payload.get("threshold");
+        if (threshold == null) return ResponseEntity.badRequest().body(ApiResponse.error(400, "Threshold required"));
+        
+        try {
+            com.pbms.modules.system.domain.SystemConfig config = configRepo.findByConfigKey("MONTHLY_TICKET_ALERT_THRESHOLD")
+                    .orElseGet(() -> {
+                        com.pbms.modules.system.domain.SystemConfig c = new com.pbms.modules.system.domain.SystemConfig();
+                        c.setConfigKey("MONTHLY_TICKET_ALERT_THRESHOLD");
+                        return c;
+                    });
+            config.setConfigValue(String.valueOf(threshold));
+            configRepo.save(config);
+            return ResponseEntity.ok(ApiResponse.success(threshold, "Success"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(500, "Error: " + e.getMessage()));
         }

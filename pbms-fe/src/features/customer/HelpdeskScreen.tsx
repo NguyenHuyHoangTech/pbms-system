@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Card, Typography, Select, Input, Button, Form, Table, Tag, message, Alert, Upload } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
+import dayjs from 'dayjs';
 import { 
   CameraOutlined, 
   CustomerServiceOutlined, 
@@ -27,7 +28,7 @@ const columns = [
   { title: 'Classify', dataIndex: 'type', key: 'type' },
   { title: 'License Plate', dataIndex: 'plate', key: 'plate' },
   { title: 'Describe', dataIndex: 'description', key: 'description' },
-  { title: 'Time created', dataIndex: 'time', key: 'time' },
+  { title: 'Time created', dataIndex: 'time', key: 'time', render: (text: string) => <Text>{text ? dayjs(text).format('HH:mm DD/MM/YYYY') : '-'}</Text> },
   { 
     title: 'Resolution note', 
     dataIndex: 'resolutionNotes', 

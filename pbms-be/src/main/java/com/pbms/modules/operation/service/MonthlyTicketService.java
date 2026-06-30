@@ -25,6 +25,9 @@ public class MonthlyTicketService {
     private final MonthlyTicketRepository monthlyTicketRepository;
     private final VehicleTypeRepository vehicleTypeRepository;
     private final com.pbms.modules.operation.repository.ParkingSessionRepository parkingSessionRepository;
+    private final com.pbms.modules.system.service.SystemConfigService systemConfigService;
+    private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
+    private final com.pbms.modules.infrastructure.repository.SlotRepository slotRepository;
     private static final DateTimeFormatter FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     @Transactional(readOnly = true)
@@ -104,6 +107,12 @@ public class MonthlyTicketService {
                 .build();
                 
         monthlyTicketRepository.save(ticket);
+        
+        try {
+            checkMonthlyThreshold();
+        } catch (Exception e) {
+            log.error("Failed to check monthly threshold", e);
+        }
         
         return MonthlyTicketDTO.builder()
                 .id("MP-" + ticket.getId())
@@ -193,6 +202,38 @@ public class MonthlyTicketService {
                 .startDate(ticket.getValidFrom().format(FORMATTER))
                 .endDate(ticket.getValidUntil().format(FORMATTER))
                 .build();
+    }
+
+    private void checkMonthlyThreshold() {
+        try {
+            int threshold = 90; // Default
+            String configVal = systemConfigService.getConfigByKey("MONTHLY_TICKET_ALERT_THRESHOLD").getConfigValue();
+            if (configVal != null && !configVal.isBlank()) {
+                threshold = Integer.parseInt(configVal);
+            }
+
+            long totalMonthlySlots = slotRepository.countByZone_FunctionType("MONTHLY");
+            if (totalMonthlySlots == 0) return;
+
+            long totalActiveTickets = monthlyTicketRepository.countByStatus("ACTIVE");
+
+            double currentPercentage = ((double) totalActiveTickets / totalMonthlySlots) * 100;
+
+            if (currentPercentage > threshold) {
+                log.warn("Monthly ticket threshold exceeded! Currently at {}% (Active: {}, Slots: {})", 
+                        String.format("%.1f", currentPercentage), totalActiveTickets, totalMonthlySlots);
+                
+                messagingTemplate.convertAndSend("/topic/manager-alerts", 
+                        (Object) Map.of(
+                            "type", "MONTHLY_ZONE_OVERLOAD",
+                            "message", String.format("Warning: The number of registered monthly tickets (%.1f%%) has exceeded the %d%% threshold of total Monthly Zone slots. Please consider expanding the Monthly Zone.", currentPercentage, threshold),
+                            "activeTickets", totalActiveTickets,
+                            "totalSlots", totalMonthlySlots
+                        ));
+            }
+        } catch (Exception e) {
+            log.error("Error in checkMonthlyThreshold", e);
+        }
     }
 }
 

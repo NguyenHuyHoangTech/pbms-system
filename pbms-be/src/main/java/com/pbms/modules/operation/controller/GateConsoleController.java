@@ -6,8 +6,13 @@ import com.pbms.modules.operation.dto.CheckInRequestDTO;
 import com.pbms.modules.operation.dto.CheckOutRequestDTO;
 import com.pbms.modules.operation.dto.GateResponseDTO;
 import com.pbms.modules.operation.service.GateOperationService;
+import com.pbms.modules.operation.service.ZoneRoutingService;
+import com.pbms.modules.operation.service.ReservationService;
+import com.pbms.modules.operation.service.ReservationConflictScheduler;
+import com.pbms.modules.operation.dto.ReservationDTO;
+import com.pbms.modules.operation.dto.ZoneRoutingStatusDTO;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -16,6 +21,9 @@ import org.springframework.web.bind.annotation.*;
 public class GateConsoleController {
 
     private final GateOperationService gateOperationService;
+    private final ZoneRoutingService zoneRoutingService;
+    private final ReservationService reservationService;
+    private final ReservationConflictScheduler reservationConflictScheduler;
 
     @PostMapping("/check-in")
     public ResponseEntity<ApiResponse<GateResponseDTO>> processCheckIn(@RequestBody CheckInRequestDTO request) {
@@ -57,5 +65,27 @@ public class GateConsoleController {
             return ResponseEntity.badRequest().body(ApiResponse.error(400, e.getMessage()));
         }
     }
-}
 
+    @GetMapping("/routing-status")
+    public ResponseEntity<ApiResponse<List<ZoneRoutingStatusDTO>>> getRoutingStatus(
+            @RequestParam Long vehicleTypeId,
+            @RequestParam(defaultValue = "WALK_IN") String customerType) {
+        try {
+            List<ZoneRoutingStatusDTO> statusList = zoneRoutingService.getRoutingStatus(vehicleTypeId, customerType);
+            return ResponseEntity.ok(ApiResponse.success(statusList, "Fetched routing status successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, e.getMessage()));
+        }
+    }
+    @PostMapping("/reservations/{id}/resolve-zone")
+    public ResponseEntity<ApiResponse<ReservationDTO>> resolveReservationZone(
+            @PathVariable Long id,
+            @RequestParam Long newZoneId) {
+        try {
+            ReservationDTO dto = reservationService.resolveZone(id, newZoneId, reservationConflictScheduler);
+            return ResponseEntity.ok(ApiResponse.success(dto, "Reservation zone resolved successfully"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, e.getMessage()));
+        }
+    }
+}

@@ -46,6 +46,7 @@ public class MonthlyTicket extends BaseEntity {
     private String status; // ACTIVE, EXPIRED, CANCELLED
 
     @Column(name = "auto_renew")
+    @Builder.Default
     private Boolean autoRenew = false;
 }
 

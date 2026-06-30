@@ -12,7 +12,7 @@ import com.pbms.common.annotation.LogAudit;
 
 @RestController
 @RequestMapping("/api/v1/system/configs")
-@PreAuthorize("hasRole('SUPER_ADMIN')")
+@PreAuthorize("hasAnyRole('SUPER_ADMIN', 'MANAGER', 'STAFF')")
 public class SystemConfigController {
 
     private final SystemConfigService service;

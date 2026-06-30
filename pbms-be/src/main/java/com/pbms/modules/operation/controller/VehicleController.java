@@ -25,6 +25,15 @@ public class VehicleController {
         ));
     }
 
+    @GetMapping("/check")
+    public ResponseEntity<ApiResponse<VehicleDTO>> checkVehicleByPlate(@RequestParam String plate) {
+        try {
+            return ResponseEntity.ok(ApiResponse.success(vehicleService.getVehicleByPlate(plate), "Success"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Error: " + e.getMessage()));
+        }
+    }
+
     @PostMapping("/{id}/blacklist")
     public ResponseEntity<ApiResponse<VehicleDTO>> blacklistVehicle(
             @PathVariable Long id,
@@ -33,6 +42,21 @@ public class VehicleController {
             String reason = payload.get("reason");
             VehicleDTO dto = vehicleService.setBlacklist(id, reason);
             return ResponseEntity.ok(ApiResponse.success(dto, "Sign in to the list"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Error: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/blacklist-by-plate")
+    public ResponseEntity<ApiResponse<VehicleDTO>> blacklistVehicleByPlate(
+            @RequestBody Map<String, String> payload) {
+        try {
+            String plate = payload.get("plate");
+            String reason = payload.get("reason");
+            String evidenceUrl = payload.get("evidenceUrl");
+            if (plate == null || plate.isBlank()) throw new IllegalArgumentException("Plate is required");
+            VehicleDTO dto = vehicleService.setBlacklistByPlate(plate, reason, evidenceUrl);
+            return ResponseEntity.ok(ApiResponse.success(dto, "Vehicle blacklisted successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(400, "Error: " + e.getMessage()));
         }

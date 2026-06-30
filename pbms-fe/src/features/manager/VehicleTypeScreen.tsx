@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Card, Typography, Button, Table, Modal, Form, Input, InputNumber, Select, message, Space } from 'antd';
-import { PlusOutlined, EditOutlined, CarOutlined, AppstoreOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Card, Typography, Button, Table, Modal, Form, Input, InputNumber, Select, message, Space, Upload, Avatar, Tag } from 'antd';
+import { PlusOutlined, EditOutlined, CarOutlined, AppstoreOutlined, DeleteOutlined, UploadOutlined, LockOutlined, UnlockOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
+import { getImageUrl } from '../../core/utils/imageHelper';
 
 const { Title, Text } = Typography;
 
@@ -38,16 +39,17 @@ export const VehicleTypeScreen = () => {
     }
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      return await axiosClient.delete(`/operation/vehicle-types/${id}`);
+  const toggleStatusMutation = useMutation({
+    mutationFn: async (record: any) => {
+      const newStatus = record.status === 'INACTIVE' ? 'ACTIVE' : 'INACTIVE';
+      return await axiosClient.put(`/operation/vehicle-types/${record.id}`, { ...record, status: newStatus });
     },
     onSuccess: () => {
-      message.success('Successfully deleted vehicle type!');
+      message.success('Successfully updated vehicle type status!');
       queryClient.invalidateQueries({ queryKey: ['vehicle-types'] });
     },
     onError: (error: any) => {
-      message.error(error.response?.data?.message || 'An error occurred while deleting.');
+      message.error(error.response?.data?.message || 'An error occurred while updating status.');
     }
   });
 
@@ -68,18 +70,25 @@ export const VehicleTypeScreen = () => {
     });
   };
 
-  const handleDelete = (id: number) => {
+  const handleToggleStatus = (record: any) => {
     Modal.confirm({
-      title: 'Confirm delete',
-      content: 'Are you sure you want to delete this vehicle type?',
-      okText: 'Delete',
+      title: record.status === 'INACTIVE' ? 'Confirm Unlock' : 'Confirm Lock',
+      content: `Are you sure you want to ${record.status === 'INACTIVE' ? 'unlock' : 'lock'} this vehicle type?`,
+      okText: 'Confirm',
       cancelText: 'Cancel',
-      onOk: () => deleteMutation.mutate(id)
+      onOk: () => toggleStatusMutation.mutate(record)
     });
   };
 
   const columns = [
     { title: 'ID', dataIndex: 'id', key: 'id', render: (text: string) => <Text strong>VT-{text}</Text> },
+    { 
+      title: 'Icon', 
+      key: 'icon', 
+      render: (_: any, r: any) => (
+        <Avatar src={r.iconUrl ? getImageUrl(r.iconUrl) : undefined} icon={!r.iconUrl && <CarOutlined />} shape="square" size="large" />
+      )
+    },
     { title: 'Display Name', dataIndex: 'typeName', key: 'typeName', render: (text: string) => <span className="font-semibold text-blue-700">{text}</span> },
     { 
       title: 'Category', 
@@ -92,6 +101,16 @@ export const VehicleTypeScreen = () => {
       key: 'dimensions', 
       render: (_: any, r: any) => `${r.matrixWidth} cells (W) x ${r.matrixHeight} cells (H)` 
     },
+    { 
+      title: 'Status', 
+      key: 'status', 
+      dataIndex: 'status',
+      render: (status: string) => (
+        <Tag color={status === 'INACTIVE' ? 'error' : 'success'}>
+          {status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE'}
+        </Tag>
+      ) 
+    },
     {
       title: 'Actions',
       key: 'actions',
@@ -100,9 +119,15 @@ export const VehicleTypeScreen = () => {
           <Button type="text" icon={<EditOutlined />} onClick={() => handleOpenModal(record)} className="text-blue-600 hover:text-blue-800">
             Sửa
           </Button>
-          <Button type="text" danger icon={<DeleteOutlined />} onClick={() => handleDelete(record.id)}>
-            Delete
-          </Button>
+          {record.status !== 'INACTIVE' ? (
+            <Button type="text" danger icon={<LockOutlined />} onClick={() => handleToggleStatus(record)}>
+              Lock
+            </Button>
+          ) : (
+            <Button type="text" icon={<UnlockOutlined />} className="text-green-600 hover:text-green-800" onClick={() => handleToggleStatus(record)}>
+              Unlock
+            </Button>
+          )}
         </Space>
       )
     }
@@ -125,7 +150,11 @@ export const VehicleTypeScreen = () => {
 
         <Card className="shadow-sm rounded-xl border-gray-200">
           <Table 
-            dataSource={vehicleTypes || []} 
+            dataSource={(vehicleTypes || []).sort((a: any, b: any) => {
+              if (a.status === 'INACTIVE' && b.status !== 'INACTIVE') return 1;
+              if (a.status !== 'INACTIVE' && b.status === 'INACTIVE') return -1;
+              return a.id - b.id;
+            })}
             columns={columns} 
             rowKey="id" 
             pagination={false}
@@ -163,6 +192,37 @@ export const VehicleTypeScreen = () => {
                 <InputNumber className="w-full" min={1} max={100} placeholder="VD: 5" />
               </Form.Item>
             </div>
+
+            {editingRecord && (
+              <Form.Item label="Vehicle Icon (Upload Image)">
+                <div className="flex items-center gap-4 mb-4">
+                  <Avatar src={editingRecord.iconUrl ? getImageUrl(editingRecord.iconUrl) : undefined} icon={!editingRecord.iconUrl && <CarOutlined />} shape="square" size={64} className="bg-gray-100" />
+                  <Upload
+                    name="file"
+                    showUploadList={false}
+                    customRequest={async (options) => {
+                      const { file, onSuccess, onError } = options;
+                      try {
+                        const formData = new FormData();
+                        formData.append('file', file);
+                        const res = await axiosClient.post(`/operation/vehicle-types/${editingRecord.id}/icon`, formData, {
+                          headers: { 'Content-Type': 'multipart/form-data' }
+                        });
+                        message.success('Icon uploaded successfully');
+                        setEditingRecord(res.data.data);
+                        queryClient.invalidateQueries({ queryKey: ['vehicle-types'] });
+                        if (onSuccess) onSuccess("ok");
+                      } catch (err: any) {
+                        message.error(err.response?.data?.message || 'Failed to upload icon');
+                        if (onError) onError(err);
+                      }
+                    }}
+                  >
+                    <Button icon={<UploadOutlined />}>Upload New Icon</Button>
+                  </Upload>
+                </div>
+              </Form.Item>
+            )}
           </Form>
         </Modal>
       </div>

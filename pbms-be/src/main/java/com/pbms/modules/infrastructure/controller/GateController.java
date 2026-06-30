@@ -5,15 +5,11 @@ import com.pbms.modules.infrastructure.domain.Gate;
 import com.pbms.modules.infrastructure.dto.config.GateConfigDTO;
 import com.pbms.modules.infrastructure.repository.GateRepository;
 import com.pbms.modules.operation.repository.StaffWorkSessionRepository;
-import com.pbms.modules.identity.domain.StaffWorkSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
-import org.springframework.security.access.prepost.PreAuthorize;
-import java.util.Map;
-import java.util.HashMap;
 
 import java.util.List;
 import java.util.stream.Collectors;

@@ -21,9 +21,14 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 import java.util.Collections;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
+
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
+
+    @Value("${cors.allowed-origins}")
+    private String[] allowedOrigins;
 
     private final JwtProvider jwtProvider;
 
@@ -48,11 +53,11 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws-pbms")
-                .setAllowedOrigins("http://localhost:5173", "http://localhost:3001")
+                .setAllowedOrigins(allowedOrigins)
                 .withSockJS();
         
         registry.addEndpoint("/ws-pbms")
-                .setAllowedOrigins("http://localhost:5173", "http://localhost:3001");
+                .setAllowedOrigins(allowedOrigins);
     }
 
     @Override
