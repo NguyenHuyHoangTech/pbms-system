@@ -12,7 +12,7 @@ const { Title, Text } = Typography;
 
 const GATEWAYS = [
   { id: 'PAYPAL', name: 'PayPal', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' },
-  { id: 'PAYOS', name: 'PayOS (VietQR)', icon: 'https://payos.vn/wp-content/uploads/sites/13/2023/07/payos-logo.svg' }
+  { id: 'PAYOS', name: 'PayOS (VietQR)', icon: 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMS9zdmciIHZpZXdCb3g9IjAgMCAxMjAgNDAiPjx0ZXh0IHg9IjEwIiB5PSIyOCIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjI0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iIzFmMjkzNyI+cGF5PC90ZXh0Pjx0ZXh0IHg9IjU0IiB5PSIyOCIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjI0IiBmb250LXdlaWdodD0iYm9sZCIgZmlsbD0iIzEwYjk4MSI+T1M8L3RleHQ+PC9zdmc+' }
 ];
 
 export const PreBookingScreen = () => {
