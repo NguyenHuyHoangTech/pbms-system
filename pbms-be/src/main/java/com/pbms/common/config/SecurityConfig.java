@@ -44,13 +44,14 @@ public class SecurityConfig {
                 // 4. STAFF POS & OPERATIONS
                 .requestMatchers("/api/v1/gates/**", "/api/v1/work-sessions/**").hasAnyRole("STAFF", "MANAGER", "ADMIN")
                 .requestMatchers("/api/v1/payments/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
-                .requestMatchers("/api/v1/operation/monthly-tickets/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
+                .requestMatchers("/api/v1/operation/monthly-tickets", "/api/v1/operation/monthly-tickets/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
                 .requestMatchers("/api/v1/operation/**").hasAnyRole("STAFF", "MANAGER", "ADMIN")
                 .requestMatchers("/api/v1/incidents/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
                 .requestMatchers("/api/v1/parking-sessions/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
                 .requestMatchers("/api/v1/infrastructure/**").hasAnyRole("STAFF", "MANAGER", "ADMIN", "CUSTOMER")
                 
                 // 5. CUSTOMER PORTAL
+                .requestMatchers("/api/v1/customer/reservations/*/resolve-conflict").hasAnyRole("STAFF", "CUSTOMER", "MANAGER", "ADMIN")
                 .requestMatchers("/api/v1/customer/**").hasAnyRole("CUSTOMER", "MANAGER", "ADMIN")
                 .requestMatchers("/api/v1/user/**").hasRole("CUSTOMER")
                 

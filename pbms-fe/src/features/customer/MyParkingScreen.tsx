@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Tabs, Card, Typography, List, Divider, Button, Tag, Spin, message, Input, Space, Popconfirm, Empty, Timeline, Drawer, Alert, Form, Select, Radio, Modal, QRCode } from 'antd';
-import { ClockCircleOutlined, CarOutlined, CreditCardOutlined, SearchOutlined, IdcardOutlined, CloseCircleOutlined, HistoryOutlined, CheckCircleOutlined, EditOutlined } from '@ant-design/icons';
+import { ClockCircleOutlined, CarOutlined, CreditCardOutlined, SearchOutlined, IdcardOutlined, CloseCircleOutlined, HistoryOutlined, CheckCircleOutlined, EditOutlined, WarningOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import axiosClient from '../../core/api/axiosClient';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { getImageUrl } from '../../core/utils/imageHelper';
+import { simulatedDayjs } from '../../core/utils/timeProvider';
 
 interface Booking {
   id: string;
@@ -15,6 +17,8 @@ interface Booking {
   slotName: string;
   expectedDurationMinutes?: number;
   reservationFee?: number;
+  refundStatus?: string;
+  refundAmount?: number;
 }
 
 interface MonthlyPass {
@@ -24,6 +28,7 @@ interface MonthlyPass {
   type: string;
   endDate: string;
   hasBeenUsed?: boolean;
+  vehicleTypeId?: number;
 }
 
 interface HistoryRecord {
@@ -102,6 +107,30 @@ export const MyParkingScreen = () => {
     }
   });
 
+  const { data: pricingPolicies = [] } = useQuery<any[]>({
+    queryKey: ['pricing-policies'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/public/pricing');
+        return res.data.data;
+      } catch (err) {
+        return [];
+      }
+    }
+  });
+
+  const { data: earlyMins = 30 } = useQuery<number>({
+    queryKey: ['system_config_early_mins'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/public/config/RESERVATION_EARLY_MINS');
+        return parseInt(res.data.data, 10) || 30;
+      } catch (err) {
+        return 30;
+      }
+    }
+  });
+
   const { data: historyRecords = [], isLoading: isHistoryLoading } = useQuery<HistoryRecord[]>({
     queryKey: ['my-history', selectedHistoryPlate],
     queryFn: async () => {
@@ -127,8 +156,8 @@ export const MyParkingScreen = () => {
   const { data: session, isLoading, isFetching } = useQuery({
     queryKey: ['my-active-session', plateNumberInput, rfidInput],
     queryFn: async () => {
-      const res = await axiosClient.get('/parking-sessions/my-active');
-      return res.data;
+      const res = await axiosClient.get(`/parking-sessions/my-active?plate=${encodeURIComponent(plateNumberInput)}&rfid=${encodeURIComponent(rfidInput)}`);
+      return res.data?.data || null;
     },
     enabled: hasSearched
   });
@@ -190,7 +219,7 @@ export const MyParkingScreen = () => {
 
     const checkIn = dayjs(session.timeIn);
     const timer = setInterval(() => {
-      const now = dayjs();
+      const now = simulatedDayjs();
       const diffHrs = now.diff(checkIn, 'hour');
       const diffMins = now.diff(checkIn, 'minute') % 60;
       const diffSecs = now.diff(checkIn, 'second') % 60;
@@ -204,33 +233,43 @@ export const MyParkingScreen = () => {
   };
 
   const cancelBookingMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await axiosClient.put(`/customer/reservations/${id}/cancel`);
+    mutationFn: async ({ id, data }: { id: number | string; data: any }) => {
+      await axiosClient.put(`/customer/reservations/${id}/cancel`, data);
     },
     onSuccess: () => {
       message.success('Cancellation and refund request sent successfully.');
       queryClient.invalidateQueries({ queryKey: ['my-bookings'] });
       setCancelDrawerVisible(false);
       setSelectedBookingToCancel(null);
+    },
+    onError: (error: any) => {
+      message.error(error?.response?.data?.message || 'Failed to cancel reservation.');
     }
   });
 
   const handleCancelBooking = () => {
     if (selectedBookingToCancel) {
-      cancelBookingMutation.mutate(selectedBookingToCancel.id);
+      cancelBookingMutation.mutate({
+        id: selectedBookingToCancel.id,
+        data: {
+          bankName,
+          accountNumber,
+          accountName
+        }
+      });
     }
   };
 
   const calculateRefund = (booking: Booking | null) => {
     if (!booking) return { refund: 0, penalty: 0, amount: 0, percent: 0 };
-    const now = dayjs();
-    const arrTime = dayjs(booking.expectedEntryTime);
+    const now = simulatedDayjs();
+    const arrTime = simulatedDayjs(booking.expectedEntryTime);
     const diffMins = arrTime.diff(now, 'minute');
     let refundPercent = 0;
     
-    if (diffMins >= 30) {
+    if (diffMins >= earlyMins) {
       refundPercent = 1;
-    } else if (diffMins > 0 && diffMins < 30) {
+    } else if (diffMins > 0 && diffMins < earlyMins) {
       refundPercent = 0.5;
     } else {
       refundPercent = 0;
@@ -348,24 +387,24 @@ export const MyParkingScreen = () => {
   const renderActiveSession = () => {
     if (isLoading || isFetching) return <div className="p-12 text-center"><Spin size="large" /></div>;
 
-    if (!session) {
+    if (!session || session.found === false) {
       return (
         <div className="py-12 text-center text-gray-500 animate-fade-in">
           <CarOutlined className="text-5xl mb-4 opacity-40" />
-          <Title level={4} className="text-gray-500">No parking vehicle found</Title>
+          <Title level={4} className="text-gray-500">No active session found for this vehicle</Title>
         </div>
       );
     }
 
     const isBooking = session.status === 'BOOKED';
-    const totalFee = isBooking ? 50000 : 15000;
+    const totalFee = session.totalFee || 0;
 
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in mt-6">
         <Card className="shadow-sm border-gray-200">
           <div className="flex flex-col items-center justify-center py-6">
             <CarOutlined className="text-5xl text-blue-500 mb-4" />
-            <Title level={2} className="m-0 tracking-widest">{session.plateNumber}</Title>
+            <Title level={2} className="m-0 tracking-widest">{session.plate || session.plateNumber}</Title>
             <Tag color={isBooking ? 'orange' : 'blue'} className="mt-2 text-sm px-3 py-1">
               {isBooking ? 'RESERVED' : 'PARKING'}
             </Tag>
@@ -375,7 +414,7 @@ export const MyParkingScreen = () => {
               <Text className="block text-gray-500 mb-1">{isBooking ? 'Reservation expires in:' : 'Parking duration:'}</Text>
               <div className="text-4xl font-mono font-bold text-gray-800 tracking-wider">
                 {isBooking ? (
-                  session.expiryTime ? dayjs(session.expiryTime).diff(dayjs(), 'minute') + ' minutes' : '---'
+                  session.expiryTime ? dayjs(session.expiryTime).diff(simulatedDayjs(), 'minute') + ' minutes' : '---'
                 ) : (
                   elapsedTime || "00:00:00"
                 )}
@@ -390,9 +429,9 @@ export const MyParkingScreen = () => {
           <List
             size="small"
             dataSource={[
-              { label: 'Vehicle Type', value: session.vehicleType === 'CAR' ? 'Car' : 'Motorbike' },
-              { label: 'Parking Location', value: session.slotId || 'Unassigned' },
-              { label: 'Base Fee', value: isBooking ? '50,000 ₫ / turn' : '15,000 ₫ / block' },
+              { label: 'Vehicle Type', value: session.vehicleType || 'Unknown' },
+              { label: 'Gate In', value: session.gateInName || 'N/A' },
+              { label: 'Parking Status', value: session.status || 'ACTIVE' },
             ]}
             renderItem={item => (
               <List.Item className="border-b border-gray-200 py-3">
@@ -403,37 +442,32 @@ export const MyParkingScreen = () => {
           />
           <Divider className="my-4" />
           <div className="flex justify-between items-center mb-6">
-            <Text strong className="text-lg">TOTAL:</Text>
+            <Text strong className="text-lg">TOTAL FEE:</Text>
             <Text strong className="text-2xl text-blue-600">{totalFee.toLocaleString()} ₫</Text>
           </div>
 
-          <div className="flex-1 flex flex-col items-center justify-center bg-gray-900 rounded-xl p-6 text-white mt-auto">
-            {isBooking ? (
+          <div className="flex-1 flex flex-col bg-gray-50 rounded-xl border border-gray-200 p-4 mt-auto">
+            {session.incidentDetails && session.incidentDetails.length > 0 ? (
               <>
-                <CreditCardOutlined className="text-6xl mb-4 opacity-90 text-blue-400" />
-                <Button 
-                  type="primary" 
-                  size="large" 
-                  className="bg-blue-600 w-full animate-pulse font-bold"
-                  onClick={() => paymentMutation.mutate(session.id)}
-                  loading={paymentMutation.isPending}
-                >
-                  THANH TOÁN ĐỂ GIỮ CHỖ
-                </Button>
+                <Text strong className="text-red-600 mb-2 block uppercase text-xs tracking-wider"><WarningOutlined className="mr-1" /> Penalty & Incidents</Text>
+                <div className="flex flex-col gap-2">
+                  {session.incidentDetails.map((inc: any, idx: number) => (
+                    <div key={idx} className="bg-white border border-red-200 rounded p-3 text-sm shadow-sm">
+                      <div className="flex justify-between items-start mb-1">
+                        <Text strong className="text-red-700">{inc.type.replace('_', ' ')}</Text>
+                        {inc.fineAmount > 0 && <Tag color="red">+{inc.fineAmount.toLocaleString()} ₫</Tag>}
+                      </div>
+                      <Text className="text-gray-600 text-xs block">{inc.description || 'Penalty applied due to violation.'}</Text>
+                    </div>
+                  ))}
+                </div>
               </>
             ) : (
-              <>
-                <QRCode value={sessionPaymentUrl || '...'} size={120} className="mb-4" />
-                <Text className="text-white/80 text-sm text-center">Scan this QR code or pay online.</Text>
-                <Button 
-                  type="primary" 
-                  className="mt-4 bg-green-600 w-full"
-                  onClick={() => paymentMutation.mutate(session.id)}
-                  loading={paymentMutation.isPending}
-                >
-                  THANH TOÁN ONLINE
-                </Button>
-              </>
+              <div className="flex flex-col items-center justify-center text-center h-full text-gray-500 p-4">
+                <CheckCircleOutlined className="text-3xl mb-2 text-green-500" />
+                <Text>No violations found.</Text>
+                <Text className="text-xs text-gray-400 mt-1">Please proceed to the exit gate to pay the parking fee.</Text>
+              </div>
             )}
           </div>
         </Card>
@@ -485,38 +519,48 @@ export const MyParkingScreen = () => {
         <List
           grid={{ gutter: 16, column: 1 }}
           dataSource={bookings}
-          renderItem={item => (
+          renderItem={item => {
+            const isExpired = item.status === 'PENDING' && dayjs(item.expectedEntryTime).add(item.expectedDurationMinutes || 120, 'minute').isBefore(dayjs());
+            let displayStatus = isExpired ? 'COMPLETED_UNUSED' : item.status;
+            
+            if (item.status === 'CANCELLED') {
+              if (item.refundStatus === 'PENDING') displayStatus = 'PENDING_REFUND';
+              else if (item.refundStatus === 'REFUNDED') displayStatus = 'CANCELLED_REFUNDED';
+              else if (item.refundAmount === 0 || !item.refundAmount) displayStatus = 'CANCELLED_NO_REFUND';
+            }
+            
+            return (
             <List.Item>
               <Card className="shadow-sm border border-gray-200 rounded-xl">
                 <div className="flex flex-col sm:flex-row justify-between items-start">
                   <div className="w-full sm:w-auto">
                     <div className="flex items-center space-x-2 mb-2">
                       <Tag color={
-                        item.status === 'PENDING' ? 'orange' :
-                        item.status === 'ACTIVE' ? 'blue' :
-                        item.status === 'COMPLETED' ? 'green' :
-                        item.status === 'COMPLETED_UNUSED' ? 'default' :
-                        item.status === 'PENDING_REFUND' ? 'purple' :
-                        item.status === 'CANCELLED_REFUNDED' ? 'default' : 'red'
+                        displayStatus === 'PENDING' ? 'orange' :
+                        displayStatus === 'ACTIVE' ? 'blue' :
+                        displayStatus === 'COMPLETED' ? 'green' :
+                        displayStatus === 'COMPLETED_UNUSED' ? 'default' :
+                        displayStatus === 'PENDING_REFUND' ? 'purple' :
+                        displayStatus === 'CANCELLED_REFUNDED' ? 'default' : 'red'
                       } className="m-0 font-bold text-[10px] md:text-xs">
-                        {item.status === 'PENDING' ? 'PRE-BOOKING' :
-                         item.status === 'ACTIVE' ? 'IN-PARKING' :
-                         item.status === 'COMPLETED' ? 'COMPLETED' :
-                         item.status === 'COMPLETED_UNUSED' ? 'NO SHOW' :
-                         item.status === 'PENDING_REFUND' ? 'PENDING REFUND' :
-                         item.status === 'CANCELLED_REFUNDED' ? 'CANCELLED & REFUNDED' :
-                         item.status === 'CANCELLED_NO_REFUND' ? 'CANCELLED (NO REFUND)' : 'CANCELLED'}
+                        {displayStatus === 'PENDING' ? 'PRE-BOOKING' :
+                         displayStatus === 'ACTIVE' ? 'IN-PARKING' :
+                         displayStatus === 'COMPLETED' ? 'COMPLETED' :
+                         displayStatus === 'COMPLETED_UNUSED' ? 'NO SHOW' :
+                         displayStatus === 'PENDING_REFUND' ? 'PENDING REFUND' :
+                         displayStatus === 'CANCELLED_REFUNDED' ? 'CANCELLED & REFUNDED' :
+                         displayStatus === 'CANCELLED_NO_REFUND' ? 'CANCELLED (NO REFUND)' : 'CANCELLED'}
                       </Tag>
                       <Text type="secondary" className="text-[10px] md:text-xs">ID: {item.id}</Text>
                     </div>
-                    <Title level={4} className={`m-0 tracking-widest ${item.status !== 'PENDING' && item.status !== 'ACTIVE' ? 'text-gray-400 line-through' : ''}`}>{item.plateNumber}</Title>
+                    <Title level={4} className={`m-0 tracking-widest ${displayStatus !== 'PENDING' && displayStatus !== 'ACTIVE' ? 'text-gray-400 line-through' : ''}`}>{item.plateNumber}</Title>
                     <div className="mt-4 space-y-1">
-                      <Text className={`block ${item.status !== 'PENDING' && item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Expected arrival: <Text strong className={item.status !== 'PENDING' && item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{dayjs(item.expectedEntryTime).format('HH:mm DD/MM/YYYY')}</Text></Text>
-                      <Text className={`block ${item.status !== 'PENDING' && item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Reserved location: <Text strong className={item.status !== 'PENDING' && item.status !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{item.zoneName || item.slotName}</Text></Text>
+                      <Text className={`block ${displayStatus !== 'PENDING' && displayStatus !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Expected arrival: <Text strong className={displayStatus !== 'PENDING' && displayStatus !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{dayjs(item.expectedEntryTime).format('HH:mm DD/MM/YYYY')}</Text></Text>
+                      <Text className={`block ${displayStatus !== 'PENDING' && displayStatus !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-500'}`}>Reserved location: <Text strong className={displayStatus !== 'PENDING' && displayStatus !== 'ACTIVE' ? 'text-gray-400' : 'text-gray-800'}>{item.zoneName || item.slotName}</Text></Text>
                     </div>
                   </div>
                   <div className="flex flex-col items-start sm:items-end mt-4 sm:mt-0 w-full sm:w-auto">
-                    {item.status === 'PENDING' && (
+                    {displayStatus === 'PENDING' && (
                       <div className="flex flex-col sm:flex-row gap-2">
                         {dayjs(item.expectedEntryTime).add(item.expectedDurationMinutes || 0, 'minute').isAfter(dayjs()) && (
                           <Button 
@@ -544,14 +588,15 @@ export const MyParkingScreen = () => {
                         </Button>
                       </div>
                     )}
-                    {item.status === 'PENDING_REFUND' && (
+                    {displayStatus === 'PENDING_REFUND' && (
                       <Text type="secondary" className="text-sm italic mt-2">Expected processing: 1-2 days</Text>
                     )}
                   </div>
                 </div>
               </Card>
             </List.Item>
-          )}
+            );
+          }}
         />
       ) : (
         <div className="py-16 text-center">
@@ -755,9 +800,15 @@ export const MyParkingScreen = () => {
                 message={<span className="font-bold text-red-700">Reservation Refund Policy</span>}
                 description={
                   <ul className="list-disc pl-4 mt-2 text-sm text-red-600">
-                    <li>Cancel 30+ mins before: 100% Refund</li>
-                    <li>Cancel within 30 mins before: 50% Refund</li>
-                    <li>Cancel after arrival time: No Refund (0%)</li>
+                    {(() => {
+                      return (
+                        <>
+                          <li>Cancel {earlyMins}+ mins before: 100% Refund</li>
+                          <li>Cancel within {earlyMins} mins before: 50% Refund</li>
+                          <li>Cancel after arrival time: No Refund (0%)</li>
+                        </>
+                      );
+                    })()}
                   </ul>
                 }
                 type="error"
@@ -848,8 +899,8 @@ export const MyParkingScreen = () => {
         className="bg-slate-50"
       >
         {selectedPassToRenew && (() => {
-           const isCar = selectedPassToRenew.type === 'CAR';
-           const pricePerMonth = isCar ? 1000000 : 150000;
+           const policy = pricingPolicies.find(p => p.vehicleTypeId === selectedPassToRenew.vehicleTypeId);
+           const pricePerMonth = policy ? policy.monthlyRate : 0;
            const packageConfig = PACKAGES.find(p => p.id === renewDuration);
            const baseFee = pricePerMonth * renewDuration;
            const discountAmount = baseFee * (packageConfig?.discount || 0);
@@ -1072,7 +1123,7 @@ export const MyParkingScreen = () => {
                             <Tag color="red" className="mb-2">⚠️ Violation Warning ({inc.type})</Tag>
                             <div className="flex gap-2 overflow-x-auto">
                               {inc.urls.map((url: string, uidx: number) => (
-                                <img key={uidx} src={url} alt="Violation" className="h-20 rounded-md border border-red-200" />
+                                <img key={uidx} src={getImageUrl(url)} alt="Violation" className="h-20 rounded-md border border-red-200" />
                               ))}
                             </div>
                           </div>

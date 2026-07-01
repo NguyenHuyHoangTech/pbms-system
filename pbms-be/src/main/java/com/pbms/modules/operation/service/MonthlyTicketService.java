@@ -25,6 +25,7 @@ public class MonthlyTicketService {
     private final MonthlyTicketRepository monthlyTicketRepository;
     private final VehicleTypeRepository vehicleTypeRepository;
     private final com.pbms.modules.operation.repository.ParkingSessionRepository parkingSessionRepository;
+    private final com.pbms.modules.identity.repository.UserRepository userRepository;
     private final com.pbms.modules.system.service.SystemConfigService systemConfigService;
     private final org.springframework.messaging.simp.SimpMessagingTemplate messagingTemplate;
     private final com.pbms.modules.infrastructure.repository.SlotRepository slotRepository;
@@ -32,7 +33,19 @@ public class MonthlyTicketService {
 
     @Transactional(readOnly = true)
     public List<MonthlyTicketDTO> getAllTickets() {
-        List<MonthlyTicket> tickets = monthlyTicketRepository.findAll();
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        String currentEmail = auth != null ? auth.getName() : null;
+        boolean isCustomer = auth != null && auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"))
+                && auth.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_MANAGER") || a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_STAFF"));
+
+        List<MonthlyTicket> tickets;
+        if (isCustomer && currentEmail != null) {
+            tickets = monthlyTicketRepository.findAll().stream()
+                    .filter(t -> t.getUser() != null && currentEmail.equals(t.getUser().getEmail()))
+                    .collect(Collectors.toList());
+        } else {
+            tickets = monthlyTicketRepository.findAll();
+        }
         LocalDateTime now = com.pbms.common.utils.TimeProvider.now();
 
         return tickets.stream().map(ticket -> {
@@ -65,7 +78,6 @@ public class MonthlyTicketService {
     }
 
     @Scheduled(cron = "0 0 1 * * ?") // Runs at 1:00 AM every day
-    @org.springframework.context.event.EventListener(com.pbms.common.event.TimeFastForwardedEvent.class)
     @Transactional
     public void expireMonthlyTickets() {
         log.info("Running expireMonthlyTickets cronjob...");
@@ -74,9 +86,41 @@ public class MonthlyTicketService {
         log.info("Expired {} monthly tickets.", expiredCount);
     }
 
+    @org.springframework.context.event.EventListener(com.pbms.common.event.TimeFastForwardedEvent.class)
+    public void handleTimeFastForward(com.pbms.common.event.TimeFastForwardedEvent event) {
+        LocalDateTime oldTime = event.getOldSimulatedTime();
+        LocalDateTime newTime = event.getNewSimulatedTime();
+        if (hasCrossedTime(oldTime, newTime, 1, 0)) {
+            expireMonthlyTickets();
+        }
+    }
+
+    private boolean hasCrossedTime(LocalDateTime oldTime, LocalDateTime newTime, int targetHour, int targetMinute) {
+        if (oldTime == null || newTime == null || !oldTime.isBefore(newTime)) return false;
+        
+        LocalDateTime targetInOldDay = oldTime.withHour(targetHour).withMinute(targetMinute).withSecond(0).withNano(0);
+        if (oldTime.isBefore(targetInOldDay) && !newTime.isBefore(targetInOldDay)) {
+            return true;
+        }
+        
+        LocalDateTime targetInNewDay = newTime.withHour(targetHour).withMinute(targetMinute).withSecond(0).withNano(0);
+        if (oldTime.isBefore(targetInNewDay) && !newTime.isBefore(targetInNewDay)) {
+            return true;
+        }
+        
+        if (java.time.Duration.between(oldTime, newTime).toHours() >= 24) {
+            return true;
+        }
+        return false;
+    }
+
     @Transactional
     public MonthlyTicketDTO createTicket(Map<String, Object> payload) {
         String plate = (String) payload.get("plateNumber");
+        if (plate != null && parkingSessionRepository.findByPlateAndStatus(plate, "ACTIVE").isPresent()) {
+            throw new IllegalArgumentException("Cannot register a monthly ticket because the vehicle with plate " + plate + " is currently inside the parking lot.");
+        }
+        
         Long vehicleTypeId = payload.get("vehicleTypeId") != null ? Long.parseLong(payload.get("vehicleTypeId").toString()) : null;
         int months = payload.get("duration") != null ? Integer.parseInt(payload.get("duration").toString()) : 1;
         
@@ -89,8 +133,8 @@ public class MonthlyTicketService {
         com.pbms.modules.identity.domain.User currentUser = null;
         try {
             org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-            if (auth != null && auth.getPrincipal() instanceof com.pbms.modules.identity.domain.User) {
-                currentUser = (com.pbms.modules.identity.domain.User) auth.getPrincipal();
+            if (auth != null && auth.getName() != null) {
+                currentUser = userRepository.findByEmail(auth.getName()).orElse(null);
             }
         } catch (Exception e) {
             log.warn("Could not get current user context", e);
@@ -126,8 +170,13 @@ public class MonthlyTicketService {
     @Transactional
     public MonthlyTicketDTO renewTicket(Long id, int durationMonths) {
         MonthlyTicket ticket = monthlyTicketRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Do not take advantage of this and often"));
+                .orElseThrow(() -> new RuntimeException("Ticket not found"));
                 
+        boolean isExpired = "EXPIRED".equals(ticket.getStatus()) || ticket.getValidUntil().isBefore(com.pbms.common.utils.TimeProvider.now());
+        if (isExpired && parkingSessionRepository.findByPlateAndStatus(ticket.getPlate(), "ACTIVE").isPresent()) {
+            throw new IllegalArgumentException("The monthly ticket is expired, and the vehicle is currently inside the parking lot. Please exit the parking lot before renewing.");
+        }
+        
         LocalDateTime newEndDate;
         if (ticket.getValidUntil().isAfter(com.pbms.common.utils.TimeProvider.now())) {
             newEndDate = ticket.getValidUntil().plusMonths(durationMonths);

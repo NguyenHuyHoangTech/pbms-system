@@ -39,6 +39,8 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
     }
   });
 
+
+
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [lastRawPayload, setLastRawPayload] = useState<any>(null);
   const [debugMinimized, setDebugMinimized] = useState(false);
@@ -57,20 +59,48 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
 
   const shiftStatus = useAuthStore((state) => state.shiftStatus);
 
+  const { data: routingStatusList } = useQuery({
+    queryKey: ['routingStatus', scanData?.vehicleType, scanData?.customerType, activeGate?.floorId],
+    queryFn: async () => {
+      if (!scanData?.vehicleType || !scanData?.customerType || !vehicleTypes) return null;
+      const vType = vehicleTypes.find((v: any) => v.typeName === scanData.vehicleType);
+      if (!vType) return null;
+      const custType = scanData.customerType === 'Monthly Pass' ? 'MONTHLY' : (scanData.customerType === 'BOOK' ? 'PREBOOKED' : 'WALK_IN');
+      const res = await axiosClient.get('/operation/gates/routing-status', {
+        params: { vehicleTypeId: vType.id, customerType: custType, floorId: activeGate?.floorId }
+      });
+      return res.data?.data || [];
+    },
+    enabled: !!scanData && !!vehicleTypes && !!activeGate?.floorId
+  });
   // WebSocket for real-time map IoT updates
   useEffect(() => {
     if (stompClient && connected) {
-      const sub = stompClient.subscribe('/topic/map-updates', (message) => {
-        const payload = JSON.parse(message.body);
-        queryClient.setQueryData(['zonesMap'], (oldData: any) => {
-          if (!oldData) return oldData;
-          return oldData.map((z: any) => ({
-            ...z,
-            slots: (z.slots || []).map((s: any) => s.id === payload.id ? { ...s, status: payload.status } : s)
-          }));
+        const sub = stompClient.subscribe('/topic/map-updates', (message) => {
+          const payload = JSON.parse(message.body);
+          queryClient.setQueryData(['zonesMap'], (oldData: any) => {
+            if (!oldData) return oldData;
+            return oldData.map((z: any) => ({
+              ...z,
+              slots: (z.slots || []).map((s: any) => s.id === payload.id ? { ...s, status: payload.status } : s)
+            }));
+          });
         });
-      });
-      return () => sub.unsubscribe();
+
+        const subStaff = stompClient.subscribe('/topic/staff/notifications', (message) => {
+          try {
+            const data = JSON.parse(message.body);
+            if (data.type === 'RESERVATION_ARRIVED') {
+              // Re-fetch zonesMap so that pendingReservations count goes down
+              queryClient.invalidateQueries({ queryKey: ['zonesMap'] });
+            }
+          } catch(e) {}
+        });
+
+        return () => {
+          sub.unsubscribe();
+          subStaff.unsubscribe();
+        };
     }
   }, [stompClient, connected, queryClient]);
 
@@ -179,7 +209,8 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
           rfid: payload.rfid || '---',
           customerType: payload.customerType === 'PREBOOKED' ? 'BOOK' : (payload.customerType === 'MONTHLY' ? 'Monthly Pass' : (payload.customerType || 'Haunt')),
           vehicleType: payload.vehicleType || 'CAR',
-          routing: payload.suggestedZoneName || ''
+          routing: payload.suggestedZoneName || '',
+          suggestedZoneId: payload.suggestedZoneId || null
         });
       });
 
@@ -330,11 +361,11 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
         {scanData ? (
           <>
             <div className="flex-1 relative border-r-2 border-slate-800 h-full">
-              <img src={scanData.imageBase64} alt="Panorama" className="w-full h-full object-cover" />
+              <img src={getImageUrl(scanData.imageBase64)} alt="Panorama" className="w-full h-full object-cover" />
             </div>
             <div className="w-1/3 h-full relative bg-slate-950 flex flex-col items-center justify-center p-2">
               <div className="w-[80%] aspect-[3/1] border-2 border-blue-500 rounded relative overflow-hidden shadow-[0_0_10px_rgba(59,130,246,0.5)] bg-white flex items-center justify-center">
-                <img src={scanData.lprImageBase64} alt="LPR Crop" className="max-w-full max-h-full object-contain" />
+                <img src={getImageUrl(scanData.lprImageBase64)} alt="LPR Crop" className="max-w-full max-h-full object-contain" />
               </div>
               <Text className="text-slate-400 text-[9px] mt-1 font-bold tracking-widest uppercase">LPR Snapshot</Text>
             </div>
@@ -347,8 +378,8 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
         )}
       </div>
 
-      {/* TASK 1 & 3: Middle Zone (Info & Alerts) - STRICT h-[50%] No Scroll */}
-      <div className="h-[50%] flex-none overflow-hidden p-2 flex flex-col gap-2 bg-slate-50">
+      {/* TASK 1 & 3: Middle Zone (Info & Alerts) - Flexible Space */}
+      <div className="flex-1 overflow-hidden p-2 flex flex-col gap-2 bg-slate-50">
         {scanData?.isBlacklisted && (
           <div className="bg-red-100 border border-red-500 text-red-700 p-2 font-bold text-center rounded-lg animate-pulse shadow-sm flex-none">
             <WarningOutlined className="mr-2" />
@@ -377,67 +408,110 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
           </div>
         )}
 
-        <div className="bg-white border border-slate-200 rounded-xl p-3 shadow-sm flex-1 flex flex-col gap-2 min-h-0">
-          <div className="flex justify-between items-center bg-slate-100 p-3 rounded-lg border border-slate-200 shadow-sm">
-            <div className="flex items-center space-x-2">
-              <IdcardOutlined className="text-2xl text-blue-600" />
-              <Text className="text-xl font-bold text-slate-700 font-mono tracking-wider">{scanData?.rfid || '---'}</Text>
+          <div className="bg-white border border-slate-200 rounded-xl p-2 shadow-sm flex-none flex flex-col gap-2">
+            <div className="flex justify-between items-center bg-slate-100 p-2 rounded-lg border border-slate-200 shadow-sm">
+              <div className="flex items-center space-x-2">
+                <IdcardOutlined className="text-2xl text-blue-600" />
+                <Text className="text-xl font-bold text-slate-700 font-mono tracking-wider">{scanData?.rfid || '---'}</Text>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Tag color={
+                  !scanData ? 'default' :
+                    scanData.customerType === 'Haunt' ? 'blue' :
+                      (scanData.customerType === 'BOOK' ? 'gold' : 'green')
+                } className="m-0 font-bold px-3 py-1 text-sm rounded shadow-sm border border-transparent">
+                  {scanData?.customerType || '---'}
+                </Tag>
+                {scanData ? (
+                  <Select
+                    size="large"
+                    value={scanData.vehicleType}
+                    onChange={(val) => setScanData({ ...scanData, vehicleType: val })}
+                    className="w-40 font-bold text-base"
+                    options={vehicleTypes ? vehicleTypes.map((v: any) => ({
+                      value: v.typeName,
+                      label: <div className="flex items-center gap-2">{v.iconUrl ? <img src={getImageUrl(v.iconUrl)} style={{ width: 20, height: 20, objectFit: 'contain' }} /> : (v.category === 'FOUR_WHEEL' ? '🚗' : '🏍️')} {v.typeName}</div>
+                    })) : []}
+                  />
+                ) : (
+                  <Tag className="m-0 font-bold px-3 py-1 text-sm rounded border-slate-300">---</Tag>
+                )}
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <Tag color={
-                !scanData ? 'default' :
-                  scanData.customerType === 'Haunt' ? 'blue' :
-                    (scanData.customerType === 'BOOK' ? 'gold' : 'green')
-              } className="m-0 font-bold px-3 py-1 text-sm rounded shadow-sm border border-transparent">
-                {scanData?.customerType || '---'}
-              </Tag>
-              {scanData ? (
-                <Select
-                  size="large"
-                  value={scanData.vehicleType}
-                  onChange={(val) => setScanData({ ...scanData, vehicleType: val })}
-                  className="w-48 font-bold text-base"
-                  options={vehicleTypes ? vehicleTypes.map((v: any) => ({
-                    value: v.typeName,
-                    label: <div className="flex items-center gap-2">{v.iconUrl ? <img src={getImageUrl(v.iconUrl)} style={{ width: 20, height: 20, objectFit: 'contain' }} /> : (v.category === 'FOUR_WHEEL' ? '🚗' : '🏍️')} {v.typeName}</div>
-                  })) : []}
-                />
-              ) : (
-                <Tag className="m-0 font-bold px-3 py-1 text-sm rounded border-slate-300">---</Tag>
-              )}
+
+            <div className="flex flex-col items-center justify-center flex-none min-h-0">
+              <Text className="text-slate-500 font-bold mb-1 uppercase tracking-widest text-[10px]">License Plate Identification (AI)</Text>
+              <Input
+                value={editablePlate}
+                onChange={(e) => setEditablePlate(e.target.value)}
+                disabled={!scanData}
+                placeholder="---"
+                className="w-full text-2xl h-10 font-mono text-center font-bold uppercase rounded-lg border-2 border-blue-400 focus:border-blue-600 focus:shadow-[0_0_8px_rgba(37,99,235,0.2)] bg-slate-50 text-slate-900"
+              />
             </div>
           </div>
 
-          <div className="flex flex-col items-center justify-center flex-1 min-h-0">
-            <Text className="text-slate-500 font-bold mb-1 uppercase tracking-widest text-[10px]">License Plate Identification (aI)</Text>
-            <Input
-              value={editablePlate}
-              onChange={(e) => setEditablePlate(e.target.value)}
-              disabled={!scanData}
-              placeholder="---"
-              className="w-full text-3xl h-12 font-mono text-center font-bold uppercase rounded-lg border-2 border-blue-400 focus:border-blue-600 focus:shadow-[0_0_8px_rgba(37,99,235,0.2)] bg-slate-50 text-slate-900"
-            />
+          {/* REAL-TIME ZONE STATUS */}
+          <div className="bg-white border border-slate-300 shadow-sm rounded-xl p-2 flex-1 overflow-y-auto custom-scrollbar flex flex-col min-h-0 relative">
+            <Text className="text-blue-600 text-[10px] font-bold tracking-widest block uppercase mb-1 sticky top-0 bg-white z-10">Real-time Zone Coordination</Text>
+            {scanData?.routing && (
+              <div className="bg-green-50 border-2 border-green-400 rounded-lg p-3 mb-2 flex flex-col items-center justify-center shadow-sm min-h-[80px] shrink-0">
+                <Text className="text-green-600 text-[12px] uppercase font-bold tracking-widest mb-1">Suggested Route:</Text>
+                <div className="text-3xl font-black text-green-800 truncate w-full text-center tracking-tight">{scanData.routing}</div>
+              </div>
+            )}
+            
+            {scanData && routingStatusList && Array.isArray(routingStatusList) ? (
+              <div className="flex flex-col gap-1.5 shrink-0">
+                <Text className="text-slate-500 text-[9px] font-bold tracking-widest uppercase">Coordination Order:</Text>
+                {routingStatusList.map((zoneStatus: any, idx: number) => {
+                  const isSuggested = scanData?.suggestedZoneId === zoneStatus.zoneId;
+                  const isFull = zoneStatus.available <= 0;
+                  return (
+                    <div key={zoneStatus.zoneId} className={`flex flex-col p-1.5 rounded border ${isSuggested ? 'bg-green-100 border-green-500' : (isFull ? 'bg-red-50 border-red-400' : 'bg-slate-50 border-slate-300')}`}>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className={`font-bold text-xs truncate ${isSuggested ? 'text-green-700' : 'text-slate-700'}`}>#{idx + 1} {zoneStatus.zoneName}</span>
+                        <span className={`font-mono text-xs font-bold ${isFull ? 'text-red-600' : 'text-blue-600'}`}>{zoneStatus.available} <span className="text-[10px] font-normal text-slate-500">/ {zoneStatus.capacity}</span></span>
+                      </div>
+                      <div className="flex justify-between items-center text-[9px] font-mono text-slate-500">
+                        <span>Reserved incoming: <strong className="text-orange-500">{zoneStatus.reserved}</strong></span>
+                        <span>Fill rate: <strong className={(zoneStatus.occupancyRate || 0) >= 90 ? 'text-red-500' : 'text-blue-500'}>{(zoneStatus.occupancyRate || 0).toFixed(1)}%</strong></span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5 shrink-0">
+                {Array.isArray(mapData) && mapData.filter((z: any) => z.floorId === activeGate?.floorId).map((zone: any) => {
+                  const total = zone.capacity || 0;
+                  const occupiedCount = (zone.slots || []).filter((s: any) => s.status === 'OCCUPIED' || s.status === 'DISABLED').length;
+                  const availableCount = Math.max(0, total - occupiedCount - (zone.pendingReservations || 0));
+                  const isFull = availableCount <= 0;
+                  const isSuggested = scanData?.suggestedZoneId === zone.id;
+
+                  return (
+                    <div key={zone.id} className={`flex flex-col px-2 py-1 rounded border ${isSuggested ? 'bg-green-100 border-green-500' : (isFull ? 'bg-red-50 border-red-400' : 'bg-slate-50 border-slate-300')}`}>
+                      <div className="flex justify-between items-center w-full">
+                        <span className={`font-bold text-xs truncate mr-1 ${isSuggested ? 'text-green-700' : 'text-slate-700'}`} title={zone.zoneName || zone.name}>{zone.zoneName || zone.name}</span>
+                        <span className={`font-mono text-xs font-bold ${isFull ? 'text-red-600' : 'text-blue-600'}`}>{availableCount}/{total}</span>
+                      </div>
+                      {(zone.pendingReservations > 0) && (
+                        <div className="text-[9px] text-orange-500 font-mono font-bold w-full text-right mt-0.5">Reserved: {zone.pendingReservations}</div>
+                      )}
+                    </div>
+                  );
+                })}
+                {(!Array.isArray(mapData) || mapData.filter((z: any) => z.floorId === activeGate?.floorId).length === 0) && (
+                  <div className="col-span-2 text-center text-slate-500 text-xs py-2 italic">No zones on this floor</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
-        {scanData?.routing ? (
-          <div className="bg-slate-900 border-2 border-green-500 rounded-xl p-3 text-center shadow-[0_0_15px_rgba(34,197,94,0.3)] flex-none relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-green-400 to-transparent opacity-50"></div>
-            <Text className="text-green-400 text-xs font-bold tracking-widest block uppercase mb-1">INSTRUCTIONS FOR ENTERING THE BEACH</Text>
-            <div className="text-xl font-bold text-white tracking-wide truncate">
-              {scanData.routing}
-            </div>
-          </div>
-        ) : (
-          <div className="bg-slate-200 border border-slate-300 rounded-xl p-3 text-center flex-none">
-            <Text className="text-slate-400 text-xs font-bold tracking-widest block uppercase mb-1">INSTRUCTIONS FOR ENTERING THE BEACH</Text>
-            <div className="text-xl font-bold text-slate-500 tracking-wide truncate">---</div>
-          </div>
-        )}
-      </div>
-
-      {/* TASK 1 & 4: Bottom Zone (Actions) - STRICT h-[15%] */}
-      <div className="h-[15%] flex-none p-2 border-t border-slate-200 bg-white flex gap-3 shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
+      {/* TASK 1 & 4: Bottom Zone (Actions) - Fixed Height */}
+      <div className="h-[88px] flex-none px-3 pt-2 pb-3 border-t border-slate-200 bg-white flex gap-3 shadow-[0_-2px_10px_rgba(0,0,0,0.02)]">
         <Button
           size="large"
           danger
@@ -467,35 +541,6 @@ export const GateInConsoleScreen = ({ activeGate }: { activeGate: any }) => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden bg-slate-100 relative">
-      {/* FLOATING DEBUG LOG PANEL */}
-      <div className={`absolute top-4 right-4 ${debugMinimized ? 'w-auto' : 'w-96'} max-h-[80vh] bg-black/80 text-green-400 font-mono text-[10px] p-3 overflow-y-auto z-[9999] rounded border border-green-500/50 shadow-2xl flex flex-col gap-2`}>
-        <div className="flex justify-between items-center border-b border-gray-600 pb-1 mb-1">
-          <div className="text-white font-bold">⚙️ DEBUG LOGS</div>
-          <Button
-            type="text"
-            size="small"
-            className="text-white hover:text-green-400 p-0 h-auto"
-            onClick={() => setDebugMinimized(!debugMinimized)}
-          >
-            {debugMinimized ? '[] Extend' : '[-] Zoom out'}
-          </Button>
-        </div>
-        {!debugMinimized && (
-          <div className="flex flex-col gap-2">
-            {lastRawPayload ? (
-              <div className="pt-1">
-                <div className="text-yellow-400 font-bold mb-1">DATA FROM IOT TOOL SHOOTING:</div>
-                <pre className="text-[12px] text-blue-300 overflow-x-auto whitespace-pre-wrap">
-                  {JSON.stringify(lastRawPayload, null, 2)}
-                </pre>
-              </div>
-            ) : (
-              <div className="text-gray-500 italic">None vehicle scanning signaleeee</div>
-            )}
-          </div>
-        )}
-      </div>
-
       <Row className="h-full w-full m-0">
         <>
           {/* LEFT PANEL: Action Console (IN) */}

@@ -3,6 +3,8 @@ server:
   servlet:
     context-path: /
 spring:
+  config:
+    import: optional:file:./.env
   application:
     name: pbms
   datasource:

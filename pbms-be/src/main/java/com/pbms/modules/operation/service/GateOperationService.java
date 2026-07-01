@@ -49,13 +49,15 @@ public class GateOperationService {
     private final SimpMessagingTemplate messagingTemplate;
     private final TransactionRepository transactionRepository;
     private final com.pbms.modules.system.service.SystemConfigService systemConfigService;
+    private final com.pbms.common.service.FileStorageService fileStorageService;
+    private final com.pbms.modules.incident.repository.IncidentTicketRepository incidentTicketRepository;
     private List<Reservation> getValidPendingReservations(String plate) {
         List<Reservation> pending = reservationRepository.findByVehicle_PlateNumberAndStatus(plate, "PENDING");
         List<Reservation> valid = new java.util.ArrayList<>();
         java.time.LocalDateTime now = com.pbms.common.utils.TimeProvider.now();
         int windowMinutes = 30;
         try {
-            windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_ARRIVAL_WINDOW_MINUTES").getConfigValue());
+            windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_MINS").getConfigValue());
         } catch (Exception e) {
             // ignore
         }
@@ -111,7 +113,7 @@ public class GateOperationService {
             if (!reservations.isEmpty()) {
                 suggestedZone = reservations.get(0).getZone();
             } else {
-                suggestedZone = zoneRoutingService.suggestZone(type, customerType);
+                suggestedZone = zoneRoutingService.suggestZone(type, customerType, gate.getFloor());
             }
         }
 
@@ -204,8 +206,8 @@ public class GateOperationService {
 
         if (session.getSlot() != null && session.getSlot().getZone() != null) {
             info.setSuggestedZoneName(session.getSlot().getZone().getZoneName());
-        } else if (session.getSuggestedZoneName() != null && !session.getSuggestedZoneName().isEmpty()) {
-            info.setSuggestedZoneName(session.getSuggestedZoneName());
+        } else if (session.getSuggestedZoneId() != null) {
+            info.setSuggestedZoneName(zoneRepository.findById(session.getSuggestedZoneId()).map(com.pbms.modules.infrastructure.domain.Zone::getZoneName).orElse("N/A"));
         } else if (session.getReservation() != null && session.getReservation().getZone() != null) {
             info.setSuggestedZoneName(session.getReservation().getZone().getZoneName());
         } else {
@@ -220,7 +222,7 @@ public class GateOperationService {
         boolean isExemptZone = false;
         if (session.getSlot() != null && session.getSlot().getZone() != null) {
             String fType = session.getSlot().getZone().getFunctionType();
-            if ("IMPOUNDED".equalsIgnoreCase(fType) || "MONTHLY".equalsIgnoreCase(fType)) {
+            if ("IMPOUNDED".equalsIgnoreCase(fType)) {
                 isExemptZone = true;
             }
         }
@@ -253,7 +255,21 @@ public class GateOperationService {
             }
         } else if (session.getVehicleType() != null) {
             try {
-                java.math.BigDecimal fee = pricingCalculatorService.calculateTotalFee(session.getVehicleType().getId(), session.getTimeIn(), now);
+                java.time.LocalDateTime feeStartTime = session.getTimeIn();
+                java.util.Optional<com.pbms.modules.operation.domain.MonthlyTicket> expiredTicket = java.util.Optional.empty();
+                
+                if (session.getPlate() != null && !session.getPlate().isEmpty()) {
+                    expiredTicket = monthlyTicketRepository.findTopByPlateAndStatusOrderByUpdatedAtDesc(session.getPlate(), "EXPIRED");
+                }
+                if (expiredTicket.isEmpty() && rfidCode != null && !rfidCode.isEmpty()) {
+                    expiredTicket = monthlyTicketRepository.findTopByRfidCard_CardCodeAndStatusOrderByUpdatedAtDesc(rfidCode, "EXPIRED");
+                }
+
+                if (expiredTicket.isPresent() && expiredTicket.get().getUpdatedAt().isAfter(session.getTimeIn())) {
+                    feeStartTime = expiredTicket.get().getUpdatedAt();
+                }
+
+                java.math.BigDecimal fee = pricingCalculatorService.calculateTotalFee(session.getVehicleType().getId(), feeStartTime, now);
                 log.info("CALCULATED FEE: " + fee + " for duration: " + duration);
                 info.setExpectedFee(fee);
             } catch (Exception e) {
@@ -274,6 +290,13 @@ public class GateOperationService {
                 info.setExpectedFee(discountedFee);
             }
         }
+
+        // Add Penalty Fee
+        java.math.BigDecimal penaltyFee = incidentTicketRepository.findBySessionId(session.getId()).stream()
+                .map(com.pbms.modules.incident.domain.IncidentTicket::getFineAmount)
+                .filter(java.util.Objects::nonNull)
+                .reduce(java.math.BigDecimal.ZERO, java.math.BigDecimal::add);
+        info.setFeePenalty(penaltyFee);
 
         return info;
     }
@@ -300,12 +323,13 @@ public class GateOperationService {
             if (!reservations.isEmpty()) {
                 suggestedZone = reservations.get(0).getZone();
             } else {
-                suggestedZone = zoneRoutingService.suggestZone(type, customerType);
+                suggestedZone = zoneRoutingService.suggestZone(type, customerType, gate.getFloor());
             }
         }
 
         if (suggestedZone != null) {
             request.setSuggestedZoneName(suggestedZone.getZoneName());
+            request.setSuggestedZoneId(suggestedZone.getId());
         }
 
         // Notify Staff UI immediately that a scan occurred
@@ -381,10 +405,10 @@ public class GateOperationService {
                 .vehicleType(type)
                 .rfidCard(card)
                 .timeIn(com.pbms.common.utils.TimeProvider.now())
-                .picInPanorama(request.getImageBase64())
-                .picInFace(request.getLprImageBase64())
+                .picInPanorama(fileStorageService.storeBase64File(request.getImageBase64()))
+                .picInFace(fileStorageService.storeBase64File(request.getLprImageBase64()))
                 .reservation(activeRes)
-                .suggestedZoneName(suggestedZone != null ? suggestedZone.getZoneName() : null)
+                .suggestedZoneId(suggestedZone != null ? suggestedZone.getId() : null)
                 .status("ACTIVE")
                 .build();
 
@@ -399,6 +423,10 @@ public class GateOperationService {
         if (activeRes != null) {
             activeRes.setStatus("ACTIVE");
             reservationRepository.save(activeRes);
+
+            // Notify staff to clear any pending conflict alerts for this reservation
+            messagingTemplate.convertAndSend("/topic/staff/notifications", 
+                String.format("{\"type\":\"RESERVATION_ARRIVED\", \"reservationId\":%d}", activeRes.getId()));
         }
 
         GateResponseDTO response = GateResponseDTO.builder()
@@ -444,8 +472,8 @@ public class GateOperationService {
         session.setGateOut(gate);
         session.setTimeOut(com.pbms.common.utils.TimeProvider.now());
         session.setPlateOut(request.getPlateNumber());
-        session.setPicOutPanorama(request.getImageBase64());
-        session.setPicOutFace(request.getLprImageBase64());
+        session.setPicOutPanorama(fileStorageService.storeBase64File(request.getImageBase64()));
+        session.setPicOutFace(fileStorageService.storeBase64File(request.getLprImageBase64()));
 
         // Check Monthly Ticket
         boolean isMonthlyCovered = false;
@@ -468,7 +496,24 @@ public class GateOperationService {
                     fee = pricingCalculatorService.calculateTotalFee(session.getVehicleType().getId(), bookedOut, session.getTimeOut());
                 }
             } else {
-                fee = pricingCalculatorService.calculateTotalFee(session.getVehicleType().getId(), session.getTimeIn(),
+                java.time.LocalDateTime feeStartTime = session.getTimeIn();
+                String rfidCode = (request.getRfid() != null) ? request.getRfid() : 
+                                  (session.getRfidCard() != null ? session.getRfidCard().getCardCode() : null);
+
+                java.util.Optional<com.pbms.modules.operation.domain.MonthlyTicket> expiredTicket = java.util.Optional.empty();
+                
+                if (session.getPlate() != null && !session.getPlate().isEmpty()) {
+                    expiredTicket = monthlyTicketRepository.findTopByPlateAndStatusOrderByUpdatedAtDesc(session.getPlate(), "EXPIRED");
+                }
+                if (expiredTicket.isEmpty() && rfidCode != null && !rfidCode.isEmpty()) {
+                    expiredTicket = monthlyTicketRepository.findTopByRfidCard_CardCodeAndStatusOrderByUpdatedAtDesc(rfidCode, "EXPIRED");
+                }
+
+                if (expiredTicket.isPresent() && expiredTicket.get().getUpdatedAt().isAfter(session.getTimeIn())) {
+                    feeStartTime = expiredTicket.get().getUpdatedAt();
+                }
+
+                fee = pricingCalculatorService.calculateTotalFee(session.getVehicleType().getId(), feeStartTime,
                         session.getTimeOut());
             }
         }

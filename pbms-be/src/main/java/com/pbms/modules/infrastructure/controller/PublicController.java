@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -75,6 +76,19 @@ public class PublicController {
         }
 
         return ResponseEntity.ok(ApiResponse.success(statusList, "Fraudulently deleting the car"));
+    }
+
+    @GetMapping("/config/{key}")
+    public ResponseEntity<ApiResponse<String>> getPublicConfig(@PathVariable String key) {
+        if ("RESERVATION_EARLY_MINS".equals(key)) {
+            try {
+                SystemConfig config = systemConfigService.getConfigByKey(key);
+                return ResponseEntity.ok(ApiResponse.success(config.getConfigValue(), "Config retrieved"));
+            } catch (Exception e) {
+                return ResponseEntity.ok(ApiResponse.success("30", "Default value"));
+            }
+        }
+        return ResponseEntity.badRequest().body(ApiResponse.error(400, "Config not public"));
     }
 }
 

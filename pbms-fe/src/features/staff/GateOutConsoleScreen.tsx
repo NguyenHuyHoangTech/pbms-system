@@ -117,9 +117,9 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
                 timeOut: info.timeOut ? simulatedDayjs(info.timeOut).format('DD/MM/YYYY HH:mm:ss') : simulatedDayjs().format('DD/MM/YYYY HH:mm:ss'),
                 duration: info.durationMinutes ? `${info.durationMinutes} minutes` : '--',
                 feeBase: (info.expectedFee || 0) + (info.discountFee || 0),
-                feePenalty: 0,
+                feePenalty: info.feePenalty || 0,
                 discount: info.discountFee || 0,
-                expectedFee: info.expectedFee || 0,
+                expectedFee: (info.expectedFee || 0) + (info.feePenalty || 0),
                 durationMinutes: info.durationMinutes || 0,
                 isBlacklisted: false,
                 warnings: [],
@@ -342,14 +342,14 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
               {/* IN Column */}
               <div className="flex-1 flex flex-col gap-2 border-r-2 border-slate-700 pr-2">
                 <div className="text-xs font-bold text-green-400 text-center uppercase tracking-widest bg-slate-800 py-1 rounded">Photo of Vehicle Entering</div>
-                <div className="flex-1 relative bg-black rounded overflow-hidden border border-slate-700"><img src={scanData.imageInBase64} alt="IN Pan" className="w-full h-full object-contain absolute" /></div>
-                <div className="h-[25%] relative bg-white rounded flex items-center justify-center border border-slate-700"><img src={scanData.lprImageInBase64} alt="IN LPR" className="max-w-full max-h-full object-contain" /></div>
+                <div className="flex-1 relative bg-black rounded overflow-hidden border border-slate-700"><img src={getImageUrl(scanData.imageInBase64)} alt="IN Pan" className="w-full h-full object-contain absolute" /></div>
+                <div className="h-[25%] relative bg-white rounded flex items-center justify-center border border-slate-700"><img src={getImageUrl(scanData.lprImageInBase64)} alt="IN LPR" className="max-w-full max-h-full object-contain" /></div>
               </div>
               {/* OUT Column */}
               <div className="flex-1 flex flex-col gap-2 pl-2">
                 <div className="text-xs font-bold text-blue-400 text-center uppercase tracking-widest bg-slate-800 py-1 rounded">Xe Ra photo</div>
-                <div className="flex-1 relative bg-black rounded overflow-hidden border border-slate-700"><img src={scanData.imageOutBase64} alt="OUT Pan" className="w-full h-full object-contain absolute" /></div>
-                <div className="h-[25%] relative bg-white rounded flex items-center justify-center border border-slate-700"><img src={scanData.lprImageOutBase64} alt="OUT LPR" className="max-w-full max-h-full object-contain" /></div>
+                <div className="flex-1 relative bg-black rounded overflow-hidden border border-slate-700"><img src={getImageUrl(scanData.imageOutBase64)} alt="OUT Pan" className="w-full h-full object-contain absolute" /></div>
+                <div className="h-[25%] relative bg-white rounded flex items-center justify-center border border-slate-700"><img src={getImageUrl(scanData.lprImageOutBase64)} alt="OUT LPR" className="max-w-full max-h-full object-contain" /></div>
               </div>
             </>
           )}
@@ -538,10 +538,16 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
                               <QrcodeOutlined className="text-5xl text-slate-800 mb-1 animate-pulse" />
                             )}
                             <Text type="secondary" className="font-bold text-[9px] uppercase mt-2">Customer scans PayPal code</Text>
-                            <Button type="primary" size="small" className="mt-2 bg-blue-600 w-full font-bold text-xs" onClick={handleManualPaymentConfirm}>
-                              
-                                                                                      Confirm customer has paid
-                                                                                    </Button>
+                            {paymentUrl && (
+                              <Button 
+                                type="primary" 
+                                size="small" 
+                                className="mt-2 bg-blue-600 w-full font-bold text-xs" 
+                                onClick={() => window.open(paymentUrl, '_blank')}
+                              >
+                                Open Payment Link
+                              </Button>
+                            )}
                           </>
                         ) : (
                           <div className="bg-green-100 text-green-800 p-2 rounded w-full h-full text-center font-bold flex flex-col items-center justify-center text-xs shadow-inner">
@@ -566,8 +572,8 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
             )}
           </div>
 
-          {/* Fixed Actions Area (STRICT h-[15%]) */}
-          <div className="flex-none h-[15%] p-2 border-t border-slate-200 bg-white flex gap-3 shadow-[0_-4px_15px_rgba(0,0,0,0.05)] relative z-10">
+          {/* Fixed Actions Area (Fixed h-[88px]) */}
+          <div className="flex-none h-[88px] px-3 pt-2 pb-3 border-t border-slate-200 bg-white flex gap-3 shadow-[0_-4px_15px_rgba(0,0,0,0.05)] relative z-10">
             <Button 
               size="large" 
               danger
@@ -611,34 +617,7 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-80px)] overflow-hidden bg-slate-100 relative">
-      {/* FLOATING DEBUG LOG PANEL */}
-      <div className={`absolute top-4 right-4 ${debugMinimized ? 'w-auto' : 'w-96'} max-h-[80vh] bg-black/80 text-green-400 font-mono text-[10px] p-3 overflow-y-auto z-[9999] rounded border border-green-500/50 shadow-2xl flex flex-col gap-2`}>
-        <div className="flex justify-between items-center border-b border-gray-600 pb-1 mb-1">
-          <div className="text-white font-bold">⚙️ DEBUG LOGS</div>
-          <Button 
-            type="text" 
-            size="small" 
-            className="text-white hover:text-green-400 p-0 h-auto"
-            onClick={() => setDebugMinimized(!debugMinimized)}
-          >
-            {debugMinimized ? '[] Extend' : '[-] Zoom out'}
-          </Button>
-        </div>
-        {!debugMinimized && (
-          <div className="flex flex-col gap-2">
-            {lastRawPayload ? (
-              <div className="pt-1">
-                <div className="text-yellow-400 font-bold mb-1">DATA FROM IOT TOOL SHOOTING:</div>
-                <pre className="text-[12px] text-blue-300 overflow-x-auto whitespace-pre-wrap">
-                  {JSON.stringify(lastRawPayload, null, 2)}
-                </pre>
-              </div>
-            ) : (
-              <div className="text-gray-500 italic">None vehicle scanning signaleeee</div>
-            )}
-          </div>
-        )}
-      </div>
+
 
       <Row className="h-full w-full m-0">
         <Col span={24} className="h-full p-4 flex flex-col bg-slate-50">

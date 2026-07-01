@@ -108,7 +108,7 @@ export const ReservationConflictModal: React.FC<ReservationConflictModalProps> =
                     { 
                         title: 'Action', 
                         render: (_, record: any) => (
-                            <Button type="primary" size="small" onClick={() => handleResolve(record.id)}>
+                            <Button type="primary" size="small" onClick={() => handleResolve(record.zoneId)}>
                                 Route Here
                             </Button>
                         )

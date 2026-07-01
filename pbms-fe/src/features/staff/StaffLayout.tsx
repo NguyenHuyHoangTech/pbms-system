@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Typography, Avatar, Dropdown, Button, Modal } from 'antd';
+import { Layout, Typography, Avatar, Dropdown, Button, Modal, Badge } from 'antd';
 import { 
   LogoutOutlined,
   UserOutlined,
@@ -20,6 +20,7 @@ import { MonthlyZoneConflictModal } from './MonthlyZoneConflictModal';
 import { useEffect } from 'react';
 import { Client } from '@stomp/stompjs';
 import { notification } from 'antd';
+import axiosClient from '../../core/api/axiosClient';
 
 const { Header, Content } = Layout;
 const { Text } = Typography;
@@ -36,6 +37,7 @@ export const StaffLayout = () => {
   // Conflict state
   const [conflictModalVisible, setConflictModalVisible] = useState(false);
   const [conflictData, setConflictData] = useState<any>(null);
+  const [pendingConflicts, setPendingConflicts] = useState<any[]>([]);
 
   const [monthlyConflictVisible, setMonthlyConflictVisible] = useState(false);
   const [monthlyConflictData, setMonthlyConflictData] = useState<any>(null);
@@ -53,6 +55,10 @@ export const StaffLayout = () => {
         try {
             const data = JSON.parse(message.body);
             if (data.type === 'ZONE_CONFLICT') {
+                setPendingConflicts((prev) => {
+                  if (prev.find(p => p.reservationId === data.reservationId)) return prev;
+                  return [...prev, data];
+                });
                 notification.error({
                     message: '🚨 Zone Capacity Conflict!',
                     description: data.message + ' (Click to resolve)',
@@ -63,6 +69,20 @@ export const StaffLayout = () => {
                         setConflictModalVisible(true);
                     }
                 });
+            } else if (data.type === 'ZONE_RESERVED') {
+                setPendingConflicts((prev) => prev.filter(p => p.reservationId !== data.reservationId));
+                notification.success({
+                    message: '✅ Virtual Slot Reserved!',
+                    description: `Reservation for ${data.plate} in ${data.zoneName} has been successfully assigned.`,
+                    placement: 'topRight',
+                    duration: 5
+                });
+                window.dispatchEvent(new CustomEvent('add-notification', { detail: { 
+                  message: `[Assigned] ${data.plate} in ${data.zoneName} has been assigned a slot successfully.`,
+                  type: 'success'
+                }}));
+            } else if (data.type === 'RESERVATION_ARRIVED') {
+                setPendingConflicts((prev) => prev.filter(p => p.reservationId !== data.reservationId));
             }
         } catch(e) {}
       });
@@ -84,6 +104,18 @@ export const StaffLayout = () => {
     };
   }, []);
 
+  const handleResolveConflict = async (reservationId: number) => {
+    try {
+      await axiosClient.post(`/customer/reservations/${reservationId}/resolve-conflict`);
+    } catch (err: any) {
+      notification.error({
+        message: 'Resolution Failed',
+        description: err.response?.data?.message || 'Zone is still full.',
+        placement: 'topRight'
+      });
+    }
+  };
+
   const handleLogout = () => {
     if (shiftStatus === 'OPEN') {
       Modal.warning({
@@ -104,6 +136,19 @@ export const StaffLayout = () => {
       { type: 'divider' },
       { key: 'logout', icon: <LogoutOutlined />, label: 'Logout', onClick: handleLogout, danger: true },
     ],
+  };
+
+  const conflictMenu: any = {
+    items: pendingConflicts.length === 0 ? [{ key: 'empty', label: <span className="text-gray-400 italic px-2">No capacity conflicts</span> }] : pendingConflicts.map(c => ({
+      key: c.reservationId,
+      label: (
+        <div onClick={() => handleResolveConflict(c.reservationId)} className="flex flex-col gap-1 w-64 py-1 hover:bg-gray-50 rounded px-2 transition-colors cursor-pointer border-b border-gray-100 last:border-0">
+          <span className="font-bold text-red-600 flex items-center gap-1"><AlertOutlined /> {c.zoneName} is FULL</span>
+          <span className="text-xs text-gray-600">Plate: <b className="font-mono uppercase">{c.plate}</b> - {c.customer}</span>
+          <span className="text-xs text-blue-500 font-medium">Click to retry reservation</span>
+        </div>
+      )
+    }))
   };
 
   const activeGateType = sessionStorage.getItem('activeGateType');
@@ -168,6 +213,20 @@ export const StaffLayout = () => {
               <span className="text-slate-400 text-xs">{systemTime.format('DD/MM/YYYY')}</span>
             </div>
           </div>
+
+          <Dropdown menu={conflictMenu} placement="bottomRight" arrow trigger={['click']}>
+            <div className="flex items-center gap-2 cursor-pointer hover:bg-red-50 px-3 py-1.5 rounded-lg border border-red-200 transition-colors bg-white">
+              <Badge count={pendingConflicts.length} showZero size="small">
+                <AlertOutlined className="text-red-500 text-lg" />
+              </Badge>
+              <div className="flex flex-col hidden sm:flex">
+                <span className="text-xs font-bold text-red-600 leading-none">Pre-booked Queue</span>
+                <span className="text-[10px] text-gray-500 mt-0.5 whitespace-nowrap">
+                  {pendingConflicts.length === 0 ? 'No cars in queue' : `${pendingConflicts.length} cars waiting for slot`}
+                </span>
+              </div>
+            </div>
+          </Dropdown>
 
           <NotificationDropdown />
 

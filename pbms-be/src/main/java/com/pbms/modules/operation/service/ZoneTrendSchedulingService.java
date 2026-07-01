@@ -48,8 +48,6 @@ public class ZoneTrendSchedulingService {
                 recordTrendForTime(iter);
                 iter = iter.plusHours(1);
             }
-        } else {
-            recordTrendForTime(newTime);
         }
     }
 

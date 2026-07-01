@@ -24,6 +24,7 @@ public class IncidentTicketService {
     private final IncidentTicketRepository incidentTicketRepository;
     private final ParkingSessionRepository parkingSessionRepository;
     private final RfidCardRepository rfidCardRepository;
+    private final com.pbms.common.service.FileStorageService fileStorageService;
 
     public List<IncidentTicketDTO> getAllTickets() {
         return incidentTicketRepository.findAllByOrderByIdDesc().stream()
@@ -39,8 +40,8 @@ public class IncidentTicketService {
         ticket.setFineAmount(request.getBaseFee());
         ticket.setPriority("MEDIUM");
         ticket.setStatus("PENDING");
-        ticket.setUploadedDocUrl(docUrl);
-        ticket.setUploadedCardUrl(cardUrl);
+        ticket.setUploadedDocUrl(fileStorageService.storeBase64File(docUrl));
+        ticket.setUploadedCardUrl(fileStorageService.storeBase64File(cardUrl));
         
         // Try to find an active session if plate or rfid is provided
         if (request.getPlate() != null && !request.getPlate().isEmpty()) {
@@ -71,8 +72,8 @@ public class IncidentTicketService {
         
         ticket.setStatus("RESOLVED");
         ticket.setResolvedAt(com.pbms.common.utils.TimeProvider.now());
-        if (docUrl != null) ticket.setUploadedDocUrl(docUrl);
-        if (cardUrl != null) ticket.setUploadedCardUrl(cardUrl);
+        if (docUrl != null) ticket.setUploadedDocUrl(fileStorageService.storeBase64File(docUrl));
+        if (cardUrl != null) ticket.setUploadedCardUrl(fileStorageService.storeBase64File(cardUrl));
         
         // If lost or damaged card, update the RfidCard status
         if (ticket.getSession() != null) {

@@ -65,11 +65,11 @@ public class MapConfigurationService {
                 .filter(ps -> ("ACTIVE".equals(ps.getStatus()) || "LOCKED".equals(ps.getStatus())) && ps.getSlot() != null)
                 .collect(Collectors.toMap(ps -> ps.getSlot().getId(), com.pbms.modules.operation.domain.ParkingSession::getPlate, (p1, p2) -> p1));
 
-        // Group active parking sessions by suggested zone name
-        Map<String, List<String>> zoneSuggestedVehicles = parkingSessionRepository.findAll().stream()
-                .filter(ps -> ("ACTIVE".equals(ps.getStatus()) || "LOCKED".equals(ps.getStatus())) && ps.getSuggestedZoneName() != null && ps.getPlate() != null)
+        // Group active parking sessions by suggested zone id
+        Map<Long, List<String>> zoneSuggestedVehicles = parkingSessionRepository.findAll().stream()
+                .filter(ps -> ("ACTIVE".equals(ps.getStatus()) || "LOCKED".equals(ps.getStatus())) && ps.getSuggestedZoneId() != null && ps.getPlate() != null)
                 .collect(Collectors.groupingBy(
-                    com.pbms.modules.operation.domain.ParkingSession::getSuggestedZoneName,
+                    com.pbms.modules.operation.domain.ParkingSession::getSuggestedZoneId,
                     Collectors.mapping(com.pbms.modules.operation.domain.ParkingSession::getPlate, Collectors.toList())
                 ));
 
@@ -89,7 +89,7 @@ public class MapConfigurationService {
             List<com.pbms.modules.operation.domain.Reservation> pendingList = reservationRepository.findByZoneIdAndStatus(z.getId(), "PENDING");
             int windowMinutes = 30;
             try {
-                windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_ARRIVAL_WINDOW_MINUTES").getConfigValue());
+                windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_MINS").getConfigValue());
             } catch (Exception e) {
                 // ignore
             }
@@ -114,7 +114,7 @@ public class MapConfigurationService {
                     .rotation(z.getRotation())
                     .overflowThreshold(z.getOverflowThreshold())
                     .activeReservationsCount(activeReservations)
-                    .suggestedVehicles(zoneSuggestedVehicles.getOrDefault(z.getZoneName(), new ArrayList<>()))
+                    .suggestedVehicles(zoneSuggestedVehicles.getOrDefault(z.getId(), new ArrayList<>()))
                     .slots(slotDTOs)
                     .build();
         }).collect(Collectors.toList());

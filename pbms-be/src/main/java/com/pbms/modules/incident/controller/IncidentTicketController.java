@@ -131,15 +131,13 @@ public class IncidentTicketController {
     }
 
     @GetMapping("/check-plate")
-    public ResponseEntity<ApiResponse<Boolean>> checkPlateActive(@RequestParam String plate) {
-        boolean isActive = incidentService.isPlateActive(plate);
-        return ResponseEntity.ok(ApiResponse.success(isActive, "Check the status"));
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> checkPlateActive(@RequestParam String plate) {
+        return ResponseEntity.ok(ApiResponse.success(incidentService.checkPlateActiveInfo(plate), "Check the status"));
     }
 
     @GetMapping("/check-plate-rfid")
-    public ResponseEntity<ApiResponse<Boolean>> checkPlateAndRfidActive(@RequestParam String plate, @RequestParam String rfid) {
-        boolean isActive = incidentService.isPlateAndRfidActive(plate, rfid);
-        return ResponseEntity.ok(ApiResponse.success(isActive, "Check the status"));
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> checkPlateAndRfidActive(@RequestParam String plate, @RequestParam String rfid) {
+        return ResponseEntity.ok(ApiResponse.success(incidentService.checkPlateAndRfidActiveInfo(plate, rfid), "Check the status"));
     }
 
     @PostMapping("/lost-card")

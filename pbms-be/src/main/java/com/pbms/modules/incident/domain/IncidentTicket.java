@@ -66,5 +66,8 @@ public class IncidentTicket extends BaseEntity {
 
     @Column(name = "fee_paused_at")
     private LocalDateTime feePausedAt;
+
+    @Column(name = "reported_plate", length = 50)
+    private String reportedPlate;
 }
 

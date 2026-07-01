@@ -52,6 +52,18 @@ public class ReservationService {
 
     @Transactional(readOnly = true)
     public List<ReservationDTO> getAllReservations() {
+        org.springframework.security.core.Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        String currentEmail = auth != null ? auth.getName() : null;
+        boolean isCustomer = auth != null && auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ROLE_CUSTOMER"))
+                && auth.getAuthorities().stream().noneMatch(a -> a.getAuthority().equals("ROLE_MANAGER") || a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_STAFF"));
+
+        if (isCustomer && currentEmail != null) {
+            return reservationRepository.findAllByOrderByCreatedAtDesc().stream()
+                    .filter(r -> r.getVehicle() != null && r.getVehicle().getUser() != null && currentEmail.equals(r.getVehicle().getUser().getEmail()))
+                    .map(this::mapToDTO)
+                    .collect(Collectors.toList());
+        }
+        
         return reservationRepository.findAllByOrderByCreatedAtDesc().stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
@@ -64,6 +76,9 @@ public class ReservationService {
 
     @Transactional
     public ReservationDTO createReservation(CreateReservationRequest request) {
+        String email = SecurityContextHolder.getContext().getAuthentication() != null ? SecurityContextHolder.getContext().getAuthentication().getName() : null;
+        User currentUser = email != null ? userRepository.findByEmail(email).orElse(null) : null;
+
         // 1. Get or Create Vehicle
         Vehicle vehicle = vehicleRepository.findByPlateNumber(request.getPlateNumber())
                 .orElseGet(() -> {
@@ -72,9 +87,15 @@ public class ReservationService {
                     Vehicle newVehicle = Vehicle.builder()
                             .vehicleType(type)
                             .plateNumber(request.getPlateNumber())
+                            .user(currentUser)
                             .build();
                     return vehicleRepository.save(newVehicle);
                 });
+
+        if (vehicle.getUser() == null && currentUser != null) {
+            vehicle.setUser(currentUser);
+            vehicleRepository.save(vehicle);
+        }
 
         // Check if there's an active or pending reservation for this vehicle
         List<Reservation> existing = reservationRepository.findByVehicle_PlateNumberAndStatus(request.getPlateNumber(), "PENDING");
@@ -164,10 +185,17 @@ public class ReservationService {
         LocalDateTime entryTime = reservation.getExpectedEntryTime();
         long diffMins = java.time.temporal.ChronoUnit.MINUTES.between(now, entryTime);
 
+        int windowMinutes = 30;
+        try {
+            windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_MINS").getConfigValue());
+        } catch (Exception e) {
+            // ignore
+        }
+
         BigDecimal refundPercent = BigDecimal.ZERO;
-        if (diffMins >= 30) {
+        if (diffMins > windowMinutes) {
             refundPercent = BigDecimal.ONE; // 100%
-        } else if (diffMins > 0 && diffMins < 30) {
+        } else if (diffMins > 0 && diffMins <= windowMinutes) {
             refundPercent = new BigDecimal("0.5"); // 50%
         }
 
@@ -183,8 +211,11 @@ public class ReservationService {
         reservationRepository.save(reservation);
 
         if (refundAmount.compareTo(BigDecimal.ZERO) > 0) {
+            User user = reservation.getVehicle() != null ? reservation.getVehicle().getUser() : null;
             String email = SecurityContextHolder.getContext().getAuthentication().getName();
-            User user = userRepository.findByEmail(email).orElse(null);
+            if (user == null) {
+                user = userRepository.findByEmail(email).orElse(null);
+            }
 
             if (user != null) {
                 RefundRequest refund = RefundRequest.builder()
@@ -214,7 +245,9 @@ public class ReservationService {
                     .status("SUCCESS")
                     .transactionReference("PENALTY-RES-" + reservation.getId())
                     .build();
-            transactionRepository.save(penaltyTx);
+            penaltyTx.setCreatedAt(now); // Set the simulated time manually
+            penaltyTx = transactionRepository.save(penaltyTx);
+            transactionRepository.updateCreatedAtNative(penaltyTx.getId(), now);
         }
 
         return mapToDTO(reservation);
@@ -232,7 +265,7 @@ public class ReservationService {
     public void scheduleReservationTasks(Reservation res) {
         int windowMinutes = 30;
         try {
-            windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_ARRIVAL_WINDOW_MINUTES").getConfigValue());
+            windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_MINS").getConfigValue());
         } catch (Exception e) {
             // ignore
         }
@@ -290,7 +323,7 @@ public class ReservationService {
         
         int windowMinutes = 30;
         try {
-            windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_ARRIVAL_WINDOW_MINUTES").getConfigValue());
+            windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_MINS").getConfigValue());
         } catch (Exception e) {
             // ignore
         }
@@ -304,7 +337,7 @@ public class ReservationService {
                 expiredCount++;
             } else {
                 LocalDateTime notifyTime = res.getExpectedEntryTime().minusMinutes(windowMinutes);
-                if (now.isAfter(notifyTime) && (res.getNotifiedEarlyArrival() == null || !res.getNotifiedEarlyArrival())) {
+                if (!now.isBefore(notifyTime) && (res.getNotifiedEarlyArrival() == null || !res.getNotifiedEarlyArrival())) {
                     res.setNotifiedEarlyArrival(true);
                     reservationRepository.save(res);
                     notifiedCount++;

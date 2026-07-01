@@ -70,8 +70,21 @@ export const NotificationDropdown: React.FC = () => {
 
     client.activate();
 
+    const handleCustomNotif = (e: any) => {
+      const newItem: NotificationItem = {
+        key: Date.now().toString() + Math.random(),
+        message: e.detail.message,
+        time: new Date(),
+        read: false,
+      };
+      setNotifications((prev) => [newItem, ...prev]);
+      setUnreadCount((prev) => prev + 1);
+    };
+    window.addEventListener('add-notification', handleCustomNotif);
+
     return () => {
       client.deactivate();
+      window.removeEventListener('add-notification', handleCustomNotif);
     };
   }, []);
 

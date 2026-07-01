@@ -17,7 +17,7 @@ public interface ParkingSessionRepository extends JpaRepository<ParkingSession, 
            "AND ps.plate IN (SELECT mt.plate FROM MonthlyTicket mt WHERE mt.status = 'ACTIVE' AND mt.validUntil > CURRENT_TIMESTAMP)")
     long countActiveMonthlyCarsByVehicleType(@Param("vehicleTypeId") Long vehicleTypeId);
     
-    long countBySuggestedZoneNameAndStatusAndSlotIsNull(String suggestedZoneName, String status);
+    long countBySuggestedZoneIdAndStatusAndSlotIsNull(Long suggestedZoneId, String status);
     
     Optional<ParkingSession> findByRfidCard_CardCodeAndStatus(String cardCode, String status);
     Optional<ParkingSession> findByPlateAndStatus(String plate, String status);

@@ -12,6 +12,7 @@ public class CheckInRequestDTO {
     private String imageBase64;
     private String lprImageBase64;
     private String suggestedZoneName;
+    private Long suggestedZoneId;
     private String customerType; // "GUEST", "PREBOOKED", "MONTHLY"
 }
 

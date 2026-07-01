@@ -31,6 +31,7 @@ export const ExceptionDeskScreen = () => {
   const [manualForm] = Form.useForm();
   const [isManualPlateVerified, setIsManualPlateVerified] = useState(false);
   const [isCheckingManualPlate, setIsCheckingManualPlate] = useState(false);
+  const [manualCheckedVehicleType, setManualCheckedVehicleType] = useState<string>('');
   
   const [isRejectTicketModalOpen, setIsRejectTicketModalOpen] = useState(false);
   const [rejectTicketForm] = Form.useForm();
@@ -39,6 +40,9 @@ export const ExceptionDeskScreen = () => {
   const [blacklistEvidenceFile, setBlacklistEvidenceFile] = useState<File | null>(null);
   const [isCheckingBlacklistPlate, setIsCheckingBlacklistPlate] = useState(false);
   const [checkedBlacklistVehicle, setCheckedBlacklistVehicle] = useState<any | null>(null);
+
+  const [isCheckingZonePlate, setIsCheckingZonePlate] = useState(false);
+  const [checkedZoneVehicle, setCheckedZoneVehicle] = useState<any | null>(null);
 
   // Reset local state when selected ticket changes
   useEffect(() => { 
@@ -99,6 +103,30 @@ export const ExceptionDeskScreen = () => {
       message.warning('Vehicle not found in system. You can still add it to blacklist.');
     } finally {
       setIsCheckingBlacklistPlate(false);
+    }
+  };
+
+  const handleCheckZoneViolationPlate = async () => {
+    try {
+      const plate = zoneViolationForm.getFieldValue('plate');
+      if (!plate) {
+        message.warning('Please enter a license plate to check');
+        return;
+      }
+      setIsCheckingZonePlate(true);
+      const res = await axiosClient.get(`/operation/vehicles/check?plate=${plate}`);
+      if (res.data && res.data.data) {
+        setCheckedZoneVehicle(res.data.data);
+        message.success(`Vehicle found: Type ${res.data.data.vehicleType}`);
+      } else {
+        setCheckedZoneVehicle(null);
+        message.warning('Vehicle not found in system.');
+      }
+    } catch (e: any) {
+      setCheckedZoneVehicle(null);
+      message.warning('Vehicle not found in system.');
+    } finally {
+      setIsCheckingZonePlate(false);
     }
   };
 
@@ -168,6 +196,7 @@ export const ExceptionDeskScreen = () => {
         res = await axiosClient.post('/incidents', {
           issueType: values.type,
           plate: values.plate?.toUpperCase(),
+          fineAmount: values.fineAmount,
           description: values.description,
           priority: values.type === 'LOST_CARD' ? 'HIGH' : 'MEDIUM',
           uploadedDocUrl: mockUrl
@@ -194,7 +223,7 @@ export const ExceptionDeskScreen = () => {
         return;
       }
       const category = manualForm.getFieldValue('type');
-      const isLostOrDamaged = category === 'LOST_CARD' || category === 'DAMAGED_CARD';
+      const isLostOrDamaged = category === 'LOST_CARD' || category === 'DAMAGED_CARD' || category === 'ZONE_VIOLATION';
       let rfid = '';
       if (!isLostOrDamaged) {
           rfid = manualForm.getFieldValue('code');
@@ -212,12 +241,36 @@ export const ExceptionDeskScreen = () => {
           res = await axiosClient.get('/incidents/check-plate-rfid', { params: { plate: plate.toUpperCase(), rfid } });
       }
 
-      if (res.data?.data) {
-        message.success(`Authentication successfully.`);
-        setIsManualPlateVerified(true);
+      if (res.data?.data?.isActive) {
+        if (category === 'ZONE_VIOLATION') {
+          message.success(`Vehicle found! Redirecting to Penalty Issuance...`);
+          setIsManualModalOpen(false);
+          setSelectedCategory('ZONE_VIOLATION');
+          
+          const vehicleTypeName = res.data.data.vehicleType || '';
+          const is2W = vehicleTypeName === 'Xe máy' || vehicleTypeName === 'Xe Đạp' || vehicleTypeName.includes('2') || vehicleTypeName.toLowerCase().includes('two');
+          const categoryVal = is2W ? 'TWO_WHEEL' : 'FOUR_WHEEL';
+          
+          const defaultFee = getPenaltyConfig(is2W ? 'PENALTY_ZONE_VIOLATION_2W' : 'PENALTY_ZONE_VIOLATION_4W', is2W ? 50000 : 100000);
+          
+          zoneViolationForm.setFieldsValue({ 
+            plate: plate.toUpperCase(),
+            vehicleCategory: categoryVal,
+            fee: defaultFee
+          });
+          setCheckedZoneVehicle({ vehicleType: vehicleTypeName });
+          
+          manualForm.resetFields();
+          setIsManualPlateVerified(false);
+        } else {
+          message.success(`Authentication successfully. Type: ${res.data.data.vehicleType}`);
+          setManualCheckedVehicleType(res.data.data.vehicleType);
+          setIsManualPlateVerified(true);
+        }
       } else {
         message.error(isLostOrDamaged ? `Vehicle not found ${plate} parking in lot!` : `License Plate and Card Code do not match or are not in stock!`);
         setIsManualPlateVerified(false);
+        setManualCheckedVehicleType('');
       }
     } catch (error) {
       message.error('Error checking vehicle information');
@@ -506,7 +559,8 @@ export const ExceptionDeskScreen = () => {
             { id: 'SLOT_OCCUPIED', label: 'Slot Occupied', icon: '🚗' },
             { id: 'FIND_CAR', label: 'Find Car', icon: '🔍' },
             { id: 'FEE_DISPUTE', label: 'Fee Dispute', icon: '💰' },
-            { id: 'OTHER_FEEDBACK', label: 'Other Feedback', icon: '💬' }
+            { id: 'OTHER_FEEDBACK', label: 'Other Feedback', icon: '💬' },
+            { id: 'BLACKLIST', label: 'Blacklist', icon: '🚫' }
           ].map(cat => (
              <div 
                key={cat.id} 
@@ -520,8 +574,12 @@ export const ExceptionDeskScreen = () => {
         </div>
       </div>
 
-      {/* Pane 2: Ticket Queue */}
-      <div className="w-full lg:w-80 bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col lg:overflow-hidden shrink-0">
+      {selectedCategory === 'BLACKLIST' ? (
+        renderBlacklist()
+      ) : (
+        <>
+          {/* Pane 2: Ticket Queue */}
+          <div className="w-full lg:w-80 bg-white rounded-2xl shadow-sm border border-gray-200 flex flex-col lg:overflow-hidden shrink-0">
         <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center shrink-0">
           <Text strong className="text-gray-700 text-sm lg:text-base">Queue ({filteredTickets.length})</Text>
           <Button type="primary" icon={<PlusOutlined />} size="small" onClick={() => setIsManualModalOpen(true)}>At the counter</Button>
@@ -597,7 +655,7 @@ export const ExceptionDeskScreen = () => {
                            {/* Vehicle In Image */}
                            {selectedTicket.sessionPicInPanorama ? (
                              <div className="w-32 h-20 shrink-0 border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
-                               <img src={selectedTicket.sessionPicInPanorama} alt="Photo of the car entering" className="w-full h-full object-cover" />
+                               <img src={getImageUrl(selectedTicket.sessionPicInPanorama)} alt="Photo of the car entering" className="w-full h-full object-cover" />
                                <div className="text-[10px] text-center bg-gray-100 text-gray-500 py-0.5">PHOTO OF CAR ENTERING</div>
                              </div>
                            ) : (
@@ -609,7 +667,7 @@ export const ExceptionDeskScreen = () => {
                            {/* Customer Report Image */}
                            {selectedTicket.uploadedDocUrl ? selectedTicket.uploadedDocUrl.split('|').map((url: string, idx: number) => (
                              <div key={idx} className="w-32 h-20 shrink-0 border border-gray-300 rounded-lg overflow-hidden bg-white shadow-sm">
-                               <img src={url} alt={`Proof ${idx + 1}`} className="w-full h-full object-cover" />
+                               <img src={getImageUrl(url)} alt={`Proof ${idx + 1}`} className="w-full h-full object-cover" />
                                <div className="text-[10px] text-center bg-gray-100 text-gray-500 py-0.5">PROOF {idx + 1}</div>
                              </div>
                            )) : (
@@ -665,7 +723,7 @@ export const ExceptionDeskScreen = () => {
                                   </div>
                                   <div className="border border-gray-200 rounded-lg overflow-hidden">
                                     <div className="bg-gray-100 text-center py-1 text-xs font-bold text-gray-500">PHOTO OF CAR ENTERING</div>
-                                    <img src={phase2SessionInfo?.picInPanorama || selectedTicket.sessionPicInPanorama} alt="Photo in" className="w-full h-48 object-cover" />
+                                    <img src={getImageUrl(phase2SessionInfo?.picInPanorama || selectedTicket.sessionPicInPanorama)} alt="Photo in" className="w-full h-48 object-cover" />
                                   </div>
                                 </div>
                               )
@@ -755,7 +813,7 @@ export const ExceptionDeskScreen = () => {
                         <div className="flex gap-3">
                           <div className="w-32 h-24 rounded-lg overflow-hidden border border-gray-200 shrink-0 bg-gray-100 flex items-center justify-center">
                             {entryImg ? (
-                              <img src={entryImg} alt="Photo in" className="w-full h-full object-cover" />
+                              <img src={getImageUrl(entryImg)} alt="Photo in" className="w-full h-full object-cover" />
                             ) : (
                               <CameraOutlined className="text-2xl text-gray-300" />
                             )}
@@ -773,7 +831,7 @@ export const ExceptionDeskScreen = () => {
                             <Text type="secondary" className="text-xs block mb-1">Guest Report photo:</Text>
                             <div className="flex gap-2 overflow-x-auto pb-1">
                               {selectedTicket.uploadedDocUrl.split('|').map((url: string, idx: number) => (
-                                 <img key={idx} src={url} alt={`Customer Image ${idx + 1}`} className="max-h-20 rounded border border-gray-200 object-contain" />
+                                 <img key={idx} src={getImageUrl(url)} alt={`Customer Image ${idx + 1}`} className="max-h-20 rounded border border-gray-200 object-contain" />
                               ))}
                             </div>
                           </div>
@@ -1087,7 +1145,7 @@ export const ExceptionDeskScreen = () => {
                           {allImages.map((img: any, idx: number) => (
                             <div key={idx} className="flex flex-col gap-1 items-center shrink-0 w-56">
                               <div className="h-36 w-full border border-gray-300 rounded overflow-hidden bg-white shadow-sm hover:shadow-md transition-shadow">
-                                <img src={img.url} alt={img.label} className="w-full h-full object-cover" />
+                                <img src={getImageUrl(img.url)} alt={img.label} className="w-full h-full object-cover" />
                               </div>
                               <Text className="text-xs text-gray-600 font-bold uppercase tracking-wider bg-gray-100 px-2 py-0.5 rounded">{img.label}</Text>
                             </div>
@@ -1109,6 +1167,7 @@ export const ExceptionDeskScreen = () => {
                  form={zoneViolationForm} 
                  onFinish={(values) => createIncidentMutation.mutate({...values, type: 'ZONE_VIOLATION'})}
                  onValuesChange={(changedValues) => {
+                   if (changedValues.plate) setCheckedZoneVehicle(null);
                    if (changedValues.vehicleCategory) {
                      const is2W = changedValues.vehicleCategory === 'TWO_WHEEL';
                      const key = is2W ? 'PENALTY_ZONE_VIOLATION_2W' : 'PENALTY_ZONE_VIOLATION_4W';
@@ -1119,9 +1178,21 @@ export const ExceptionDeskScreen = () => {
                  }}
                  initialValues={{ vehicleCategory: 'FOUR_WHEEL', fee: 100000 }}
                >
-                 <Form.Item name="plate" label="License Plate" rules={[{ required: true, message: 'Please enter license plate' }]}>
-                   <Input size="large" className="font-mono uppercase font-bold" placeholder="E.g., 30A-123.45" />
+                 <Form.Item label="License Plate" required>
+                   <div className="flex gap-2">
+                     <Form.Item name="plate" noStyle rules={[{ required: true, message: 'Please enter license plate' }]}>
+                       <Input size="large" className="font-mono uppercase font-bold" placeholder="E.g., 30A-123.45" />
+                     </Form.Item>
+                     <Button size="large" onClick={handleCheckZoneViolationPlate} loading={isCheckingZonePlate}>Check</Button>
+                   </div>
                  </Form.Item>
+                 {checkedZoneVehicle && (
+                   <div className="mb-4">
+                     <Tag color="green" className="text-sm px-3 py-1 font-bold">
+                       VEHICLE FOUND: {checkedZoneVehicle.vehicleType}
+                     </Tag>
+                   </div>
+                 )}
                  <Form.Item name="vehicleCategory" label="Vehicle Type" rules={[{ required: true }]}>
                    <Select size="large">
                      <Select.Option value="TWO_WHEEL">2-Wheeler (Motorbike/Bicycle)</Select.Option>
@@ -1217,12 +1288,14 @@ export const ExceptionDeskScreen = () => {
           <div className="flex-1 flex flex-col items-center justify-center text-gray-400 p-8 text-center bg-slate-50"><CreditCardOutlined className="text-6xl text-slate-300 mb-4" /><Title level={4} className="text-slate-400">No Incident selected</Title><Text>Please select a Ticket from the Queue</Text></div>
         )}
       </div>
+        </>
+      )}
     </div>
   );
 
   const renderBlacklist = () => (
-    <div className="flex-1 overflow-y-auto p-6 bg-gray-50">
-      <div className="max-w-5xl mx-auto">
+    <div className="flex-1 overflow-y-auto p-4 lg:p-6 bg-white rounded-2xl shadow-sm border border-gray-200">
+      <div className="w-full max-w-4xl mx-auto">
         <div className="mb-6">
           <Title level={3}>Blacklisted Vehicles</Title>
           <Text type="secondary">Vehicles that are not allowed to enter or have frequent overstays.</Text>
@@ -1311,7 +1384,7 @@ export const ExceptionDeskScreen = () => {
                       )}
                       {item.blacklistEvidenceUrl && (
                         <div className="mt-2">
-                          <img src={item.blacklistEvidenceUrl} alt="Evidence" className="h-20 w-auto rounded border border-gray-200 object-cover" />
+                          <img src={getImageUrl(item.blacklistEvidenceUrl)} alt="Evidence" className="h-20 w-auto rounded border border-gray-200 object-cover" />
                         </div>
                       )}
                     </div>
@@ -1351,20 +1424,7 @@ export const ExceptionDeskScreen = () => {
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-slate-50">
-      {/* HEADER TABS */}
-      <div className="bg-white border-b border-gray-200 px-4 pt-4 shrink-0 flex items-center justify-between overflow-x-auto whitespace-nowrap">
-        <div className="flex space-x-6 w-full pb-1">
-          <div className={`pb-2 px-2 cursor-pointer font-bold text-sm uppercase tracking-wide border-b-2 transition-all ${activeMenu === 'card_dispute' ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`} onClick={() => setActiveMenu('card_dispute')}>
-            <WarningOutlined className="mr-2" />Resolve Incidents
-          </div>
-          <div className={`pb-2 px-2 cursor-pointer font-bold text-sm uppercase tracking-wide border-b-2 transition-all ${activeMenu === 'blacklist' ? 'border-red-600 text-red-700' : 'border-transparent text-gray-500 hover:text-gray-700'}`} onClick={() => setActiveMenu('blacklist')}>
-            <WarningOutlined className="mr-2" />Blacklist
-          </div>
-        </div>
-      </div>
-
-      {activeMenu === 'card_dispute' && renderCardDispute()}
-      {activeMenu === 'blacklist' && renderBlacklist()}
+      {renderCardDispute()}
 
       <Modal 
         title="Create a Manual Incident at the Counter" 
@@ -1385,6 +1445,7 @@ export const ExceptionDeskScreen = () => {
               <Select.Option value="FIND_CAR">Car not found</Select.Option>
               <Select.Option value="FEE_DISPUTE">Fee discrepancies</Select.Option>
               <Select.Option value="OTHER_FEEDBACK">Other comments</Select.Option>
+              <Select.Option value="ZONE_VIOLATION">Wrong Zone Parking</Select.Option>
             </Select>
           </Form.Item>
           
@@ -1401,7 +1462,7 @@ export const ExceptionDeskScreen = () => {
             >
               {({ getFieldValue }) => {
                 const type = getFieldValue('type');
-                if (type && type !== 'LOST_CARD' && type !== 'DAMAGED_CARD') {
+                if (type && type !== 'LOST_CARD' && type !== 'DAMAGED_CARD' && type !== 'ZONE_VIOLATION') {
                   return (
                     <Form.Item label="Card code / RFID" name="code" rules={[{ required: true, message: 'Card code is required for authentication' }]} className="col-span-1">
                       <Input size="large" placeholder="Enter cardeee code" disabled={isCheckingManualPlate} onChange={() => setIsManualPlateVerified(false)} />
@@ -1420,6 +1481,11 @@ export const ExceptionDeskScreen = () => {
 
           {isManualPlateVerified && (
             <>
+              <div className="mb-4 text-center">
+                <Tag color="green" className="text-sm px-4 py-1 font-bold">
+                  VEHICLE FOUND: {manualCheckedVehicleType}
+                </Tag>
+              </div>
               <Form.Item
                 noStyle
                 shouldUpdate={(prevValues, currentValues) => prevValues.type !== currentValues.type}
@@ -1451,6 +1517,22 @@ export const ExceptionDeskScreen = () => {
                         </Form.Item>
                       )}
                     </div>
+                  ) : manualCategory === 'ZONE_VIOLATION' ? (
+                    <>
+                      <Form.Item name="fineAmount" label="Penalty Fee (Optional)" className="mb-4">
+                        <InputNumber size="large" className="w-full font-bold text-red-600" placeholder="Default fee will be applied if left blank" />
+                      </Form.Item>
+                      <Form.Item label="Attached photo" required className="mb-4">
+                        <Upload 
+                          maxCount={1} 
+                          beforeUpload={(file) => { setUploadedFile(file); return false; }}
+                          onRemove={() => setUploadedFile(null)}
+                          listType="picture"
+                        >
+                          <Button icon={<UploadOutlined />} className="w-full">Download proof photos</Button>
+                        </Upload>
+                      </Form.Item>
+                    </>
                   ) : (
                     <Form.Item label="Attached photo" required className="mb-4">
                       <Upload 

@@ -78,7 +78,6 @@ export const HelpdeskScreen = () => {
       if (payload.issueType === 'LOST_CARD') {
         res = await axiosClient.post('/incidents/lost-card', { 
           plate: payload.plate, 
-          fee: 200000, 
           description: payload.description,
           uploadedDocUrl: payload.uploadedDocUrl
         });
@@ -407,7 +406,7 @@ export const HelpdeskScreen = () => {
                 type="primary" 
                 htmlType="submit" 
                 loading={createIncidentMutation.isPending}
-                disabled={!selectedCategory || ((selectedCategory === 'LOST_CARD' || selectedCategory === 'DAMAGED_CARD') && !isPlateVerified)}
+                disabled={!selectedCategory || !isPlateVerified}
                 className={`w-full h-14 rounded-xl font-bold text-lg shadow-lg transition-all duration-300 flex items-center justify-center ${
                   selectedCategory === 'LOST_CARD' ? 'bg-red-600 hover:bg-red-700' :
                   selectedCategory === 'SLOT_OCCUPIED' ? 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 border-0' :

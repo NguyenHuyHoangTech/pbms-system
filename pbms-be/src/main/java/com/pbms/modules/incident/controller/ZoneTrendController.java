@@ -23,7 +23,7 @@ public class ZoneTrendController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         
         if (date == null) {
-            date = LocalDate.now();
+            date = com.pbms.common.utils.TimeProvider.now().toLocalDate();
         }
         
         return ResponseEntity.ok(ApiResponse.success(

@@ -69,8 +69,8 @@ public class ParkingSession {
     @Column(name = "pic_out_face", columnDefinition = "VARCHAR(MAX)")
     private String picOutFace;
 
-    @Column(name = "suggested_zone_name", length = 255)
-    private String suggestedZoneName;
+    @Column(name = "suggested_zone_id")
+    private Long suggestedZoneId;
 
     @Column(name = "global_base_fee", precision = 18, scale = 2)
     private BigDecimal globalBaseFee;

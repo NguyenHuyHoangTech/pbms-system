@@ -46,7 +46,7 @@ export const PreBookingManagementScreen = () => {
     }
   });
 
-  const configObj = configs?.find((c: any) => c.configKey === 'RESERVATION_EARLY_ARRIVAL_WINDOW_MINUTES');
+  const configObj = configs?.find((c: any) => c.configKey === 'RESERVATION_EARLY_MINS');
   const defaultWindow = configObj ? parseInt(configObj.configValue) : 30;
   const [windowMinutes, setWindowMinutes] = useState<number | null>(null);
 
@@ -61,7 +61,7 @@ export const PreBookingManagementScreen = () => {
       if (configObj) {
         await axiosClient.put(`/system/configs/${configObj.id}`, { ...configObj, configValue: val.toString() });
       } else {
-        await axiosClient.post(`/system/configs`, { configKey: 'RESERVATION_EARLY_ARRIVAL_WINDOW_MINUTES', configValue: val.toString(), description: 'Minutes before reservation time when staff are notified and early arrival is allowed without penalty' });
+        await axiosClient.post(`/system/configs`, { configKey: 'RESERVATION_EARLY_MINS', configValue: val.toString(), description: 'Minutes before reservation time when staff are notified and early arrival is allowed without penalty' });
       }
     },
     onSuccess: () => {

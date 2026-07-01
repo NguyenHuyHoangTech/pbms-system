@@ -28,6 +28,8 @@ public class ParkingSessionController {
     private final ParkingSessionRepository parkingSessionRepository;
     private final PricingCalculatorService pricingCalculatorService;
     private final IncidentTicketRepository incidentTicketRepository;
+    private final com.pbms.modules.infrastructure.repository.ZoneRepository zoneRepository;
+    private final com.pbms.modules.operation.service.GateOperationService gateOperationService;
 
     /**
      * GET /api/v1/parking-sessions/my-active
@@ -40,7 +42,17 @@ public class ParkingSessionController {
 
         ParkingSession session = null;
 
-        if (plate != null && !plate.isBlank()) {
+        if (plate != null && !plate.isBlank() && rfid != null && !rfid.isBlank()) {
+            java.util.List<ParkingSession> list = parkingSessionRepository.findByPlateOrderByTimeInDesc(plate.trim().toUpperCase());
+            for (ParkingSession s : list) {
+                if (("ACTIVE".equals(s.getStatus()) || "LOCKED".equals(s.getStatus())) 
+                        && s.getRfidCard() != null 
+                        && s.getRfidCard().getCardCode().equals(rfid.trim())) {
+                    session = s;
+                    break;
+                }
+            }
+        } else if (plate != null && !plate.isBlank()) {
             java.util.List<ParkingSession> list = parkingSessionRepository.findByPlateOrderByTimeInDesc(plate.trim().toUpperCase());
             for (ParkingSession s : list) {
                 if ("ACTIVE".equals(s.getStatus()) || "LOCKED".equals(s.getStatus())) {
@@ -119,27 +131,72 @@ public class ParkingSessionController {
         map.put("timeOut", ps.getTimeOut());
         map.put("gateInName", ps.getGateIn() != null ? ps.getGateIn().getGateName() : null);
         map.put("gateOutName", ps.getGateOut() != null ? ps.getGateOut().getGateName() : null);
+
+        String suggestedZoneName = "N/A";
+        Long suggestedZoneId = ps.getSuggestedZoneId();
+        
+        if (ps.getSlot() != null && ps.getSlot().getZone() != null) {
+            suggestedZoneName = ps.getSlot().getZone().getZoneName();
+            suggestedZoneId = ps.getSlot().getZone().getId();
+        } else if (ps.getSuggestedZoneId() != null) {
+            suggestedZoneName = zoneRepository.findById(ps.getSuggestedZoneId()).map(z -> z.getZoneName()).orElse("N/A");
+            suggestedZoneId = ps.getSuggestedZoneId();
+        } else if (ps.getReservation() != null && ps.getReservation().getZone() != null) {
+            suggestedZoneName = ps.getReservation().getZone().getZoneName();
+            suggestedZoneId = ps.getReservation().getZone().getId();
+        }
+        map.put("suggestedZoneName", suggestedZoneName);
+        map.put("suggestedZoneId", suggestedZoneId);
         
         BigDecimal currentFee = ps.getTotalFee();
         if (currentFee == null && ps.getVehicleType() != null && ps.getTimeIn() != null && 
             ("ACTIVE".equals(ps.getStatus()) || "LOCKED".equals(ps.getStatus()))) {
-            currentFee = pricingCalculatorService.calculateTotalFee(
+            try {
+                String rfidCode = ps.getRfidCard() != null ? ps.getRfidCard().getCardCode() : null;
+                com.pbms.modules.operation.dto.CheckOutSessionInfoDTO checkoutInfo = gateOperationService.getCheckOutSessionInfo(rfidCode, ps.getPlate());
+                if (checkoutInfo != null && checkoutInfo.getExpectedFee() != null) {
+                    currentFee = checkoutInfo.getExpectedFee();
+                } else {
+                    currentFee = pricingCalculatorService.calculateTotalFee(
+                        ps.getVehicleType().getId(), 
+                        ps.getTimeIn(), 
+                        TimeProvider.now());
+                }
+            } catch (Exception e) {
+                currentFee = pricingCalculatorService.calculateTotalFee(
                     ps.getVehicleType().getId(), 
                     ps.getTimeIn(), 
                     TimeProvider.now());
+            }
+        }
+
+        List<com.pbms.modules.incident.domain.IncidentTicket> incidentTickets = incidentTicketRepository.findBySessionId(ps.getId());
+        BigDecimal totalPenalty = BigDecimal.ZERO;
+        if (incidentTickets != null && !incidentTickets.isEmpty()) {
+            totalPenalty = incidentTickets.stream()
+                .map(t -> t.getFineAmount())
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, (a, b) -> a.add(b));
+        }
+
+        if (currentFee != null) {
+            currentFee = currentFee.add(totalPenalty);
         }
         
         map.put("totalFee", currentFee);
         map.put("status", ps.getStatus());
 
-        List<com.pbms.modules.incident.domain.IncidentTicket> incidentTickets = incidentTicketRepository.findBySessionId(ps.getId());
         if (incidentTickets != null && !incidentTickets.isEmpty()) {
             List<Map<String, Object>> incidentDetails = incidentTickets.stream()
-                .filter(t -> t.getUploadedDocUrl() != null && ("OVERSTAY".equals(t.getIssueType()) || "ZONE_VIOLATION".equals(t.getIssueType())))
                 .map(t -> {
                     Map<String, Object> inc = new HashMap<>();
                     inc.put("type", t.getIssueType());
-                    inc.put("urls", java.util.Arrays.asList(t.getUploadedDocUrl().split("\\|")));
+                    if (t.getUploadedDocUrl() != null) {
+                        inc.put("urls", java.util.Arrays.asList(t.getUploadedDocUrl().split("\\|")));
+                    }
+                    inc.put("fineAmount", t.getFineAmount());
+                    inc.put("status", t.getStatus());
+                    inc.put("description", t.getDescription());
                     return inc;
                 })
                 .collect(Collectors.toList());

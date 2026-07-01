@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 public class VehicleService {
 
     private final VehicleRepository vehicleRepository;
+    private final com.pbms.modules.operation.repository.ParkingSessionRepository parkingSessionRepository;
 
     @Transactional(readOnly = true)
     public List<VehicleDTO> getAllVehicles() {
@@ -25,7 +26,19 @@ public class VehicleService {
     public VehicleDTO getVehicleByPlate(String plate) {
         return vehicleRepository.findByPlateNumber(plate.trim().toUpperCase())
                 .map(this::mapToDTO)
-                .orElseThrow(() -> new RuntimeException("Vehicle not found"));
+                .orElseGet(() -> {
+                    java.util.List<com.pbms.modules.operation.domain.ParkingSession> sessions = parkingSessionRepository.findByPlateOrderByTimeInDesc(plate.trim().toUpperCase());
+                    if (!sessions.isEmpty()) {
+                        com.pbms.modules.operation.domain.ParkingSession lastSession = sessions.get(0);
+                        return VehicleDTO.builder()
+                                .plateNumber(lastSession.getPlate())
+                                .vehicleTypeName(lastSession.getVehicleType() != null ? lastSession.getVehicleType().getTypeName() : "Unknown")
+                                .status("GUEST")
+                                .isBlacklisted(false)
+                                .build();
+                    }
+                    throw new RuntimeException("Vehicle not found");
+                });
     }
 
     @Transactional

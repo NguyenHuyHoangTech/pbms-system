@@ -195,7 +195,18 @@ const App = () => {
   const gates = syncData?.gates || [];
   const vehicleTypes = syncData?.vehicleTypes || [];
   const activeSessions = syncData?.activeSessions || [];
-  const reservations = syncData?.reservations || [];
+  const reservations = (syncData?.reservations || []).filter((r: any) => {
+    if (r.status !== 'ACTIVE' && r.status !== 'PENDING') return false;
+    if (r.expectedEntryTime) {
+      const duration = r.expectedDurationMinutes || 120;
+      const expireTime = dayjs(r.expectedEntryTime).add(duration, 'minute');
+      const now = syncData?.currentTime ? dayjs(syncData.currentTime) : dayjs();
+      if (now.isAfter(expireTime)) {
+        return false;
+      }
+    }
+    return true;
+  });
     const monthlyTickets = syncData?.monthlyTickets || [];
   const currentTime = syncData?.currentTime ? dayjs(syncData.currentTime).format('DD/MM/YYYY HH:mm:ss') : '--:--:--';
 
@@ -569,7 +580,7 @@ const App = () => {
     const currentPlate = Form.useWatch('plate', form);
     const customerType = Form.useWatch('customerType', form);
 
-    const activeReservations = reservations.filter((r: any) => r.status === 'ACTIVE' || r.status === 'PENDING');
+    const activeReservations = reservations; // Already filtered above
     const filteredReservations = activeReservations.filter((r: any) => {
         let match = true;
         if (filterPreBookedFloor) {

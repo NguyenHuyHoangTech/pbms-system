@@ -29,6 +29,7 @@ public class CheckOutSessionInfoDTO {
     // Pricing
     private Long durationMinutes;
     private java.math.BigDecimal expectedFee;
+    private java.math.BigDecimal feePenalty; // Penalty fee for incidents
     private java.math.BigDecimal discountFee; // Optional fee dispute reduction
     
     // Pre-booked Logic

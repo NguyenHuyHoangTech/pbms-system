@@ -69,9 +69,10 @@ public class GateConsoleController {
     @GetMapping("/routing-status")
     public ResponseEntity<ApiResponse<List<ZoneRoutingStatusDTO>>> getRoutingStatus(
             @RequestParam Long vehicleTypeId,
-            @RequestParam(defaultValue = "WALK_IN") String customerType) {
+            @RequestParam(defaultValue = "WALK_IN") String customerType,
+            @RequestParam(required = false) Long floorId) {
         try {
-            List<ZoneRoutingStatusDTO> statusList = zoneRoutingService.getRoutingStatus(vehicleTypeId, customerType);
+            List<ZoneRoutingStatusDTO> statusList = zoneRoutingService.getRoutingStatus(vehicleTypeId, customerType, floorId);
             return ResponseEntity.ok(ApiResponse.success(statusList, "Fetched routing status successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(400, e.getMessage()));

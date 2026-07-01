@@ -35,6 +35,7 @@ public class IncidentService {
     private final com.pbms.modules.operation.repository.MonthlyTicketRepository monthlyTicketRepository;
     private final com.pbms.modules.identity.repository.UserRepository userRepository;
     private final com.pbms.modules.system.service.SystemConfigService systemConfigService;
+    private final com.pbms.common.service.FileStorageService fileStorageService;
 
     @Transactional
     public IncidentTicket createIncident(IncidentTicketRequest request, String email) {
@@ -58,9 +59,10 @@ public class IncidentService {
                 .issueType(request.getIssueType())
                 .priority(request.getPriority() != null ? request.getPriority() : "MEDIUM")
                 .description(request.getDescription())
+                .reportedPlate(request.getPlate())
                 .status("PENDING")
                 .fineAmount(request.getFineAmount())
-                .uploadedDocUrl(request.getUploadedDocUrl())
+                .uploadedDocUrl(fileStorageService.storeBase64File(request.getUploadedDocUrl()))
                 .build();
 
         if (session != null) {
@@ -91,30 +93,40 @@ public class IncidentService {
         }
 
         if ("ZONE_VIOLATION".equals(request.getIssueType())) {
-            if (request.getFineAmount() == null) {
+            BigDecimal fineToApply = request.getFineAmount();
+            if (fineToApply == null) {
                 boolean is2W = false;
                 if (session != null && session.getVehicleType() != null && "TWO_WHEEL".equals(session.getVehicleType().getCategory())) {
                     is2W = true;
                 }
                 String configKey = is2W ? "PENALTY_ZONE_VIOLATION_2W" : "PENALTY_ZONE_VIOLATION_4W";
-                BigDecimal defaultFine = is2W ? new BigDecimal("50000") : new BigDecimal("100000");
+                fineToApply = is2W ? new BigDecimal("50000") : new BigDecimal("100000");
                 try {
-                    defaultFine = new BigDecimal(systemConfigService.getConfigByKey(configKey).getConfigValue());
+                    fineToApply = new BigDecimal(systemConfigService.getConfigByKey(configKey).getConfigValue());
                 } catch (Exception e) {
                     log.warn("Could not find {} config, using default", configKey);
                 }
-                ticket.setFineAmount(defaultFine);
-                if (session != null) {
-                    BigDecimal currentPenalty = session.getPenaltyFee() != null ? session.getPenaltyFee() : BigDecimal.ZERO;
-                    session.setPenaltyFee(currentPenalty.add(defaultFine));
-                }
             }
+            
+            ticket.setFineAmount(fineToApply);
+            
+            if (session != null) {
+                BigDecimal currentPenalty = session.getPenaltyFee() != null ? session.getPenaltyFee() : BigDecimal.ZERO;
+                session.setPenaltyFee(currentPenalty.add(fineToApply));
+                sessionRepository.save(session);
+            }
+
             if (request.getExpectedZoneId() != null) {
                 ticket.setExpectedZone(zoneRepository.findById(request.getExpectedZoneId()).orElse(null));
             }
             if (request.getActualZoneId() != null) {
                 ticket.setActualZone(zoneRepository.findById(request.getActualZoneId()).orElse(null));
             }
+            
+            ticket.setStatus("RESOLVED");
+            ticket.setResolvedAt(com.pbms.common.utils.TimeProvider.now());
+            ticket.setResolutionNotes("[QUAY] Xu ly su co do sai zone, da cong phi phat.");
+            
             messagingTemplate.convertAndSend("/topic/alerts", "Warnings for destroying the area:" + request.getDescription());
         }
 
@@ -133,7 +145,6 @@ public class IncidentService {
 
     // Cronjob running at 2:00 AM every day
     @Scheduled(cron = "0 0 2 * * ?")
-    @org.springframework.context.event.EventListener(com.pbms.common.event.TimeFastForwardedEvent.class)
     @Transactional
     public void handleOverstayVehicles() {
         log.info("Starting OVERSTAY checking cronjob...");
@@ -162,6 +173,34 @@ public class IncidentService {
         }
     }
 
+    @org.springframework.context.event.EventListener(com.pbms.common.event.TimeFastForwardedEvent.class)
+    public void handleTimeFastForward(com.pbms.common.event.TimeFastForwardedEvent event) {
+        LocalDateTime oldTime = event.getOldSimulatedTime();
+        LocalDateTime newTime = event.getNewSimulatedTime();
+        if (hasCrossedTime(oldTime, newTime, 2, 0)) {
+            handleOverstayVehicles();
+        }
+    }
+
+    private boolean hasCrossedTime(LocalDateTime oldTime, LocalDateTime newTime, int targetHour, int targetMinute) {
+        if (oldTime == null || newTime == null || !oldTime.isBefore(newTime)) return false;
+        
+        LocalDateTime targetInOldDay = oldTime.withHour(targetHour).withMinute(targetMinute).withSecond(0).withNano(0);
+        if (oldTime.isBefore(targetInOldDay) && !newTime.isBefore(targetInOldDay)) {
+            return true;
+        }
+        
+        LocalDateTime targetInNewDay = newTime.withHour(targetHour).withMinute(targetMinute).withSecond(0).withNano(0);
+        if (oldTime.isBefore(targetInNewDay) && !newTime.isBefore(targetInNewDay)) {
+            return true;
+        }
+        
+        if (java.time.Duration.between(oldTime, newTime).toHours() >= 24) {
+            return true;
+        }
+        return false;
+    }
+
     @Transactional(readOnly = true)
     public List<IncidentTicketDTO> getAllIncidents(String email) {
         List<IncidentTicket> tickets;
@@ -188,7 +227,7 @@ public class IncidentService {
         ticket.setResolutionNotes("[OVERSTAY] Vehicle moved to overstay zone");
         ticket.setResolvedAt(com.pbms.common.utils.TimeProvider.now());
         if (uploadedDocUrl != null && !uploadedDocUrl.isBlank()) {
-            ticket.setUploadedDocUrl(uploadedDocUrl);
+            ticket.setUploadedDocUrl(fileStorageService.storeBase64File(uploadedDocUrl));
         }
         
         return mapToDTO(incidentTicketRepository.save(ticket));
@@ -207,7 +246,7 @@ public class IncidentService {
         ticket.setResolutionNotes(resolutionNotes != null ? resolutionNotes : "[GD2] Da thu phi va mo barrier.");
         ticket.setResolvedAt(com.pbms.common.utils.TimeProvider.now());
         if (uploadedDocUrl != null && !uploadedDocUrl.isBlank()) {
-            ticket.setUploadedDocUrl(uploadedDocUrl);
+            ticket.setUploadedDocUrl(fileStorageService.storeBase64File(uploadedDocUrl));
         }
         if (totalFee != null) {
             ticket.setFineAmount(totalFee); // fineAmount currently stores totalFee in this flow
@@ -427,7 +466,7 @@ public class IncidentService {
         ticket.setDescription(description != null ? description : "Bao mat the, tien phat: " + fineAmount);
         ticket.setStatus("PENDING");
         ticket.setFineAmount(fineAmount);
-        ticket.setUploadedDocUrl(uploadedDocUrl);
+        ticket.setUploadedDocUrl(fileStorageService.storeBase64File(uploadedDocUrl));
 
         log.info("LOST_CARD incident created for plate: {}, fine: {}", plate, fineAmount);
         messagingTemplate.convertAndSend("/topic/alerts",
@@ -494,12 +533,18 @@ public class IncidentService {
             sessionPicOut = session.getPicOutPanorama();
             sessionParkingFee = session.getTotalFee();
             sessionVehicleType = session.getVehicleType() != null ? session.getVehicleType().getTypeName() : null;
-            sessionSuggestedZone = session.getSuggestedZoneName();
+            if (session.getSuggestedZoneId() != null) {
+                sessionSuggestedZone = zoneRepository.findById(session.getSuggestedZoneId())
+                    .map(com.pbms.modules.infrastructure.domain.Zone::getZoneName)
+                    .orElse("Zone " + session.getSuggestedZoneId());
+            } else {
+                sessionSuggestedZone = "N/A";
+            }
         }
 
         return IncidentTicketDTO.builder()
                 .id(ticket.getId())
-                .plateNumber(session != null ? session.getPlate() : null)
+                .plateNumber(session != null ? session.getPlate() : ticket.getReportedPlate())
                 .issueType(ticket.getIssueType())
                 .priority(ticket.getPriority())
                 .description(ticket.getDescription())
@@ -513,7 +558,7 @@ public class IncidentService {
                 .actualZoneName(ticket.getActualZone() != null ? ticket.getActualZone().getZoneName() : null)
                 .type(ticket.getIssueType())
                 .phase(phase)
-                .plate(session != null ? session.getPlate() : null)
+                .plate(session != null ? session.getPlate() : ticket.getReportedPlate())
                 .time(ticket.getCreatedAt() != null ? ticket.getCreatedAt().toString() : "")
                 .sessionId(sessionId)
                 .sessionTimeIn(sessionTimeIn)
@@ -527,15 +572,28 @@ public class IncidentService {
                 .build();
     }
     @Transactional(readOnly = true)
-    public boolean isPlateActive(String plate) {
-        return sessionRepository.findByPlateAndStatus(plate, "ACTIVE").isPresent();
+    public java.util.Map<String, Object> checkPlateActiveInfo(String plate) {
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        result.put("isActive", false);
+        sessionRepository.findByPlateAndStatus(plate.trim().toUpperCase(), "ACTIVE")
+                .ifPresent(session -> {
+                    result.put("isActive", true);
+                    result.put("vehicleType", session.getVehicleType() != null ? session.getVehicleType().getTypeName() : "Unknown");
+                });
+        return result;
     }
 
     @Transactional(readOnly = true)
-    public boolean isPlateAndRfidActive(String plate, String rfid) {
-        return sessionRepository.findByPlateAndStatus(plate.trim().toUpperCase(), "ACTIVE")
+    public java.util.Map<String, Object> checkPlateAndRfidActiveInfo(String plate, String rfid) {
+        java.util.Map<String, Object> result = new java.util.HashMap<>();
+        result.put("isActive", false);
+        sessionRepository.findByPlateAndStatus(plate.trim().toUpperCase(), "ACTIVE")
                 .filter(session -> session.getRfidCard() != null && session.getRfidCard().getCardCode().equals(rfid.trim()))
-                .isPresent();
+                .ifPresent(session -> {
+                    result.put("isActive", true);
+                    result.put("vehicleType", session.getVehicleType() != null ? session.getVehicleType().getTypeName() : "Unknown");
+                });
+        return result;
     }
 
     @Transactional

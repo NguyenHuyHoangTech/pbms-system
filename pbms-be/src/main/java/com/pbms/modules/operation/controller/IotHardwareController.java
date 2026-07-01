@@ -178,7 +178,7 @@ public class IotHardwareController {
                     map.put("plate", s.getPlate());
                     map.put("timeIn", s.getTimeIn());
                     map.put("status", s.getStatus());
-                    map.put("suggestedZoneName", s.getSuggestedZoneName());
+                    map.put("suggestedZoneId", s.getSuggestedZoneId());
                     map.put("picInPanorama", s.getPicInPanorama());
                     map.put("picInFace", s.getPicInFace());
                     if (s.getGateIn() != null && s.getGateIn().getFloor() != null) {

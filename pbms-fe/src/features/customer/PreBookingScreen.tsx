@@ -31,11 +31,43 @@ export const PreBookingScreen = () => {
     refreshSimulatedOffset();
   }, []);
 
+  // Fetch System Configs
+  const { data: configsData } = useQuery({
+    queryKey: ['system-configs'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/system/configs');
+        return res.data.data;
+      } catch (err) {
+        return null;
+      }
+    }
+  });
+
+  const { data: earlyMinsData } = useQuery({
+    queryKey: ['public-config-early-mins'],
+    queryFn: async () => {
+      try {
+        const res = await axiosClient.get('/public/config/RESERVATION_EARLY_MINS');
+        return parseInt(res.data.data, 10);
+      } catch (err) {
+        return 30;
+      }
+    }
+  });
+
+  const earlyMins = React.useMemo(() => {
+    if (earlyMinsData !== undefined) return earlyMinsData;
+    if (!configsData) return 30;
+    const config = configsData.find((c: any) => c.configKey === 'RESERVATION_EARLY_MINS');
+    return config && config.configValue ? parseInt(config.configValue, 10) : 30;
+  }, [configsData, earlyMinsData]);
+
   useEffect(() => {
     // If the offset changes (e.g., initial fetch from server), update the selected times
-    setArrivalTime(simulatedDayjs().add(30, 'minute'));
-    setEndTime(simulatedDayjs().add(2, 'hour').add(30, 'minute'));
-  }, [systemOffset]);
+    setArrivalTime(simulatedDayjs().add(earlyMins, 'minute'));
+    setEndTime(simulatedDayjs().add(2, 'hour').add(earlyMins, 'minute'));
+  }, [systemOffset, earlyMins]);
 
   const addDebugLog = (type: string, data: any) => {
     setDebugLogs(prev => [...prev, { time: dayjs().format('HH:mm:ss'), type, data }]);
@@ -58,6 +90,8 @@ export const PreBookingScreen = () => {
     }
   });
   const VEHICLES = vehicleTypesData || [];
+
+
 
   // Fetch Zones
   const { data: zonesData } = useQuery({
@@ -85,11 +119,11 @@ export const PreBookingScreen = () => {
     queryKey: ['preview-price', selectedVehicle, durationMinutes, arrivalTime.format('YYYY-MM-DDTHH:mm:ss')],
     queryFn: async () => {
       if (!selectedVehicle) return 0;
-      // Tính phí tạm tính từ pricing engine
+      // Calculate estimated fee from pricing engine
       try {
         const res = await axiosClient.post('/customer/reservations/preview', {
           vehicleTypeId: selectedVehicle,
-          expectedEntryTime: arrivalTime.format('YYYY-MM-DDTHH:mm:ss'),
+          expectedEntryTime: arrivalTime.format('YYYY-MM-DDTHH:mm:00'),
           expectedDurationMinutes: durationMinutes
         });
         return res.data.data || 0;
@@ -109,7 +143,7 @@ export const PreBookingScreen = () => {
         vehicleTypeId: selectedVehicle,
         plateNumber: plateNumber,
         zoneId: selectedZone,
-        expectedEntryTime: arrivalTime.format('YYYY-MM-DDTHH:mm:ss'),
+        expectedEntryTime: arrivalTime.format('YYYY-MM-DDTHH:mm:00'),
         expectedDurationMinutes: durationMinutes
       };
       addDebugLog('REQUEST', payload);
@@ -159,7 +193,7 @@ export const PreBookingScreen = () => {
     if (!selectedVehicle) return message.error('Please select Vehicle type');
     if (!plateNumber) return message.error('Please enter vehicle License Plate');
     if (!selectedZone) return message.error('Please select Parking Zone');
-    if (arrivalTime.isBefore(simulatedDayjs().add(29, 'minute'))) return message.error('Estimated arrival time must be at least 30 minutes later than current time');
+    if (arrivalTime.isBefore(simulatedDayjs().add(earlyMins - 1, 'minute'))) return message.error(`Estimated arrival time must be at least ${earlyMins} minutes later than current time`);
     if (endTime.isBefore(arrivalTime)) return message.error('Exit Time must be after Entry Time');
     
     setIsQRModalVisible(true);
@@ -296,11 +330,13 @@ export const PreBookingScreen = () => {
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {filteredZones.map((z: any) => {
-                    const isFull = z.availableSlots === 0;
+                    const isFull = (z.availableSlots || 0) <= 0;
                     return (
                       <div
-                        key={z.id}
-                        onClick={() => !isFull && setSelectedZone(z.id)}
+                        key={z.id || Math.random()}
+                        onClick={() => {
+                          if (!isFull) setSelectedZone(z.id);
+                        }}
                         className={`p-4 rounded-xl border-2 transition-all cursor-pointer ${
                           isFull ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed' :
                           selectedZone === z.id ? 'border-orange-500 bg-orange-50' : 'border-slate-200 bg-white hover:border-orange-300'
@@ -314,10 +350,10 @@ export const PreBookingScreen = () => {
                           <div className="flex-1 bg-slate-200 h-2 rounded-full overflow-hidden">
                             <div 
                               className={`h-full ${isFull ? 'bg-red-500' : 'bg-green-500'}`} 
-                              style={{ width: `${((z.capacity - z.availableSlots) / z.capacity) * 100}%` }}
+                              style={{ width: `${(((z.capacity || 1) - (z.availableSlots || 0)) / (z.capacity || 1)) * 100}%` }}
                             />
                           </div>
-                          <Text className="text-xs font-bold whitespace-nowrap">Drum {z.availableSlots}/{z.capacity}</Text>
+                          <Text className="text-xs font-bold whitespace-nowrap">Drum {z.availableSlots || 0}/{z.capacity || 0}</Text>
                         </div>
                       </div>
                     );

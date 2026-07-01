@@ -44,6 +44,28 @@ public class ZoneRoutingService {
         }
     }
 
+    private List<RoutingRule> getApplicableRules(List<RoutingRule> activeRules, LocalTime now) {
+        List<RoutingRule> applicableRules = new ArrayList<>();
+        java.util.Map<Long, List<RoutingRule>> rulesByZone = activeRules.stream()
+                .collect(Collectors.groupingBy(r -> r.getZone().getId()));
+        
+        for (java.util.Map.Entry<Long, List<RoutingRule>> entry : rulesByZone.entrySet()) {
+            List<RoutingRule> zoneRules = entry.getValue();
+            RoutingRule timeframeRule = zoneRules.stream()
+                .filter(r -> !r.getIsDefault() && r.getStartTime() != null && r.getEndTime() != null)
+                .filter(r -> !now.isBefore(r.getStartTime()) && !now.isAfter(r.getEndTime()))
+                .findFirst()
+                .orElse(null);
+                
+            if (timeframeRule != null) {
+                applicableRules.add(timeframeRule);
+            } else {
+                zoneRules.stream().filter(RoutingRule::getIsDefault).findFirst().ifPresent(applicableRules::add);
+            }
+        }
+        return applicableRules;
+    }
+
     /**
      * Calculates the real-time occupancy percentage of a zone.
      * Formula: (Occupied + Pending Reservations) / (Total - Disabled/Maintenance) * 100
@@ -58,22 +80,26 @@ public class ZoneRoutingService {
         if (effectiveCapacity <= 0) return BigDecimal.valueOf(100); // Fully disabled
 
         long occupiedSlots = slotRepository.countByZoneIdAndStatus(zoneId, "OCCUPIED");
+        long physicalAvailableSlots = Math.max(0, effectiveCapacity - occupiedSlots);
+        
         // Only count pending reservations that are active right now
         // Window: [expectedEntryTime - window_minutes, expectedEntryTime + expectedDurationMinutes]
         java.time.LocalDateTime now = com.pbms.common.utils.TimeProvider.now();
         List<com.pbms.modules.operation.domain.Reservation> pendingList = reservationRepository.findByZoneIdAndStatus(zoneId, "PENDING");
         int windowMinutes = 30;
         try {
-            windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_ARRIVAL_WINDOW_MINUTES").getConfigValue());
+            windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_MINS").getConfigValue());
         } catch (Exception e) {
-            log.warn("Could not read RESERVATION_EARLY_ARRIVAL_WINDOW_MINUTES config, defaulting to 30");
+            log.warn("Could not read RESERVATION_EARLY_MINS config, defaulting to 30");
         }
         final int finalWindowMinutes = windowMinutes;
-        long pendingReservations = pendingList.stream().filter(r -> {
+        long countInWindow = pendingList.stream().filter(r -> {
             java.time.LocalDateTime startWindow = r.getExpectedEntryTime().minusMinutes(finalWindowMinutes);
             java.time.LocalDateTime endWindow = r.getExpectedEntryTime().plusMinutes(r.getExpectedDurationMinutes());
             return !now.isBefore(startWindow) && !now.isAfter(endWindow);
         }).count();
+        
+        long pendingReservations = Math.min(physicalAvailableSlots, countInWindow);
         long effectiveLoad = occupiedSlots + pendingReservations;
 
         return BigDecimal.valueOf(effectiveLoad)
@@ -84,10 +110,11 @@ public class ZoneRoutingService {
     /**
      * Suggests the best zone for a given vehicle type based on the sliding threshold algorithm.
      */
-    public Zone suggestZone(VehicleType vehicleType, String customerType) {
-        // 1. Get all active zones for this vehicle type, sorted alphabetically
+    public Zone suggestZone(VehicleType vehicleType, String customerType, com.pbms.modules.infrastructure.domain.Floor floor) {
+        // 1. Get all active zones for this vehicle type on this floor, sorted alphabetically
         List<Zone> zones = zoneRepository.findAll().stream()
                 .filter(z -> z.getVehicleType() != null && z.getVehicleType().getId().equals(vehicleType.getId()) && "ACTIVE".equals(z.getStatus()))
+                .filter(z -> floor == null || (z.getFloor() != null && z.getFloor().getId().equals(floor.getId())))
                 .filter(z -> !"IMPOUNDED".equalsIgnoreCase(z.getFunctionType()))
                 .filter(z -> {
                     if (!"MONTHLY".equalsIgnoreCase(customerType)) {
@@ -108,61 +135,60 @@ public class ZoneRoutingService {
             return null;
         }
 
-        LocalTime now = LocalTime.now();
+        LocalTime now = com.pbms.common.utils.TimeProvider.now().toLocalTime();
 
-        // Find ALL active rules for this vehicle type
+        // Find ALL active rules for this vehicle type on this floor
         List<RoutingRule> activeRules = routingRuleRepository.findAll().stream()
                 .filter(r -> r.getIsActive() && r.getZone().getVehicleType().getId().equals(vehicleType.getId()))
+                .filter(r -> floor == null || (r.getZone().getFloor() != null && r.getZone().getFloor().getId().equals(floor.getId())))
                 .collect(Collectors.toList());
 
-        // Determine the applicable timeframe rules
-        List<RoutingRule> applicableRules = new ArrayList<>();
-        
-        for (RoutingRule r : activeRules) {
-            if (!r.getIsDefault() && r.getStartTime() != null && r.getEndTime() != null) {
-                if (!now.isBefore(r.getStartTime()) && !now.isAfter(r.getEndTime())) {
-                    applicableRules.add(r);
+        // Determine the applicable timeframe or default rules per zone
+        List<RoutingRule> applicableRules = getApplicableRules(activeRules, now);
+
+        // 2. Determine starting zone
+        Zone currentZone = null;
+        List<Zone> roots = new ArrayList<>();
+        if (!applicableRules.isEmpty()) {
+            for (RoutingRule rule : applicableRules) {
+                boolean isSuggestedByOther = applicableRules.stream()
+                        .anyMatch(r -> r.getSuggestedZone() != null && r.getSuggestedZone().getId().equals(rule.getZone().getId()));
+                if (!isSuggestedByOther) {
+                    roots.add(rule.getZone());
                 }
             }
         }
-
-        if (applicableRules.isEmpty()) {
-            applicableRules = activeRules.stream()
-                    .filter(RoutingRule::getIsDefault)
-                    .collect(Collectors.toList());
-        }
-
-        // 2. Determine starting zone based on customerType & function_type
-        Zone currentZone = null;
+        
         String preferredFunctionType = "MONTHLY".equalsIgnoreCase(customerType) ? "MONTHLY" : "WALK_IN";
         
-        currentZone = zones.stream()
-                .filter(z -> preferredFunctionType.equalsIgnoreCase(z.getFunctionType()))
-                .findFirst()
-                .orElse(null);
-
-        // Fallback if no matching function_type is found
+        if (!roots.isEmpty()) {
+            currentZone = roots.stream()
+                    .filter(z -> preferredFunctionType.equalsIgnoreCase(z.getFunctionType()))
+                    .findFirst()
+                    .orElse(null);
+        }
+        
         if (currentZone == null) {
-            if (!applicableRules.isEmpty()) {
-                for (RoutingRule rule : applicableRules) {
-                    boolean isSuggestedByOther = applicableRules.stream()
-                            .anyMatch(r -> r.getSuggestedZone() != null && r.getSuggestedZone().getId().equals(rule.getZone().getId()));
-                    if (!isSuggestedByOther) {
-                        currentZone = rule.getZone();
-                        break;
-                    }
-                }
-                if (currentZone == null) currentZone = applicableRules.get(0).getZone();
-            } else {
-                currentZone = zones.get(0);
-            }
+            currentZone = zones.stream()
+                    .filter(z -> preferredFunctionType.equalsIgnoreCase(z.getFunctionType()))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        if (currentZone == null && !roots.isEmpty()) {
+            currentZone = roots.get(0);
+        }
+
+        if (currentZone == null) {
+            currentZone = zones.isEmpty() ? null : zones.get(0);
         }
         
         List<Zone> visitedChain = new ArrayList<>();
         
         while (currentZone != null) {
             // Prevent infinite loop (e.g. A -> B -> A)
-            if (visitedChain.contains(currentZone)) {
+            final Long currentZoneId = currentZone.getId();
+            if (visitedChain.stream().anyMatch(z -> z.getId().equals(currentZoneId))) {
                 log.warn("Infinite routing loop detected at zone: {}", currentZone.getZoneName());
                 break;
             }
@@ -180,11 +206,16 @@ public class ZoneRoutingService {
             if (ruleToUse != null) {
                 if (occupancy.compareTo(BigDecimal.valueOf(ruleToUse.getFillThresholdPct())) >= 0) {
                     // Threshold exceeded, slide to the next zone
+                    Zone nextZone = ruleToUse.getSuggestedZone();
+                    if (nextZone != null && zones.stream().noneMatch(z -> z.getId().equals(nextZone.getId()))) {
+                        log.info("Suggested zone {} is not on the same floor or is inactive. Stopping cascade.", nextZone.getZoneName());
+                        break;
+                    }
                     log.info("Zone {} exceeded threshold ({} >= {}). Sliding to {}", 
                             currentZone.getZoneName(), occupancy, ruleToUse.getFillThresholdPct(), 
-                            ruleToUse.getSuggestedZone() != null ? ruleToUse.getSuggestedZone().getZoneName() : "NULL");
+                            nextZone != null ? nextZone.getZoneName() : "NULL");
                     
-                    currentZone = ruleToUse.getSuggestedZone();
+                    currentZone = nextZone;
                 } else {
                     // Below threshold, we can use this zone
                     return currentZone;
@@ -206,7 +237,7 @@ public class ZoneRoutingService {
         log.warn("All zones exceeded routing thresholds for vehicle type {}. Falling back to 100% capacity check by priority order.", vehicleType.getTypeName());
         
         List<Zone> remainingZones = zones.stream()
-            .filter(z -> !visitedChain.contains(z))
+            .filter(z -> visitedChain.stream().noneMatch(v -> v.getId().equals(z.getId())))
             .collect(Collectors.toList());
 
         for (Zone z : visitedChain) {
@@ -230,11 +261,12 @@ public class ZoneRoutingService {
     /**
      * Calculates the full routing chain and real-time statistics for the check-in screen.
      */
-    public List<ZoneRoutingStatusDTO> getRoutingStatus(Long vehicleTypeId, String customerType) {
+    public List<ZoneRoutingStatusDTO> getRoutingStatus(Long vehicleTypeId, String customerType, Long floorId) {
         List<ZoneRoutingStatusDTO> resultList = new ArrayList<>();
         
         List<Zone> zones = zoneRepository.findAll().stream()
                 .filter(z -> z.getVehicleType() != null && z.getVehicleType().getId().equals(vehicleTypeId) && "ACTIVE".equals(z.getStatus()))
+                .filter(z -> floorId == null || (z.getFloor() != null && z.getFloor().getId().equals(floorId)))
                 .filter(z -> !"IMPOUNDED".equalsIgnoreCase(z.getFunctionType()))
                 .filter(z -> {
                     if (!"MONTHLY".equalsIgnoreCase(customerType)) {
@@ -252,40 +284,48 @@ public class ZoneRoutingService {
 
         if (zones.isEmpty()) return resultList;
 
-        java.time.LocalTime now = java.time.LocalTime.now();
+        java.time.LocalTime now = com.pbms.common.utils.TimeProvider.now().toLocalTime();
         List<RoutingRule> activeRules = routingRuleRepository.findAll().stream()
                 .filter(r -> r.getIsActive() && r.getZone().getVehicleType().getId().equals(vehicleTypeId))
+                .filter(r -> floorId == null || (r.getZone().getFloor() != null && r.getZone().getFloor().getId().equals(floorId)))
                 .collect(Collectors.toList());
 
-        List<RoutingRule> applicableRules = new ArrayList<>();
-        for (RoutingRule r : activeRules) {
-            if (!r.getIsDefault() && r.getStartTime() != null && r.getEndTime() != null) {
-                if (!now.isBefore(r.getStartTime()) && !now.isAfter(r.getEndTime())) {
-                    applicableRules.add(r);
-                }
-            }
-        }
-        if (applicableRules.isEmpty()) {
-            applicableRules = activeRules.stream().filter(RoutingRule::getIsDefault).collect(Collectors.toList());
-        }
+        List<RoutingRule> applicableRules = getApplicableRules(activeRules, now);
 
         Zone currentZone = null;
+        List<Zone> roots = new ArrayList<>();
+        if (!applicableRules.isEmpty()) {
+            for (RoutingRule rule : applicableRules) {
+                boolean isSuggestedByOther = applicableRules.stream()
+                        .anyMatch(r -> r.getSuggestedZone() != null && r.getSuggestedZone().getId().equals(rule.getZone().getId()));
+                if (!isSuggestedByOther) {
+                    roots.add(rule.getZone());
+                }
+            }
+        }
+        
         String preferredFunctionType = "MONTHLY".equalsIgnoreCase(customerType) ? "MONTHLY" : "WALK_IN";
-        currentZone = zones.stream().filter(z -> preferredFunctionType.equalsIgnoreCase(z.getFunctionType())).findFirst().orElse(null);
+        
+        if (!roots.isEmpty()) {
+            currentZone = roots.stream()
+                    .filter(z -> preferredFunctionType.equalsIgnoreCase(z.getFunctionType()))
+                    .findFirst()
+                    .orElse(null);
+        }
+        
+        if (currentZone == null) {
+            currentZone = zones.stream()
+                    .filter(z -> preferredFunctionType.equalsIgnoreCase(z.getFunctionType()))
+                    .findFirst()
+                    .orElse(null);
+        }
+
+        if (currentZone == null && !roots.isEmpty()) {
+            currentZone = roots.get(0);
+        }
 
         if (currentZone == null) {
-            if (!applicableRules.isEmpty()) {
-                for (RoutingRule rule : applicableRules) {
-                    boolean isSuggestedByOther = applicableRules.stream().anyMatch(r -> r.getSuggestedZone() != null && r.getSuggestedZone().getId().equals(rule.getZone().getId()));
-                    if (!isSuggestedByOther) {
-                        currentZone = rule.getZone();
-                        break;
-                    }
-                }
-                if (currentZone == null) currentZone = applicableRules.get(0).getZone();
-            } else {
-                currentZone = zones.get(0);
-            }
+            currentZone = zones.isEmpty() ? null : zones.get(0);
         }
         
         List<Zone> visitedChain = new ArrayList<>();
@@ -293,7 +333,8 @@ public class ZoneRoutingService {
         boolean suggestionFound = false;
 
         while (currentZone != null) {
-            if (visitedChain.contains(currentZone)) break;
+            final Long currentZoneId = currentZone.getId();
+            if (visitedChain.stream().anyMatch(z -> z.getId().equals(currentZoneId))) break;
             visitedChain.add(currentZone);
 
             BigDecimal occupancy = calculateZoneOccupancy(currentZone.getId());
@@ -305,7 +346,11 @@ public class ZoneRoutingService {
                     actualSuggestedZone = currentZone;
                     suggestionFound = true;
                 }
-                currentZone = ruleToUse.getSuggestedZone();
+                Zone nextZone = ruleToUse.getSuggestedZone();
+                if (nextZone != null && zones.stream().noneMatch(z -> z.getId().equals(nextZone.getId()))) {
+                    break;
+                }
+                currentZone = nextZone;
             } else {
                 if (!suggestionFound && occupancy.compareTo(BigDecimal.valueOf(100)) < 0) {
                     actualSuggestedZone = currentZone;
@@ -325,7 +370,7 @@ public class ZoneRoutingService {
             }
             if (!suggestionFound) {
                 List<Zone> remainingZones = zones.stream()
-                        .filter(z -> !visitedChain.contains(z))
+                        .filter(z -> visitedChain.stream().noneMatch(v -> v.getId().equals(z.getId())))
                         .collect(Collectors.toList());
                 for (Zone z : remainingZones) {
                     if (calculateZoneOccupancy(z.getId()).compareTo(BigDecimal.valueOf(100)) < 0) {
@@ -338,7 +383,9 @@ public class ZoneRoutingService {
 
         List<Zone> allZonesToDisplay = new ArrayList<>(visitedChain);
         for (Zone z : zones) {
-            if (!allZonesToDisplay.contains(z)) allZonesToDisplay.add(z);
+            if (allZonesToDisplay.stream().noneMatch(v -> v.getId().equals(z.getId()))) {
+                allZonesToDisplay.add(z);
+            }
         }
 
         for (Zone z : allZonesToDisplay) {
@@ -346,16 +393,18 @@ public class ZoneRoutingService {
             long disabledSlots = slotRepository.countByZoneIdAndStatus(z.getId(), "DISABLED");
             long effectiveCapacity = totalSlots - disabledSlots;
             long occupiedSlots = slotRepository.countByZoneIdAndStatus(z.getId(), "OCCUPIED");
+            long physicalAvailableSlots = Math.max(0, effectiveCapacity - occupiedSlots);
             
             int windowMinutes = 30;
-            try { windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_ARRIVAL_WINDOW_MINUTES").getConfigValue()); } catch (Exception e) {}
+            try { windowMinutes = Integer.parseInt(systemConfigService.getConfigByKey("RESERVATION_EARLY_MINS").getConfigValue()); } catch (Exception e) {}
             java.time.LocalDateTime nowTime = com.pbms.common.utils.TimeProvider.now();
             final int fWin = windowMinutes;
-            long pendingReservations = reservationRepository.findByZoneIdAndStatus(z.getId(), "PENDING").stream().filter(r -> {
+            long countInWindow = reservationRepository.findByZoneIdAndStatus(z.getId(), "PENDING").stream().filter(r -> {
                 java.time.LocalDateTime startWindow = r.getExpectedEntryTime().minusMinutes(fWin);
                 java.time.LocalDateTime endWindow = r.getExpectedEntryTime().plusMinutes(r.getExpectedDurationMinutes());
                 return !nowTime.isBefore(startWindow) && !nowTime.isAfter(endWindow);
             }).count();
+            long pendingReservations = Math.min(physicalAvailableSlots, countInWindow);
 
             BigDecimal occRate = calculateZoneOccupancy(z.getId());
             RoutingRule r = applicableRules.stream().filter(rule -> rule.getZone().getId().equals(z.getId())).findFirst().orElse(null);

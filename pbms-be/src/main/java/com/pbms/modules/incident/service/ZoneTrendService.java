@@ -54,17 +54,31 @@ public class ZoneTrendService {
         LocalDateTime endOfDay = date.atTime(LocalTime.MAX);
 
         List<ZoneHourlyTrend> trends = zoneHourlyTrendRepository.findByTimeWindowBetween(startOfDay, endOfDay);
+        List<com.pbms.modules.infrastructure.domain.Zone> activeZones = zoneRepository.findAll().stream()
+                .filter(z -> "ACTIVE".equals(z.getStatus()))
+                .collect(Collectors.toList());
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm");
+        List<ZoneTrendDTO> result = new java.util.ArrayList<>();
 
-        return trends.stream()
-                .map(t -> ZoneTrendDTO.builder()
-                        .timeWindow(t.getTimeWindow().format(formatter))
-                        .zoneId(t.getZone().getId())
-                        .zoneName(t.getZone().getZoneName())
-                        .occupancyPct(t.getOccupancyPct())
-                        .build())
-                .collect(Collectors.toList());
+        for (int h = 0; h < 24; h++) {
+            LocalDateTime window = startOfDay.plusHours(h);
+            String timeStr = window.format(formatter);
+            for (com.pbms.modules.infrastructure.domain.Zone z : activeZones) {
+                ZoneHourlyTrend t = trends.stream()
+                        .filter(tr -> tr.getZone().getId().equals(z.getId()) && tr.getTimeWindow().equals(window))
+                        .findFirst()
+                        .orElse(null);
+
+                result.add(ZoneTrendDTO.builder()
+                        .timeWindow(timeStr)
+                        .zoneId(z.getId())
+                        .zoneName(z.getZoneName())
+                        .occupancyPct(t != null ? t.getOccupancyPct() : BigDecimal.ZERO)
+                        .build());
+            }
+        }
+        return result;
     }
 }
 

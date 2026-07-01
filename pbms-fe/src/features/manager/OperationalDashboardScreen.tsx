@@ -47,6 +47,15 @@ export const OperationalDashboardScreen = () => {
     refetchInterval: 5000
   });
 
+  const { data: zonesData } = useQuery({
+    queryKey: ['zones-dashboard'],
+    queryFn: async () => {
+      const res = await axiosClient.get('/infrastructure/zones/map');
+      return res.data.data;
+    },
+    staleTime: 60000
+  });
+
   // === Zone 4: HOURLY TRAFFIC FLOW ===
   const [selectedTrafficDate, setSelectedTrafficDate] = useState<any>(simulatedDayjs());
   const [hourlyTrafficCategory, setHourlyTrafficCategory] = useState<string>('ALL');
@@ -402,6 +411,13 @@ export const OperationalDashboardScreen = () => {
           <Table.Column title="License Plate" dataIndex="plate" render={(val) => <strong className="text-blue-700">{val}</strong>} />
           <Table.Column title="Vehicle Type" dataIndex="vehicleType" />
           <Table.Column title="Entry Time" dataIndex="timeIn" render={(val) => val ? simulatedDayjs(val).format('HH:mm:ss DD/MM/YYYY') : '-'} />
+          <Table.Column title="Suggested Zone" dataIndex="suggestedZoneId" render={(val, record: any) => {
+            if (val) {
+              const z = zonesData?.find((zone: any) => zone.id === val);
+              return <Tag color="geekblue">{z ? z.name : `Zone ${val}`}</Tag>;
+            }
+            return (record.suggestedZoneName && record.suggestedZoneName !== 'N/A') ? <Tag color="geekblue">{record.suggestedZoneName}</Tag> : '-';
+          }} />
           <Table.Column title="Entry Gate" dataIndex="gateInName" render={(val) => val || '-'} />
           <Table.Column title="Exit Time" dataIndex="timeOut" render={(val) => val ? simulatedDayjs(val).format('HH:mm:ss DD/MM/YYYY') : '-'} />
           <Table.Column title="Exit Gate" dataIndex="gateOutName" render={(val) => val || '-'} />
