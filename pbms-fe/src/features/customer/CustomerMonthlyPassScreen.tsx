@@ -17,7 +17,8 @@ const PACKAGES = [
 ];
 
 const GATEWAYS = [
-  { id: 'PAYPAL', name: 'PayPal Sandbox', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' }
+  { id: 'PAYPAL', name: 'PayPal Sandbox', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' },
+  { id: 'PAYOS', name: 'PayOS (VietQR)', icon: 'https://payos.vn/wp-content/uploads/sites/13/2023/07/payos-logo.svg' }
 ];
 
 export const CustomerMonthlyPassScreen = () => {
@@ -37,6 +38,7 @@ export const CustomerMonthlyPassScreen = () => {
   const [countdown, setCountdown] = useState(60);
   const [isPaymentSuccess, setIsPaymentSuccess] = useState(false);
   const [paymentUrl, setPaymentUrl] = useState<string>('');
+  const [paymentQrCode, setPaymentQrCode] = useState<string>('');
   const [paymentOrderId, setPaymentOrderId] = useState<string>('');
 
   const { data: pricingPolicies = [], isLoading: isPricingLoading } = useQuery({
@@ -115,9 +117,12 @@ export const CustomerMonthlyPassScreen = () => {
     },
     onSuccess: (data) => {
       setPaymentUrl(data.paymentUrl);
+      setPaymentQrCode(data.qrCode || '');
       if (selectedGateway === 'PAYPAL') {
         const urlParams = new URL(data.paymentUrl).searchParams;
         setPaymentOrderId(urlParams.get('token') || '');
+      } else if (selectedGateway === 'PAYOS') {
+        setPaymentOrderId(data.orderId || '');
       } else {
         setPaymentOrderId(data.paymentUrl.split('/').pop() || '');
       }
@@ -149,7 +154,8 @@ export const CustomerMonthlyPassScreen = () => {
         timer = setTimeout(() => {
           setCountdown(c => c - 1);
           if (countdown % 3 === 0) {
-            axiosClient.post('/payments/paypal/capture', { token: paymentOrderId })
+            const captureUrl = selectedGateway === 'PAYOS' ? '/payments/payos/capture' : '/payments/paypal/capture';
+            axiosClient.post(captureUrl, { token: paymentOrderId })
               .then(res => {
                 if (res.data?.data?.status === 'COMPLETED') {
                   createPassMutation.mutate();
@@ -386,7 +392,7 @@ export const CustomerMonthlyPassScreen = () => {
               
               <div className="relative inline-block mb-6">
                 <div className="bg-white p-4 border-2 border-dashed border-slate-300 rounded-2xl shadow-sm relative z-10 flex justify-center items-center h-[240px] w-[240px]">
-                  {paymentUrl ? <QRCode value={paymentUrl} size={200} /> : <Spin size="large" />}
+                  {paymentUrl ? <QRCode value={selectedGateway === 'PAYOS' && paymentQrCode ? paymentQrCode : paymentUrl} size={200} /> : <Spin size="large" />}
                 </div>
                 {/* Scanning animation line */}
                 <style>
@@ -403,7 +409,11 @@ export const CustomerMonthlyPassScreen = () => {
               
               <div className="text-2xl font-black text-blue-600 mb-2">{totalFee.toLocaleString()} VND</div>
               <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg break-all px-2 text-xs">
-                <a href={paymentUrl} target="_blank" rel="noreferrer">Open PayPal Checkout</a>
+                {selectedGateway === 'PAYOS' ? (
+                  <a href={paymentUrl} target="_blank" rel="noreferrer">Open PayOS Checkout</a>
+                ) : (
+                  <a href={paymentUrl} target="_blank" rel="noreferrer">Open PayPal Checkout</a>
+                )}
               </Text>
               
               <div className="flex items-center justify-center space-x-2 text-slate-600">

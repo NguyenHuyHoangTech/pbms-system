@@ -70,5 +70,16 @@ public class SystemConfigController {
         service.testPaypalConnection(clientId, secret);
         return ResponseEntity.ok(ApiResponse.success("Connection successful", "PayPal credentials are valid"));
     }
+
+    @PostMapping("/test-payos")
+    public ResponseEntity<ApiResponse<String>> testPayos(@RequestBody java.util.Map<String, String> payload) {
+        String clientId = payload.get("clientId");
+        String apiKey = payload.get("apiKey");
+        if (clientId == null || apiKey == null) {
+            return ResponseEntity.badRequest().body(ApiResponse.error(400, "Client ID and API Key are required"));
+        }
+        service.testPayosConnection(clientId, apiKey);
+        return ResponseEntity.ok(ApiResponse.success("Connection successful", "PayOS credentials are valid"));
+    }
 }
 

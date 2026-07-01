@@ -107,5 +107,27 @@ public class SystemConfigService {
             throw new IllegalArgumentException("PayPal Connection failed: " + e.getMessage());
         }
     }
+    public void testPayosConnection(String clientId, String apiKey) {
+        org.springframework.web.client.RestTemplate restTemplate = new org.springframework.web.client.RestTemplate();
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.set("x-client-id", clientId);
+        headers.set("x-api-key", apiKey);
+
+        org.springframework.http.HttpEntity<String> request = new org.springframework.http.HttpEntity<>(headers);
+
+        try {
+            restTemplate.exchange(
+                    "https://api-merchant.payos.vn/v2/payment-requests/123456", 
+                    org.springframework.http.HttpMethod.GET, 
+                    request, String.class);
+        } catch (org.springframework.web.client.HttpClientErrorException e) {
+            if (e.getStatusCode() == org.springframework.http.HttpStatus.UNAUTHORIZED) {
+                throw new IllegalArgumentException("PayOS Connection failed: Invalid credentials");
+            }
+            // Other errors like 404 mean credentials are fine but record not found
+        } catch (Exception e) {
+            throw new IllegalArgumentException("PayOS Connection failed: " + e.getMessage());
+        }
+    }
 }
 

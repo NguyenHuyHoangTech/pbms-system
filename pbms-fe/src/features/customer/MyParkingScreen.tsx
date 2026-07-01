@@ -68,7 +68,8 @@ export const MyParkingScreen = () => {
     { id: 'MOTORBIKE', name: 'Motorbike', pricePerMonth: 150000 }
   ];
   const GATEWAYS = [
-    { id: 'PAYPAL', name: 'PayPal Sandbox', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' }
+    { id: 'PAYPAL', name: 'PayPal', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' },
+    { id: 'PAYOS', name: 'PayOS (VietQR)', icon: 'https://payos.vn/wp-content/uploads/sites/13/2023/07/payos-logo.svg' }
   ];
 
   // Strict Walk-in 2FA Lookup
@@ -298,6 +299,7 @@ export const MyParkingScreen = () => {
   const [renewCountdown, setRenewCountdown] = useState(60);
   const [isRenewSuccess, setIsRenewSuccess] = useState(false);
   const [renewPaymentUrl, setRenewPaymentUrl] = useState('');
+  const [renewPaymentQrCode, setRenewPaymentQrCode] = useState('');
   const [renewPaymentToken, setRenewPaymentToken] = useState('');
 
   const renewPassMutation = useMutation({
@@ -335,8 +337,15 @@ export const MyParkingScreen = () => {
     },
     onSuccess: (data) => {
       setRenewPaymentUrl(data.data.paymentUrl);
-      const urlParams = new URL(data.data.paymentUrl).searchParams;
-      setRenewPaymentToken(urlParams.get('token') || '');
+      setRenewPaymentQrCode(data.data.qrCode || '');
+      if (renewGateway === 'PAYPAL') {
+        const urlParams = new URL(data.data.paymentUrl).searchParams;
+        setRenewPaymentToken(urlParams.get('token') || '');
+      } else if (renewGateway === 'PAYOS') {
+        setRenewPaymentToken(data.data.orderId || '');
+      } else {
+        setRenewPaymentToken(data.data.paymentUrl.split('/').pop() || '');
+      }
     },
     onError: () => {
       message.error('Error creating renewal payment link.');
@@ -367,7 +376,8 @@ export const MyParkingScreen = () => {
         timer = setTimeout(() => {
           setRenewCountdown(c => c - 1);
           if (renewCountdown % 3 === 0) {
-            axiosClient.post('/payments/paypal/capture', { token: renewPaymentToken })
+            const captureUrl = renewGateway === 'PAYOS' ? '/payments/payos/capture' : '/payments/paypal/capture';
+            axiosClient.post(captureUrl, { token: renewPaymentToken })
               .then(res => {
                 if (res.data?.data?.status === 'COMPLETED') {
                   renewPassMutation.mutate();
@@ -1024,7 +1034,7 @@ export const MyParkingScreen = () => {
               
               <div className="relative inline-block mb-6">
                 <div className="bg-white p-4 border-2 border-dashed border-slate-300 rounded-2xl shadow-sm relative z-10 flex justify-center items-center h-[240px] w-[240px]">
-                  {renewPaymentUrl ? <QRCode value={renewPaymentUrl} size={200} /> : <Spin size="large" />}
+                  {renewPaymentUrl ? <QRCode value={renewGateway === 'PAYOS' && renewPaymentQrCode ? renewPaymentQrCode : renewPaymentUrl} size={200} /> : <Spin size="large" />}
                 </div>
                 <style>
                   {`
@@ -1039,7 +1049,11 @@ export const MyParkingScreen = () => {
               </div>
               
               <Text className="block text-slate-500 mb-6 font-mono bg-slate-100 py-2 rounded-lg break-all px-2 text-xs">
-                <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Open PayPal Checkout</a>
+                {renewGateway === 'PAYOS' ? (
+                  <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Open PayOS Checkout</a>
+                ) : (
+                  <a href={renewPaymentUrl} target="_blank" rel="noreferrer">Open PayPal Checkout</a>
+                )}
               </Text>
               
               <div className="flex items-center justify-center space-x-2 text-slate-600">

@@ -55,8 +55,10 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
   const isProcessingRef = useRef<boolean>(false);
   
   // OUT Gate states
-  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'PAYPAL'>('CASH');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'PAYPAL' | 'PAYOS'>('CASH');
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
+  const [paymentQrCode, setPaymentQrCode] = useState<string>('');
+  const [paymentOrderId, setPaymentOrderId] = useState<string>('');
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
 
   const shiftStatus = useAuthStore((state) => state.shiftStatus);
@@ -177,6 +179,8 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
     setPaymentMethod('CASH');
     setPaymentConfirmed(false);
     setPaymentUrl(null);
+    setPaymentQrCode('');
+    setPaymentOrderId('');
     message.warning('The current scanning session has been canceled e System has reopened e');
   };
 
@@ -250,6 +254,8 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
       setPaymentMethod('CASH');
       setPaymentConfirmed(false);
       setPaymentUrl(null);
+      setPaymentQrCode('');
+      setPaymentOrderId('');
       isProcessingRef.current = false;
     } catch (error: any) {
       message.error(error.response?.data?.message || 'Error khi check-out xe ra.');
@@ -261,18 +267,26 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
 
 
 
-  // Generate PayPal URL when switching to PAYPAL
+  // Generate Payment URL when switching to digital method
   useEffect(() => {
-    if (paymentMethod === 'PAYPAL' && scanData) {
+    if ((paymentMethod === 'PAYPAL' || paymentMethod === 'PAYOS') && scanData) {
       const amount = scanData.expectedFee || 0;
       if (amount > 0) {
         setIsLoading(true);
-        axiosClient.post('/payments/generate-link', { gateway: 'PAYPAL', amount })
+        axiosClient.post('/payments/generate-link', { gateway: paymentMethod, amount })
           .then(res => {
             setPaymentUrl(res.data.data.paymentUrl);
+            setPaymentQrCode(res.data.data.qrCode || '');
+            
+            if (paymentMethod === 'PAYPAL') {
+              const urlObj = new URL(res.data.data.paymentUrl);
+              setPaymentOrderId(urlObj.searchParams.get('token') || '');
+            } else {
+              setPaymentOrderId(res.data.data.orderId || '');
+            }
           })
           .catch(() => {
-            message.error('Unable to generate PayPal QR code');
+            message.error(`Unable to generate ${paymentMethod} QR code`);
             setPaymentMethod('CASH');
           })
           .finally(() => setIsLoading(false));
@@ -281,27 +295,20 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
       }
     } else {
       setPaymentUrl(null);
+      setPaymentQrCode('');
+      setPaymentOrderId('');
     }
   }, [paymentMethod, scanData]);
 
-  // Poll for PayPal payment status
+  // Poll for payment status
   useEffect(() => {
-    if (paymentMethod === 'PAYPAL' && paymentUrl && !paymentConfirmed) {
-      let token = null;
-      try {
-        const urlObj = new URL(paymentUrl);
-        token = urlObj.searchParams.get('token');
-      } catch (e) {
-        console.error("Could not parse PayPal URL", e);
-      }
-      
-      if (!token) return;
-
+    if ((paymentMethod === 'PAYPAL' || paymentMethod === 'PAYOS') && paymentUrl && paymentOrderId && !paymentConfirmed) {
       const intervalId = setInterval(() => {
-        axiosClient.post('/payments/paypal/capture', { token })
+        const captureUrl = paymentMethod === 'PAYOS' ? '/payments/payos/capture' : '/payments/paypal/capture';
+        axiosClient.post(captureUrl, { token: paymentOrderId })
           .then(res => {
             if (res.data?.data?.status === 'COMPLETED') {
-              message.success('Guest has paid PayPal Success!');
+              message.success(`Guest has paid ${paymentMethod} Success!`);
               setPaymentConfirmed(true);
               clearInterval(intervalId);
             }
@@ -313,11 +320,11 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
 
       return () => clearInterval(intervalId);
     }
-  }, [paymentMethod, paymentUrl, paymentConfirmed]);
+  }, [paymentMethod, paymentUrl, paymentOrderId, paymentConfirmed]);
 
-  // Auto-submit checkout when PayPal is confirmed
+  // Auto-submit checkout when digital payment is confirmed
   useEffect(() => {
-    if (paymentConfirmed && paymentMethod === 'PAYPAL' && scanData && activeGate) {
+    if (paymentConfirmed && paymentMethod !== 'CASH' && scanData && activeGate) {
       handleCompletePaymentAndOpen();
     }
   }, [paymentConfirmed]);
@@ -522,22 +529,23 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
                       className="flex w-full bg-slate-700 rounded-lg p-1 border border-slate-600 shadow-inner"
                     >
                       <Radio.Button value="CASH" className="flex-1 text-center font-bold text-base h-12 leading-[40px] border-0 !text-slate-800 bg-white shadow-sm rounded-l-md">Cash</Radio.Button>
-                      <Radio.Button value="PAYPAL" className="flex-1 text-center font-bold text-base h-12 leading-[40px] border-0 border-l border-slate-600 !text-slate-200 rounded-r-md">PayPal QR</Radio.Button>
+                      <Radio.Button value="PAYPAL" className="flex-1 text-center font-bold text-base h-12 leading-[40px] border-0 border-l border-slate-600 !text-slate-200">PayPal</Radio.Button>
+                      <Radio.Button value="PAYOS" className="flex-1 text-center font-bold text-base h-12 leading-[40px] border-0 border-l border-slate-600 !text-slate-200 rounded-r-md">PayOS QR</Radio.Button>
                     </Radio.Group>
                   </div>
 
                   {/* QR Code conditionally rendered */}
-                  <div className="flex-1 mt-3 relative">
-                    {paymentMethod === 'PAYPAL' ? (
+                  <div className="flex-1 mt-3 relative min-h-[200px]">
+                    {(paymentMethod === 'PAYPAL' || paymentMethod === 'PAYOS') ? (
                       <div className="absolute inset-0 flex flex-col items-center justify-center p-2 bg-white rounded border border-dashed border-blue-400">
                         {!paymentConfirmed ? (
                           <>
                             {paymentUrl ? (
-                              <QRCode value={paymentUrl} size={130} />
+                              <QRCode value={paymentMethod === 'PAYOS' && paymentQrCode ? paymentQrCode : paymentUrl} size={130} />
                             ) : (
                               <QrcodeOutlined className="text-5xl text-slate-800 mb-1 animate-pulse" />
                             )}
-                            <Text type="secondary" className="font-bold text-[9px] uppercase mt-2">Customer scans PayPal code</Text>
+                            <Text type="secondary" className="font-bold text-[9px] uppercase mt-2 text-center">Customer scans {paymentMethod} code</Text>
                             {paymentUrl && (
                               <Button 
                                 type="primary" 
@@ -551,16 +559,15 @@ export const GateOutConsoleScreen = ({ activeGate }: { activeGate: any }) => {
                           </>
                         ) : (
                           <div className="bg-green-100 text-green-800 p-2 rounded w-full h-full text-center font-bold flex flex-col items-center justify-center text-xs shadow-inner">
-                            <CheckCircleOutlined className="text-2xl mb-1 text-green-600" />  Money collected Success!
-                                                                                  </div>
+                            <CheckCircleOutlined className="text-2xl mb-1 text-green-600" /> Money collected Success!
+                          </div>
                         )}
                       </div>
                     ) : (
                       <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-700 rounded border border-slate-600 text-slate-400 text-xs font-bold text-center p-4">
                         <DollarOutlined className="text-4xl mb-2 opacity-50" />
-                        
-                                                                        CASH COLLECTION DIRECTLY
-                                                                      </div>
+                        CASH COLLECTION DIRECTLY
+                      </div>
                     )}
                   </div>
                 </div>

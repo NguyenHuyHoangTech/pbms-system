@@ -11,7 +11,8 @@ import { getImageUrl } from '../../core/utils/imageHelper';
 const { Title, Text } = Typography;
 
 const GATEWAYS = [
-  { id: 'PAYPAL', name: 'PayPal', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' }
+  { id: 'PAYPAL', name: 'PayPal', icon: 'https://www.paypalobjects.com/webstatic/mktg/logo/pp_cc_mark_111x69.jpg' },
+  { id: 'PAYOS', name: 'PayOS (VietQR)', icon: 'https://payos.vn/wp-content/uploads/sites/13/2023/07/payos-logo.svg' }
 ];
 
 export const PreBookingScreen = () => {
@@ -79,6 +80,7 @@ export const PreBookingScreen = () => {
   const [countdown, setCountdown] = useState(900);
   const [isPaymentSuccess, setIsPaymentSuccess] = useState(false);
   const [paymentUrl, setPaymentUrl] = useState<string>('');
+  const [paymentQrCode, setPaymentQrCode] = useState<string>('');
   const [paymentOrderId, setPaymentOrderId] = useState<string>('');
 
   // Fetch Vehicle Types
@@ -176,9 +178,12 @@ export const PreBookingScreen = () => {
     },
     onSuccess: (data) => {
       setPaymentUrl(data.paymentUrl);
+      setPaymentQrCode(data.qrCode || '');
       if (selectedGateway === 'PAYPAL') {
         const urlParams = new URL(data.paymentUrl).searchParams;
         setPaymentOrderId(urlParams.get('token') || '');
+      } else if (selectedGateway === 'PAYOS') {
+        setPaymentOrderId(data.orderId || '');
       } else {
         setPaymentOrderId(data.paymentUrl.split('/').pop() || '');
       }
@@ -211,7 +216,8 @@ export const PreBookingScreen = () => {
         timer = setTimeout(() => {
           setCountdown(c => c - 1);
           if (countdown % 3 === 0) {
-            axiosClient.post('/payments/paypal/capture', { token: paymentOrderId })
+            const captureUrl = selectedGateway === 'PAYOS' ? '/payments/payos/capture' : '/payments/paypal/capture';
+            axiosClient.post(captureUrl, { token: paymentOrderId })
               .then(res => {
                 if (res.data?.data?.status === 'COMPLETED') {
                   createBookingMutation.mutate();
@@ -457,7 +463,7 @@ export const PreBookingScreen = () => {
               
               <div className="relative inline-block mb-6">
                 <div className="bg-white p-4 border-2 border-dashed border-slate-300 rounded-2xl shadow-sm relative z-10 flex justify-center items-center h-[240px] w-[240px]">
-                  {paymentUrl ? <QRCode value={paymentUrl} size={200} /> : <Spin size="large" />}
+                  {paymentUrl ? <QRCode value={selectedGateway === 'PAYOS' && paymentQrCode ? paymentQrCode : paymentUrl} size={200} /> : <Spin size="large" />}
                 </div>
                 {/* Scanning animation line */}
                 <style>
@@ -476,10 +482,9 @@ export const PreBookingScreen = () => {
               
               <div className="mb-6">
                 {paymentUrl ? (
-                  <Button type="primary" size="large" href={paymentUrl} target="_blank" className="w-full bg-[#0070ba] hover:bg-[#003087] border-none font-bold flex items-center justify-center">
-                    
-                                                          Payment directly by PayPal
-                                                        </Button>
+                  <Button type="primary" size="large" href={paymentUrl} target="_blank" className={`w-full ${selectedGateway === 'PAYOS' ? 'bg-[#1890ff] hover:bg-[#096dd9]' : 'bg-[#0070ba] hover:bg-[#003087]'} border-none font-bold flex items-center justify-center`}>
+                    {selectedGateway === 'PAYOS' ? 'Pay with PayOS' : 'Payment directly by PayPal'}
+                  </Button>
                 ) : (
                   <Button disabled size="large" className="w-full">Creating payment linkeee</Button>
                 )}
